@@ -1,0 +1,36 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Arquivos de dados (NÃO SUBIR DADOS REAIS)
+*.xlsx
+*.xls
+*.csv
+01 - Dados Brutos/
+02 - Dados tratados/
+03 - Dados prontos/
+debug_logs/
+
+# Logs
+*.log
+
+# Modelos treinados
+models/*.pkl
+models/*.joblib
+
+# VS Code
+.vscode/
+
+# Old Scripts
+old_scripts/
+
+# motor Selenium
+chromedriver.exe

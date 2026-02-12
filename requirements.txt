@@ -1,0 +1,22 @@
+pandas
+selenium
+scikit-learn
+spacy
+openpyxl
+xlsxwriter
+pywin32
+keyring
+fuzzywuzzy
+python-Levenshtein
+ldap3
+joblib
+numpy
+
+# python --version > 3.11
+# pip install selenium pandas scikit-learn joblib keyring pywin32 fuzzywuzzy python-Levenshtein xlsxwriter openpyxl ldap3 stop-words nltk spacy
+# python -m spacy download pt_core_news_sm
+
+# Colocar em um terminal com Python
+# import keyring
+# keyring.set_password("citSmart", "user@mpms.mp.br", "sua_senha")
+# keyring.set_password("otrs", "user@mpms.mp.br", "sua_senha")
