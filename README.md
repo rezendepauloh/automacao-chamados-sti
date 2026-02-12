@@ -1,6 +1,6 @@
 # 🤖 Automação e Classificação de Chamados de TI (MPMS)
 
-Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para automatizar a extração, unificação e classificação inteligente de chamados de suporte técnico (Service Desk) provenientes de múltiplas plataformas (OTRS e CitSmart).
+Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para automatizar a extração, unificação e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS e CitSmart).
 
 ## 🚀 Funcionalidades
 

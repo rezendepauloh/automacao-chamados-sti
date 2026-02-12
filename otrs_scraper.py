@@ -49,27 +49,64 @@ ad_conn = Connection(
     auto_bind=True
 )
 
-# Função genérica para recuperar department do AD
+# ---------------------------
+# AD (Active Directory) - Versão Robusta
+# ---------------------------
 def fetch_unidade(username):
+    """
+    Busca a unidade do usuário no AD usando o sAMAccountName.
+    Prioridade: department -> physicalDeliveryOfficeName -> Cadastro Incompleto.
+    """
+    # Proteção básica
+    if not username or not ad_conn:
+        return ''
+
     try:
         search_filter = f'(sAMAccountName={username})'
+        
+        # Agora pedimos os dois atributos na consulta
+        target_attrs = ['department', 'physicalDeliveryOfficeName']
+
         ad_conn.search(
             search_base='DC=in,DC=mpe,DC=ms,DC=gov,DC=br',
             search_filter=search_filter,
             search_scope=SUBTREE,
-            attributes=['department']
+            attributes=target_attrs
         )
 
         if not ad_conn.entries:
-            return 'Sem Departamento'
+            return 'Não encontrado no AD'
         
+        # Pega a primeira entrada e converte para dicionário (mais seguro)
         entry = ad_conn.entries[0].entry_attributes_as_dict
         
-        return entry.get('department', [''])[0]
+        # 1. TENTATIVA PRINCIPAL: DEPARTAMENTO
+        # O LDAP retorna uma lista, pegamos o primeiro item ou string vazia
+        dept_list = entry.get('department', [])
+        dept = dept_list[0] if dept_list else None
+        
+        if dept and str(dept).strip():
+            return str(dept).strip()
+        
+        # 2. TENTATIVA SECUNDÁRIA: ESCRITÓRIO (OFFICE)
+        office_list = entry.get('physicalDeliveryOfficeName', [])
+        office = office_list[0] if office_list else None
+        
+        if office and str(office).strip():
+            return str(office).strip()
+
+        # 3. FALHA
+        return 'Cadastro Incompleto (AD)'
     
     except Exception as e:
-        logging.debug(f"Erro AD lookup para {username}: {e}")
-        
+        # Usa debug_print para manter padrão do arquivo, ou logging se preferir
+        msg = f"Erro AD lookup para {username}: {e}"
+        # Tenta usar o debug_print definido no arquivo, senão printa normal
+        try:
+            debug_print(msg)
+        except NameError:
+            print(msg)
+            
         return ''
 
 def backup_master():
@@ -217,60 +254,66 @@ def check_pagination(driver):
 def extract_row_data(driver, row):
     data = {h: '' for h in HEADERS}
     try:
+        # Garante que a linha está visível
         current = WebDriverWait(driver, EXPLICIT_WAIT).until(EC.visibility_of(row))
         cells = current.find_elements(By.TAG_NAME, 'td')
 
-        # Chamado# - Cell[3]
+        # --- Chamado# (Cell 3) ---
         try:
+            # O .text retorna string vazia se não tiver nada, então é mais seguro que get_attribute
             data['Chamado#'] = cells[3].find_element(By.TAG_NAME, 'a').text.strip()
-        
         except Exception as e:
             debug_print(f"Erro Chamado#: {e}")
 
-        # Criado - Cell[4]
+        # --- Data Criação (Cell 4) ---
         try:
-            data['Data Criação'] = cells[4].find_element(By.TAG_NAME, 'div').get_attribute('title').strip()
-        
+            raw_date = cells[4].find_element(By.TAG_NAME, 'div').get_attribute('title')
+            data['Data Criação'] = (raw_date or "").strip()
         except Exception as e:
             debug_print(f"Erro Data Criação: {e}")
 
-        # Título - Cell[6]
+        # --- Título (Cell 6) ---
         try:
-            data['Título'] = cells[6].find_element(By.TAG_NAME, 'div').get_attribute('title').strip()
-        
+            raw_title = cells[6].find_element(By.TAG_NAME, 'div').get_attribute('title')
+            data['Título'] = (raw_title or "").strip()
         except Exception as e:
             debug_print(f"Erro Título: {e}")
 
-        # Cidade - Prédio - Cell[8]
+        # --- Cidade - Prédio (Cell 8) ---
         try:
-            data['Cidade - Prédio'] = cells[8].find_element(By.TAG_NAME, 'div').get_attribute('title').strip()
-        
+            raw_city = cells[8].find_element(By.TAG_NAME, 'div').get_attribute('title')
+            data['Cidade - Prédio'] = (raw_city or "").strip()
         except Exception as e:
             debug_print(f"Erro Cidade - Prédio: {e}")
 
-        # Nome do Usuário Cliente - Cell[9]
+        # --- Nome do Usuário (Cell 9) ---
         try:
-            client_user = cells[9].find_element(By.TAG_NAME, 'div').get_attribute('title').strip()
+            raw_user = cells[9].find_element(By.TAG_NAME, 'div').get_attribute('title')
+            client_user = (raw_user or "").strip()
             data['Nome do Usuário'] = client_user
-        
         except Exception as e:
             debug_print(f"Erro Nome do Usuário: {e}")
 
-        # ID do Cliente - Cell[10]
+        # --- ID do Cliente e Unidade (Cell 10) ---
         try:
-            client_id = cells[10].find_element(By.TAG_NAME, 'span').get_attribute('title').strip()
+            raw_client_id = cells[10].find_element(By.TAG_NAME, 'span').get_attribute('title')
+            client_id = (raw_client_id or "").strip()
             data['ID do Cliente'] = client_id
             
             # Lookup Unidade no AD
-            data['Unidade'] = fetch_unidade(client_id)
-        
+            # (Assumindo que fetch_unidade lida bem com string vazia, senão adicione um if)
+            if client_id:
+                data['Unidade'] = fetch_unidade(client_id)
+            else:
+                data['Unidade'] = "N/A"
+
         except Exception as e:
             debug_print(f"Erro ID do Cliente ou lookup AD: {e}")
 
-        # Descrição
+        # --- Descrição (Processo separado) ---
         try:
+            # Aqui passamos o driver e a linha atual (current)
             data['Descrição'] = process_ticket(driver, current)
-        
         except Exception as e:
             debug_print(f"Erro Descrição: {e}")
 
@@ -280,7 +323,6 @@ def extract_row_data(driver, row):
     
     except Exception as e:
         debug_print(f"Erro geral linha: {e}")
-        
         return data
 
 def process_all_pages(driver):

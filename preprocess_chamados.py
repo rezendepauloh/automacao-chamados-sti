@@ -90,38 +90,49 @@ def clean_otrs_description(desc: str) -> str:
     if pd.isna(desc):
         return ""
     text = str(desc).strip()
+    
+    # 1. Limpeza de artefatos do OTRS
     text = re.sub(r'(?si)^.*?^Descrição:\s*[\r\n]+', '', text, flags=re.MULTILINE)
     text = re.sub(r'(?si)[\r\n]+(?:Para acompanhamento.*|É possível acompanhar.*)$', '', text)
     text = re.sub(r'(?m)^\.\.\.\s*$', '', text)
     text = re.sub(r'(?m)^Prazo:.*$', '', text)
-    text = re.sub(
-        r'(?ms)^Att\.\s*\r?\n--\s*\r?\n(?:.*\r?\n)*?Telefones:.*?3318-8959\s*(?:\r?\n)?',
-        '---\n', text
-    )
-    text = re.sub(
-        r'(?ms)^Att\.\s*\r?\n--\s*\r?\n(?:.*\r?\n)*?Telefone:.*?3318-5503\s*(?:\r?\n)?',
-        '---\n', text
-    )
+
+    # 2. Remoção Genérica de Saudações Iniciais
+    # Tira "Bom dia,", "Prezados", etc do começo do texto.
+    text = re.sub(r'(?si)^(bom dia|boa tarde|boa noite|prezados?|caros?|olá)[,\-\s]*[\r\n]*', '', text)
+
+    # 3. Remoção Genérica de Assinaturas (O Pulo do Gato)
+    # Procura palavras de despedida. Quando achar, apaga ela e TUDO que vier depois [\s\S]*
+    padrao_despedida = r"(?si)\b(atenciosamente|att\.?|at\.te|grato|obrigada?|cordialmente|respeitosamente|saudações)\b[\s\S]*"
+    text = re.sub(padrao_despedida, '', text)
+    
+    # Fallback: Se a pessoa não falou "Att" mas colocou "--" para assinar (padrão de e-mail)
+    text = re.sub(r"(?si)[\r\n]+--[\s\S]*", "", text)
+
+    # 4. Formata "Descrição do pedido" numa linha só (Sua lógica mantida)
     text = re.sub(
         r'(?mi)(Descrição do pedido:\s*)([\s\S]+)$',
         lambda m: m.group(1) + m.group(2).replace('\n', ' '),
         text
     )
+    
+    # 5. Corta o histórico de respostas do OTRS (mantém só a msg original antes do #2)
     parts = re.split(r'(?m)^#2\b', text, maxsplit=1)
     block1 = parts[0]
     cleaned = []
     
+    # 6. Limpeza linha a linha de lixo residual do OTRS
     for line in block1.splitlines():
         l = line.strip()
         if not l:
             continue
-        if re.fullmatch(r'[A-Z]{1,2}', l):
+        if re.fullmatch(r'[A-Z]{1,2}', l): # Tira linhas com 1 ou 2 letras soltas
             continue
         if l.lower().startswith('responder a nota') or l.lower() in ('imprimir','dividir'):
             continue
         cleaned.append(l)
     
-    return '\n'.join(cleaned)
+    return '\n'.join(cleaned).strip()
 
 
 # --- Normalize units lookup ---
