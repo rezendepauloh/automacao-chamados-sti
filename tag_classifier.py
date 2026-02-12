@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import joblib
+import shutil
 
 from sklearn.pipeline import Pipeline
 from sklearn.naive_bayes import MultinomialNB, ComplementNB
@@ -53,7 +54,7 @@ logging.basicConfig(
     format='[%(asctime)s] [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
-        logging.FileHandler("tag_classifier.log", encoding='utf-8'),
+        logging.FileHandler(DEBUG_DIR_TAG / "tag_classifier.log", encoding='utf-8'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -761,6 +762,12 @@ def main():
         #     r"C:\Users\paulogoncalves\OneDrive - Ministerio Público do Estado de Mato Grosso do Sul\Documentos SharePoint DIT-Manutenção\Chamados\Chamados_Unificados_Final.xlsx"
         # )
         master = MASTER_FILE_PATH
+
+        # Se o arquivo master não existir (primeira execução), usa o próprio arquivo atual como base
+        if not master.exists():
+            logger.warning(f"Master não encontrado em {master}. Usando o arquivo atual como base.")
+            shutil.copy(out, master)
+
         # Devolve (excel_app, wb_master) para reutilizarmos no format_excel
         excel_app, wb_master, changed = sync_to_master(out, master)
 
