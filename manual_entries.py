@@ -103,6 +103,16 @@ def get_manual_entries():
         {
             "Cidade": "Campo Grande",
             "Tipo": "CAO",
+            "Setor": "NAVIT",
+            "Sigla": "NAVIT",
+            "Titular": "Lívia Carla Guadanhim Bariani",
+            "Unidade (Prédio)": "Rua da Paz",
+            "Telefone": "",
+            "URL": ""
+        },
+        {
+            "Cidade": "Campo Grande",
+            "Tipo": "CAO",
             "Setor": "Núcleo de Promoção da Igualdade Étnico-Racial",
             "Sigla": "NUPIER",
             "Titular": "Douglas Silva Teixeira",
