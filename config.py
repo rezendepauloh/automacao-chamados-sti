@@ -38,6 +38,9 @@ MAX_RETRIES = 5     # Número de tentativas por página
 # Diretórios
 # -----------------------------------------------------------------------------
 
+# Pega automaticamente a pasta do usuário atual
+USER_HOME = Path.home()
+
 BASE_DIR              = Path(__file__).parent
 INPUT_DIR_BRUTOS      = BASE_DIR / "01 - Dados Brutos"
 INPUT_DIR_BRUTOS.mkdir(exist_ok=True)
@@ -47,7 +50,7 @@ OUTPUT_DIR_PRONTO     = BASE_DIR / "03 - Dados prontos"
 OUTPUT_DIR_PRONTO.mkdir(exist_ok=True)
 MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
-MASTER_FILE_PATH = OUTPUT_DIR_PRONTO / "Chamados_Unificados_Final.xlsx"
+MASTER_FILE_PATH = USER_HOME / "OneDrive - Ministerio Público do Estado de Mato Grosso do Sul" / "Documentos SharePoint DIT-Manutenção" / "Chamados" / "Chamados_Unificados_Final.xlsx"
 
 # OTRS
 DEBUG_DIR_OTRS = BASE_DIR / "debug_logs" / "otrs"
