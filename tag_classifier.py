@@ -542,155 +542,109 @@ def safe_write_to_sheet(wb, sheet_name, df):
     except Exception as e:
         logger.error(f"Erro ao escrever em {sheet_name}: {str(e)}")
 
-def sync_to_master(slave_path: Path, master_path: Path) -> Tuple[Any, Any, bool]:
-    """
-    Sincroniza o "master" com o "slave" preservando "Ramal" e "Andamento"
-    """
-    try:
-        # Adicione esta verificação antes de chamar o Dispatch
-        if win32 is None:
-            logger.error("Win32com não está disponível. Não é possível manipular Excel via COM.")
-            return None, None, False        
+def read_excel_com_to_df(ws) -> pd.DataFrame:
+    """Lê os dados de uma aba do Excel via COM e converte para DataFrame Pandas."""
+    used_range = ws.UsedRange.Value
+    
+    # Se a planilha estiver vazia, retorna um DataFrame vazio
+    if not used_range:
+        return pd.DataFrame()
+    
+    # O Excel via COM retorna uma tupla de tuplas. 
+    # A primeira linha (índice 0) é o cabeçalho, o resto (1 em diante) são os dados.
+    df = pd.DataFrame(used_range[1:], columns=used_range[0])
+    
+    # Remove linhas que vieram totalmente em branco do UsedRange do Excel
+    df.dropna(how='all', inplace=True)
+    
+    return df
+
+def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any, Any, bool]:
+    
+    # === A CORREÇÃO: Função para limpar o ID do chamado ===
+    def clean_ticket_id(series):
+        # Transforma em texto e remove o maldito ".0" do final (se existir)
+        return series.astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+
+    # Lê a planilha nova
+    df_tagged_novo = pd.read_excel(novo_excel_path, sheet_name=0)
+    df_tagged_novo['Chamado#'] = clean_ticket_id(df_tagged_novo['Chamado#'])
+
+    # Pega carona no Excel aberto
+    excel = win32.Dispatch("Excel.Application") # type: ignore
+    excel.DisplayAlerts = False
+
+    wb_master = None
+    for wb in excel.Workbooks:
+        if wb.Name.lower() == master_excel_path.name.lower():
+            wb_master = wb
+            break
+
+    if wb_master is None:
+        wb_master = excel.Workbooks.Open(str(master_excel_path.resolve()))
         
-        # 1) Conecta ao Excel
-        excel_app = win32.Dispatch("Excel.Application")
-        excel_app.Visible = True
-        workbook_name = master_path.name
+    ws_tagged = wb_master.Sheets("Tagged")
+
+    # Lê os dados do master
+    df_master_tagged = read_excel_com_to_df(ws_tagged)
+    if 'Chamado#' in df_master_tagged.columns:
+        df_master_tagged['Chamado#'] = clean_ticket_id(df_master_tagged['Chamado#'])
+    else:
+        df_master_tagged['Chamado#'] = ""
+
+    chamados_novos = set(df_tagged_novo['Chamado#'].unique())
+    chamados_master = set(df_master_tagged['Chamado#'].unique())
+
+    # === A MÁGICA CONTINUA FUNCIONANDO AQUI ===
+    # Mantém os antigos que ainda estão abertos (Preserva as suas edições manuais!)
+    df_master_tagged_novo = df_master_tagged[df_master_tagged['Chamado#'].isin(chamados_novos)].copy()
+
+    # Adiciona apenas os inéditos
+    chamados_adicionar = chamados_novos - chamados_master
+    if chamados_adicionar:
+        logger.info(f"Novos chamados identificados: {len(chamados_adicionar)}")
+        df_add = df_tagged_novo[df_tagged_novo['Chamado#'].isin(chamados_adicionar)].copy()
         
-        try:
-            wb = excel_app.Workbooks(workbook_name)
-            obtained_from_open = True
-        except Exception:
-            wb = excel_app.Workbooks.Open(str(master_path))
-            obtained_from_open = False
-
-        # 2) Carrega dados preservando colunas sensíveis
-        df_master_tagged = get_sheet_as_dataframe(wb, "Tagged")
-        df_master_fechados = get_sheet_as_dataframe(wb, "Fechados")
-        df_slave_tagged = pd.read_excel(slave_path, sheet_name="Tagged")
-
-        if df_master_tagged.empty:
-            logger.error("df_master_tagged está vazio!")
-        else:
-            logger.debug(f"Colunas disponíveis: {df_master_tagged.columns}")
-
-        #df_master_tagged.to_csv("df_master_tagged_ANTES.csv", index=False, encoding="utf-8-sig")
-        #df_master_fechados.to_csv("df_master_fechados_ANTES.csv", index=False, encoding="utf-8-sig")
-        #df_slave_tagged.to_csv("df_slave_tagged_ANTES.csv", index=False, encoding="utf-8-sig")
-
-        # 3) Backup completo de dados sensíveis
-        sensitive_data = {}
-        sensitive_cols = ["Ramal", "Andamento", "Cidade - Prédio", "Unidade", "TAG"]
-
-        backup_sensitive_data(df_master_tagged, "Tagged", sensitive_data, sensitive_cols)
-        backup_sensitive_data(df_master_fechados, "Fechados", sensitive_data, sensitive_cols)
-
-        logger.debug(f"sensitive_data (após backup): {sensitive_data}")
-
-        # 4) Normalização de IDs
-        df_master_tagged["Chamado#"] = df_master_tagged["Chamado#"].apply(normalize_id)
-        df_master_fechados["Chamado#"] = df_master_fechados["Chamado#"].apply(normalize_id)
-        df_slave_tagged["Chamado#"] = df_slave_tagged["Chamado#"].apply(normalize_id)
-
-        # 5) Identifica mudanças
-        master_ids = set(df_master_tagged["Chamado#"].unique())
-        slave_ids = set(df_slave_tagged["Chamado#"].unique())
+        for col in ['Ramal', 'Andamento']:
+            if col not in df_add.columns:
+                df_add[col] = ""
         
-        ids_mantidos = master_ids & slave_ids
-        ids_novos = slave_ids - master_ids
-        ids_fechados = master_ids - slave_ids
+        col_order = ['Chamado#', 'Nome do Usuário', 'Data Criação', 'TAG', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base']
+        for c in col_order:
+            if c not in df_add.columns:
+                df_add[c] = ""
+        df_add = df_add[col_order]
 
-        logger.debug(f"set_master_ids  (master.Tagged): {sorted(master_ids)}")
-        logger.debug(f"set_slave_ids   (slave.Tagged) : {sorted(slave_ids)}")
-        logger.debug(f"ids_mantidos    (intersection)   : {sorted(ids_mantidos)}")
-        logger.debug(f"ids_novos       = {sorted(ids_novos)}")
-        logger.debug(f"ids_fechados    = {sorted(ids_fechados)}") 
+        df_master_tagged_novo = pd.concat([df_master_tagged_novo, df_add], ignore_index=True)
 
-        # 6) Se não houver alterações, retorna sem mudanças
-        if not ids_novos and not ids_fechados:
-            return (excel_app, wb, False)
-        
-        # 7) Atualiza a aba Tagged preservando dados
-        tagged_rows = []
+    changed = False
+    if len(chamados_adicionar) > 0 or (len(chamados_master - chamados_novos) > 0):
+        changed = True
 
-        # 7.1) Mantém chamados existentes com dados atualizados        
-        for _, slave_row in df_slave_tagged.iterrows():
-            chamado_id = slave_row["Chamado#"]
+    if changed:
+        # Destrói as Tabelas (ListObjects) transformando em células normais
+        for tbl in ws_tagged.ListObjects:
+            tbl.Unlist()
             
-            if chamado_id in ids_mantidos:
-                if "Tagged" in sensitive_data and chamado_id in sensitive_data["Tagged"]:
-                    for col in sensitive_cols:
-                        logger.debug(f"Antes: chamado {chamado_id} {col}={slave_row.get(col)}")
-                        
-                        slave_row[col] = sensitive_data["Tagged"][chamado_id].get(col, slave_row.get(col, ""))
-                        
-                        logger.debug(f"Depois: chamado {chamado_id} {col}={slave_row.get(col)}")
-                
-                tagged_rows.append(slave_row)
+        # Limpa tudo
+        ws_tagged.Cells.Clear()
 
-        logger.debug(f"Restaurando Ramal/Andamento para chamado {chamado_id}: {sensitive_data['Tagged'].get(chamado_id)}")
+        if not df_master_tagged_novo.empty:
+            # Transforma todos os dados em string limpa
+            df_master_tagged_novo = df_master_tagged_novo.fillna("")
+            df_master_tagged_novo = df_master_tagged_novo.astype(str)
+            df_master_tagged_novo = df_master_tagged_novo.replace(["nan", "NaT", "<NA>", "None"], "")
 
-        # 7.2) Adiciona novos chamados
-        for _, slave_row in df_slave_tagged.iterrows():
-            chamado_id = slave_row["Chamado#"]
-            if chamado_id in ids_novos:
-                tagged_rows.append(slave_row)
-        
-        df_master_tagged_novo = pd.DataFrame(tagged_rows)
-        logger.debug(f"df_master_tagged_novo preview:\n{df_master_tagged_novo.head()}")
+            data_to_write_t = [df_master_tagged_novo.columns.tolist()] + df_master_tagged_novo.values.tolist()
+            num_rows_t = len(data_to_write_t)
+            num_cols_t = len(data_to_write_t[0])
+            range_to_write_t = ws_tagged.Range(ws_tagged.Cells(1, 1), ws_tagged.Cells(num_rows_t, num_cols_t))
+            range_to_write_t.Value = data_to_write_t
 
-        # 8) Atualiza a aba Fechados preservando dados
-        fechados_rows = df_master_fechados.to_dict('records')
-        
-        for _, master_row in df_master_tagged.iterrows():
-            chamado_id = master_row["Chamado#"]
-            
-            if chamado_id in ids_fechados:
-                # Adiciona dados sensíveis existentes
-                if "Tagged" in sensitive_data and chamado_id in sensitive_data["Tagged"]:
-                    for col in sensitive_cols:
-                        if col in master_row:
-                            master_row[col] = sensitive_data["Tagged"][chamado_id][col]
-                fechados_rows.append(master_row.to_dict())
-        
-        df_master_fechados_novo = pd.DataFrame(fechados_rows)
-        logger.debug(f"df_master_fechados_novo preview:\n{df_master_fechados_novo.head()}")
+        wb_master.Save()
+        logger.info("Planilha master atualizada com sucesso.")
 
-        # 9) Mantém ordem original das colunas
-        def maintain_column_order(df, reference_df):
-            if not reference_df.empty:
-                return df[reference_df.columns]
-            return df
-        
-        df_master_tagged_novo = maintain_column_order(df_master_tagged_novo, df_master_tagged)
-        df_master_fechados_novo = maintain_column_order(df_master_fechados_novo, df_master_fechados)
-
-        # 10) Escreve dados atualizados SEM apagar formatação
-        #df_master_tagged_novo.to_csv("df_master_tagged_DEPOIS.csv", index=False, encoding="utf-8-sig")
-        #df_master_fechados_novo.to_csv("df_master_fechados_DEPOIS.csv", index=False, encoding="utf-8-sig")
-
-        logger.debug(f"df_master_tagged_novo shape: {df_master_tagged_novo.shape}, columns: {df_master_tagged_novo.columns}")
-
-        # Desabilite atualização visual e cálculo durante a escrita
-        excel_app.ScreenUpdating = False
-        excel_app.Calculation = -4135  # xlCalculationManual
-        excel_app.EnableEvents = False
-
-        safe_write_to_sheet(wb, "Tagged", df_master_tagged_novo)
-        safe_write_to_sheet(wb, "Fechados", df_master_fechados_novo)
-
-        # Alterar atualização visual e cálculo durante a escrita
-        excel_app.ScreenUpdating = True
-        excel_app.Calculation = -4105  # xlCalculationAutomatic
-        excel_app.EnableEvents = True        
-
-        # 11) Salva e retorna
-        wb.Save()
-        return (excel_app, wb, True)
-
-    except Exception as e:
-        logger.error(f"Erro crítico na sincronização: {str(e)}", exc_info=True)
-        return (None, None, False)
+    return excel, wb_master, changed
 
 # --------------------------------------------------------------------------
 # 9) Fluxo principal
