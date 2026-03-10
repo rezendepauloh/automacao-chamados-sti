@@ -273,6 +273,46 @@ def main():
     
     # unificar
     combined = pd.concat([otrs_df, citsmart_df], ignore_index=True)
+    
+    # =========================================================
+    # NOVO: Padronização de datas e estrutura no pré-processamento
+    # =========================================================
+    # 1. Remove chamados repetidos, mantendo apenas a ocorrência mais recente
+    tamanho_antes = len(combined)
+    combined = combined.drop_duplicates(subset=['Chamado#'], keep='last')
+    tamanho_depois = len(combined)
+    
+    if tamanho_antes != tamanho_depois:
+        debug_print(f"⚠️ {tamanho_antes - tamanho_depois} chamados duplicados foram removidos!")
+    
+    # 2. Padroniza a Data de Criação (Resolve os fusos e o padrão americano)
+    if 'Data Criação' in combined.columns:
+        combined['Data Criação'] = pd.to_datetime(
+            combined['Data Criação'], 
+            errors='coerce', 
+            dayfirst=True, 
+            utc=True
+        ).dt.strftime('%d/%m/%Y %H:%M:%S').fillna(combined['Data Criação'])
+
+    # 3. Limpa espaços extras no começo e no fim dos IDs e Nomes
+    #if 'Chamado#' in combined.columns:
+    #    combined['Chamado#'] = combined['Chamado#'].astype(str).str.strip()
+        
+    if 'Nome do Usuário' in combined.columns:
+        # Tira espaços em branco sobrando e deixa a primeira letra de cada nome maiúscula
+        combined['Nome do Usuário'] = combined['Nome do Usuário'].astype(str).str.strip().str.title()
+
+    # 4. Adiciona as colunas vazias para manter o padrão estrutural da Master
+    for col in ['Ramal', 'Andamento']:
+        if col not in combined.columns:
+            combined[col] = ""
+            
+    # 5. Organiza a ordem base das colunas (O classificador só vai espremer a TAG no meio depois)
+    colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base']
+    colunas_existentes = [c for c in colunas_ordem if c in combined.columns]
+    combined = combined[colunas_existentes]
+    # =========================================================
+    
     out = OUTPUT_DIR_TRATADOS / f"Chamados_Unificados_{ts}.xlsx"
     
     with pd.ExcelWriter(out, engine='xlsxwriter') as writer:

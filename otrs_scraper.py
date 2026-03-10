@@ -317,7 +317,7 @@ def extract_row_data(driver, row):
         except Exception as e:
             debug_print(f"Erro Descrição: {e}")
 
-        debug_print(f"Dados extraídos: {data['Chamado#']}")
+        # debug_print(f"Dados extraídos: {data['Chamado#']}")
         
         return data
     
@@ -332,17 +332,29 @@ def process_all_pages(driver):
         table = WebDriverWait(driver, EXPLICIT_WAIT).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'table.TableSmall'))
         )
+        
         rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
+        total_linhas = len(rows)
+        debug_print(f"Linhas detectadas: {total_linhas}")
+        
         for idx, row in enumerate(rows):
             try:
                 data = extract_row_data(driver, row)
                 all_data.append(data)
+                
+                # Pega o número do chamado do dicionário retornado
+                chamado_num = data.get('Chamado#', 'N/A')
+                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
             
             except StaleElementReferenceException:
                 debug_print("Linha obsoleta, tentando novamente")
+                # Atualiza a lista de elementos da página
                 rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
                 data = extract_row_data(driver, rows[idx])
                 all_data.append(data)
+                
+                chamado_num = data.get('Chamado#', 'N/A')
+                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
 
         # tentar próxima página via links
         try:
@@ -370,7 +382,12 @@ def initial_config():
     options = webdriver.ChromeOptions()
 
     # Desativa logs desnecessários
-    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"]) # Oculta o "DevTools listening..."
+
+    # --- SILENCIADORES DO CHROME ---
+    options.add_argument('--log-level=3')         # Silencia logs internos (mostra apenas erros fatais)
+    options.add_argument('--disable-logging')     # Desabilita o motor de log do navegador
+    # -------------------------------
     
     # Configurações para evitar pop-ups
     options.add_experimental_option("prefs", {
@@ -468,16 +485,41 @@ def pagination_or_not(driver):
 # ========== ETAPA 5: EXTRAÇÃO DE DADOS ========== #
 def data_extract(driver, has_pagination):
     debug_print("Passo 9: Extraindo dados da tabela...")
+    
+    # Se tem mais de uma página, vai para a função que arrumamos antes
     if has_pagination:
-        data = process_all_pages(driver)
+        return process_all_pages(driver)
+    
+    # Se tem só UMA página, ele cai aqui:
     else:
+        all_data = []
         table = WebDriverWait(driver, EXPLICIT_WAIT).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "table.TableSmall"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'table.TableSmall'))
         )
-        rows = table.find_elements(By.CSS_SELECTOR, "tbody tr.MasterAction")
-        data = [extract_row_data(driver, row) for row in rows]
-
-    return data
+        rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
+        
+        total_linhas = len(rows)
+        debug_print(f"Linhas detectadas: {total_linhas}")
+        
+        for idx, row in enumerate(rows):
+            try:
+                data = extract_row_data(driver, row)
+                all_data.append(data)
+                
+                # Print no formato [1/21] Lido: 46444521
+                chamado_num = data.get('Chamado#', 'N/A')
+                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
+                
+            except StaleElementReferenceException:
+                debug_print("Linha obsoleta, tentando novamente")
+                rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
+                data = extract_row_data(driver, rows[idx])
+                all_data.append(data)
+                
+                chamado_num = data.get('Chamado#', 'N/A')
+                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
+                
+        return all_data
 
 # ========== ETAPA 6: SALVANDO DADOS (DADOS BRUTOS) ========== #
 def brute_data(data):

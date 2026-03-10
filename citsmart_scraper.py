@@ -16,7 +16,7 @@ from typing import cast
 from xlsxwriter.workbook import Workbook as XlsxWorkbook # Alias para não confundir
 from config import (
     CITSMART_URL, CITSMART_EMAIL, PASSWORD,
-    HEADLESS, EXPLICIT_WAIT,
+    HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_CITSMART,
     DOMINIO, USERNAME
 )
 
@@ -26,6 +26,35 @@ from config import (
 def debug_print(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[DEBUG {ts}] {msg}")
+
+def salvar_screenshot(driver, nome_etapa):
+    """Tira um print da tela para vermos exatamente o que o Selenium vê."""
+    ts = datetime.now().strftime("%H-%M-%S")
+    filename = f"debug_citsmart_{ts}_{nome_etapa}.png"
+    filepath = DEBUG_DIR_CITSMART / filename
+    driver.save_screenshot(str(filepath))
+    debug_print(f"📸 Screenshot salvo: {filename}")
+
+def inspecionar_elemento(driver, seletor, nome_elemento):
+    """Extrai informações vitais do elemento antes de tentar clicar."""
+    debug_print(f"🔍 Inspecionando: {nome_elemento} {seletor}")
+    try:
+        elementos = driver.find_elements(*seletor)
+        if not elementos:
+            debug_print(f"❌ O elemento {nome_elemento} não existe no DOM no momento.")
+            return None
+        
+        el = elementos[0]
+        html_trecho = el.get_attribute('outerHTML')[:150] # Pega os primeiros 150 caracteres
+        
+        debug_print(f"Status de {nome_elemento}:")
+        debug_print(f" - Visível na tela? {el.is_displayed()}")
+        debug_print(f" - Habilitado para clique? {el.is_enabled()}")
+        debug_print(f" - HTML encontrado: {html_trecho}...")
+        return el
+    except Exception as e:
+        debug_print(f"⚠️ Erro ao inspecionar {nome_elemento}: {e}")
+        return None
 
 def find_all(ctx, candidates, timeout=5):
     """
@@ -99,9 +128,16 @@ def fetch_setor_temp(conn, display_name):
 # ---------------------------
 def initial_config():
     opts = webdriver.ChromeOptions()
-    opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"]) # Oculta o "DevTools listening..."
     opts.add_argument("--disable-blink-features=CSSAnimations,ScrollAnimator")
     opts.add_argument("--incognito")
+
+    # --- SILENCIADORES DO CHROME ---
+    opts.add_argument('--log-level=3')         # Silencia logs internos (mostra apenas erros fatais)
+    opts.add_argument('--disable-logging')     # Desabilita o motor de log do navegador
+    # -------------------------------
+
+
     if HEADLESS:
         opts.add_argument("--headless=new")
         opts.add_argument("--disable-gpu")
@@ -170,12 +206,13 @@ def navigate_to_caixa_entrada(driver, wait):
 # ---------------------------
 def expand_all_records_lowcode(driver, wait):
     """
-    Tenta localizar o pager e setar para 100 itens.
+    Tenta localizar o pager (id='pageSize') e setar para 100 itens.
     Usa o loader específico (.hyper-loading) para sincronizar.
     """
     debug_print("Tentando expandir registros (LowCode)...")
+    # salvar_screenshot(driver, "1_inicio_expansao")
     
-    # Seletor do GIF de carregamento que você forneceu
+    # Seletor do GIF de carregamento
     loader_loc = (By.CSS_SELECTOR, "div.hyper-loading")
 
     # Função auxiliar para esperar o loader sumir
@@ -193,17 +230,21 @@ def expand_all_records_lowcode(driver, wait):
         
         # 1. ANTES DE TUDO: Garante que a página está "quieta"
         wait_loader_vanish()
+        # salvar_screenshot(driver, "2_pos_primeiro_loader")
 
-        # 2. Localiza o dropdown
-        pager_select_loc = (By.CSS_SELECTOR, "span.k-pager-sizes select, .k-pager-sizes select")
-        wait.until(EC.element_to_be_clickable(pager_select_loc))
+        debug_print("Procurando o dropdown de itens por página...")
         
-        select_elem = driver.find_element(*pager_select_loc)
-        sel = Select(select_elem)
+        # 2. Espera o select específico (novo ID) aparecer na tela
+        dropdown_element = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "pageSize"))
+        )
+        
+        # Usa o Select do Selenium para interagir com ele
+        dropdown = Select(dropdown_element)
         
         # Verifica se já está em 100
         try:
-            current = sel.first_selected_option.text.strip()
+            current = dropdown.first_selected_option.text.strip()
         except:
             current = ""
 
@@ -211,34 +252,45 @@ def expand_all_records_lowcode(driver, wait):
             debug_print("Já está exibindo 100 registros.")
         else:
             # 3. APLICA A MUDANÇA
-            sel.select_by_visible_text("100")
-            debug_print("Selecionado '100' no dropdown.")
+            dropdown.select_by_visible_text("100")
+            debug_print("Sucesso! Paginação alterada para 100 itens.")
             
-            # --- O PULO DO GATO ---
-            # O sistema demora alguns milissegundos para mudar o display de 'none' para 'block'.
-            # Se checarmos a invisibilidade imediatamente, vai dar True (falso positivo).
-            # Damos 3 segundos para o loader APARECER.
-            time.sleep(3) 
+            # Tira foto exatamente após o clique
+            # salvar_screenshot(driver, "3_apos_selecionar_100")
             
-            # Agora esperamos ele SUMIR
+            # Dá 1 segundo para o sistema injetar o loader na tela
+            time.sleep(1) 
+            
+            # Agora esperamos ele SUMIR de verdade
             debug_print("Aguardando o loader (.hyper-loading) desaparecer...")
             wait_loader_vanish(timeout=30)
+            
+            # Tira foto do resultado final da tabela
+            # salvar_screenshot(driver, "4_resultado_final")
 
-        # 4. Extrai a contagem final para garantir que atualizou
-        pager_info = driver.find_element(By.CSS_SELECTOR, "span.k-pager-info")
-        text = pager_info.text.strip()  # ex: "1 - 100 de 250 itens"
-        debug_print(f"Paginação atualizada: {text}")
+        # 4. Extrai a contagem final para garantir que atualizou (usando o NOVO HTML)
+        try:
+            # Busca pela div específica do AngularJS que contém "Mostrando 1–17 de 17"
+            pager_info = driver.find_element(By.CSS_SELECTOR, "div[ng-if='totalTickets']")
+            text = pager_info.text.strip()  
+            debug_print(f"Paginação atualizada: {text}")
 
-        match = re.search(r"de\s+(\d+)", text)
-        if match:
-            return int(match.group(1))
+            # Usa Regex para capturar o número total que vem depois da palavra "de"
+            match = re.search(r"de\s+(\d+)", text)
+            if match:
+                return int(match.group(1))
+        except Exception as e:
+            debug_print(f"Aviso: Não consegui ler o texto da paginação. Erro: {e}")
+            
         return 0
 
     except TimeoutException:
-        debug_print("Pager não encontrado ou timeout esperando loader.")
+        debug_print("Aviso: Dropdown 'pageSize' não encontrado a tempo. Seguindo com a página atual.")
+        # salvar_screenshot(driver, "ERRO_timeout")
         return 0
     except Exception as e:
         debug_print(f"Erro ao expandir registros: {e}")
+        # salvar_screenshot(driver, "ERRO_excecao")
         return 0
 
 def _list_rows(driver):

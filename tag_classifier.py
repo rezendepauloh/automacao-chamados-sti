@@ -561,16 +561,15 @@ def read_excel_com_to_df(ws) -> pd.DataFrame:
 
 def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any, Any, bool]:
     
-    # === A CORREÇÃO: Função para limpar o ID do chamado ===
+    # 1. Função para limpar o ID do chamado (Preserva as suas alterações manuais!)
     def clean_ticket_id(series):
-        # Transforma em texto e remove o maldito ".0" do final (se existir)
         return series.astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
 
-    # Lê a planilha nova
+    # Lê a planilha nova (Que agora já vem com a data perfeitamente formatada do pré-processamento)
     df_tagged_novo = pd.read_excel(novo_excel_path, sheet_name=0)
     df_tagged_novo['Chamado#'] = clean_ticket_id(df_tagged_novo['Chamado#'])
 
-    # Pega carona no Excel aberto
+    # Pega carona no Excel aberto na tela
     excel = win32.Dispatch("Excel.Application") # type: ignore
     excel.DisplayAlerts = False
 
@@ -585,7 +584,7 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
         
     ws_tagged = wb_master.Sheets("Tagged")
 
-    # Lê os dados do master
+    # Lê os dados do master e limpa os IDs
     df_master_tagged = read_excel_com_to_df(ws_tagged)
     if 'Chamado#' in df_master_tagged.columns:
         df_master_tagged['Chamado#'] = clean_ticket_id(df_master_tagged['Chamado#'])
@@ -595,8 +594,32 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
     chamados_novos = set(df_tagged_novo['Chamado#'].unique())
     chamados_master = set(df_master_tagged['Chamado#'].unique())
 
-    # === A MÁGICA CONTINUA FUNCIONANDO AQUI ===
-    # Mantém os antigos que ainda estão abertos (Preserva as suas edições manuais!)
+    # =====================================================================
+    # FEEDBACK LOOP: Salva os chamados fechados no dataset de treino
+    # =====================================================================
+    fechados_ids = chamados_master - chamados_novos
+    if fechados_ids:
+        logger.info(f"Chamados fechados identificados: {len(fechados_ids)}. Salvando no dataset de treino...")
+        df_fechados = df_master_tagged[df_master_tagged['Chamado#'].isin(fechados_ids)].copy()
+        
+        from config import TREINO_PATH
+        try:
+            if TREINO_PATH.exists():
+                df_treino_atual = pd.read_excel(TREINO_PATH)
+                df_treino_novo = pd.concat([df_treino_atual, df_fechados], ignore_index=True)
+            else:
+                df_treino_novo = df_fechados
+                
+            df_treino_novo = df_treino_novo.drop_duplicates(subset=['Chamado#'], keep='last')
+            df_treino_novo.to_excel(TREINO_PATH, index=False)
+            logger.info("Chamados fechados adicionados ao Chamados_Treino.xlsx com sucesso.")
+        except Exception as e:
+            logger.error(f"Erro ao salvar chamados fechados no treino: {e}")
+
+    # =====================================================================
+    # MANUTENÇÃO DOS DADOS ABERTOS
+    # =====================================================================
+    # Mantém os antigos que ainda estão abertos (Salva seu trabalho manual)
     df_master_tagged_novo = df_master_tagged[df_master_tagged['Chamado#'].isin(chamados_novos)].copy()
 
     # Adiciona apenas os inéditos
@@ -605,10 +628,7 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
         logger.info(f"Novos chamados identificados: {len(chamados_adicionar)}")
         df_add = df_tagged_novo[df_tagged_novo['Chamado#'].isin(chamados_adicionar)].copy()
         
-        for col in ['Ramal', 'Andamento']:
-            if col not in df_add.columns:
-                df_add[col] = ""
-        
+        # Garante a ordem exata das colunas antes de concatenar
         col_order = ['Chamado#', 'Nome do Usuário', 'Data Criação', 'TAG', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base']
         for c in col_order:
             if c not in df_add.columns:
@@ -621,6 +641,9 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
     if len(chamados_adicionar) > 0 or (len(chamados_master - chamados_novos) > 0):
         changed = True
 
+    # =====================================================================
+    # ESCRITA NA PLANILHA (Mágica Anti-Fantasma)
+    # =====================================================================
     if changed:
         # Destrói as Tabelas (ListObjects) transformando em células normais
         for tbl in ws_tagged.ListObjects:
@@ -630,7 +653,7 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
         ws_tagged.Cells.Clear()
 
         if not df_master_tagged_novo.empty:
-            # Transforma todos os dados em string limpa
+            # Transforma todos os dados em string limpa (Impede o Excel de estragar as datas que o preprocessamento arrumou)
             df_master_tagged_novo = df_master_tagged_novo.fillna("")
             df_master_tagged_novo = df_master_tagged_novo.astype(str)
             df_master_tagged_novo = df_master_tagged_novo.replace(["nan", "NaT", "<NA>", "None"], "")
@@ -678,10 +701,6 @@ def main():
         if "Ramal" not in df.columns: df["Ramal"] = ""
         if "Andamento" not in df.columns: df["Andamento"] = ""
 
-        # df["cleaned_text"] = df.apply(
-        #     lambda r: full_clean(r["Descrição"], r["Base"]), axis=1
-        # )
-
         # gera TAG
         df["TAG"] = df.apply(
             lambda r: predict_tag(r["Descrição"], pipeline, r["Base"]), axis=1
@@ -712,9 +731,6 @@ def main():
         # --------------------------------------------------
         logger.info("Começando a fazer a sincronização com a planilha master.")
 
-        # master = Path(
-        #     r"C:\Users\paulogoncalves\OneDrive - Ministerio Público do Estado de Mato Grosso do Sul\Documentos SharePoint DIT-Manutenção\Chamados\Chamados_Unificados_Final.xlsx"
-        # )
         master = MASTER_FILE_PATH
 
         # Se o arquivo master não existir (primeira execução), usa o próprio arquivo atual como base

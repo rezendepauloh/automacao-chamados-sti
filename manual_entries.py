@@ -699,6 +699,16 @@ def get_manual_entries():
             "Unidade (Prédio)": "Chácara Cachoeira",
             "Telefone": "",
             "URL": ""
+        },
+        {
+            "Cidade": "Campo Grande",
+            "Tipo": "Setor Interno",
+            "Setor": "Departamento de Cerimonial",
+            "Sigla": "CERIMONIAL",
+            "Titular": "",
+            "Unidade (Prédio)": "PGJ",
+            "Telefone": "",
+            "URL": ""
         }
 
 

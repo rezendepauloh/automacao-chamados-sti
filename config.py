@@ -26,7 +26,7 @@ DOMINIO = "in.mpe.ms.gov.br"
 
 # Configurações do WebDriver
 DRIVER_PATH = "./chromedriver.exe"  # Baixe a versão correspondente ao seu Chrome
-HEADLESS = False  # Mude para True após testes
+HEADLESS = True  # Mude para True após testes
 
 # Adicione estes novos parâmetros
 IMPLICIT_WAIT = 10  # Espera implícita global
