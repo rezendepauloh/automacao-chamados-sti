@@ -7,16 +7,16 @@ if (Test-Path ".\venv\Scripts\Activate.ps1") {
 }
 
 # 3. Executa a esteira de dados na ordem correta
-Write-Host "Iniciando OTRS..."
+Write-Host "[1/4] Iniciando OTRS..." -ForegroundColor Green -BackgroundColor Black
 python otrs_scraper.py
 
-Write-Host "Iniciando CitSmart..."
+Write-Host "[2/4] Iniciando CitSmart..." -ForegroundColor Green -BackgroundColor Black
 python citsmart_scraper.py
 
-Write-Host "Iniciando Pré-processamento..."
+Write-Host "[3/4] Iniciando Pré-processamento..." -ForegroundColor Green -BackgroundColor Black
 python preprocess_chamados.py
 
-Write-Host "Iniciando Classificador de Tags..."
+Write-Host "[4/4] Iniciando Classificador de Tags..." -ForegroundColor Green -BackgroundColor Black
 python tag_classifier.py
 
-Write-Host "Pipeline finalizado com sucesso!"
+Write-Host "Pipeline finalizado com sucesso!" -ForegroundColor Green -BackgroundColor Black

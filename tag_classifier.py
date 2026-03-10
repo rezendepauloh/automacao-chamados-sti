@@ -543,16 +543,27 @@ def safe_write_to_sheet(wb, sheet_name, df):
         logger.error(f"Erro ao escrever em {sheet_name}: {str(e)}")
 
 def read_excel_com_to_df(ws) -> pd.DataFrame:
-    """Lê os dados de uma aba do Excel via COM e converte para DataFrame Pandas."""
+    """Lê os dados de uma aba do Excel via COM e converte para DataFrame Pandas, limpando fusos horários."""
     used_range = ws.UsedRange.Value
     
     # Se a planilha estiver vazia, retorna um DataFrame vazio
     if not used_range:
         return pd.DataFrame()
     
-    # O Excel via COM retorna uma tupla de tuplas. 
+    # Limpa os objetos de data do Windows (pywintypes.datetime) que vêm com timezone
+    cleaned_data = []
+    for row in used_range:
+        cleaned_row = []
+        for cell in row:
+            if hasattr(cell, 'tzinfo') and cell.tzinfo is not None:
+                # Arranca o fuso horário para o Pandas não dar erro ao salvar no Excel
+                cleaned_row.append(cell.replace(tzinfo=None))
+            else:
+                cleaned_row.append(cell)
+        cleaned_data.append(cleaned_row)
+    
     # A primeira linha (índice 0) é o cabeçalho, o resto (1 em diante) são os dados.
-    df = pd.DataFrame(used_range[1:], columns=used_range[0])
+    df = pd.DataFrame(cleaned_data[1:], columns=cleaned_data[0])
     
     # Remove linhas que vieram totalmente em branco do UsedRange do Excel
     df.dropna(how='all', inplace=True)
@@ -610,11 +621,14 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
             else:
                 df_treino_novo = df_fechados
                 
+            # Limpa duplicatas e preenche vazios para não quebrar a planilha
             df_treino_novo = df_treino_novo.drop_duplicates(subset=['Chamado#'], keep='last')
+            df_treino_novo = df_treino_novo.fillna("")
+            
             df_treino_novo.to_excel(TREINO_PATH, index=False)
             logger.info("Chamados fechados adicionados ao Chamados_Treino.xlsx com sucesso.")
         except Exception as e:
-            logger.error(f"Erro ao salvar chamados fechados no treino: {e}")
+            logger.error(f"Erro ao salvar chamados fechados no treino: {e}", exc_info=True)
 
     # =====================================================================
     # MANUTENÇÃO DOS DADOS ABERTOS
