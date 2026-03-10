@@ -709,6 +709,16 @@ def get_manual_entries():
             "Unidade (Prédio)": "PGJ",
             "Telefone": "",
             "URL": ""
+        },
+        {
+            "Cidade": "Campo Grande",
+            "Tipo": "Setor Interno",
+            "Setor": "Consultoria Administrativa",
+            "Sigla": "CAD",
+            "Titular": "",
+            "Unidade (Prédio)": "PGJ",
+            "Telefone": "",
+            "URL": ""
         }
 
 

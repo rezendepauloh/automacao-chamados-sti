@@ -66,6 +66,11 @@ DEBUG_DIR_CITSMART = BASE_DIR / "debug_logs" / "citsmart"
 DEBUG_DIR_CITSMART.mkdir(parents=True, exist_ok=True)
 BACKUP_CSV_CITSMART = BASE_DIR /"debug_logs" / "citsmart" / "backup_stream.csv"
 
+# PREPROCESS
+DEBUG_DIR_PREPROCESS = BASE_DIR / "debug_logs" / "preprocess"
+DEBUG_DIR_PREPROCESS.mkdir(parents=True, exist_ok=True)
+BACKUP_CSV_PREPROCESS = BASE_DIR /"debug_logs" / "preprocess" / "backup_stream.csv"
+
 # Tag Classfier
 DEBUG_DIR_TAG = BASE_DIR / "debug_logs" / "tag"
 DEBUG_DIR_TAG.mkdir(parents=True, exist_ok=True)

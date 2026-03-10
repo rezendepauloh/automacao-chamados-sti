@@ -7,7 +7,6 @@ from selenium.common.exceptions import (
     NoSuchElementException,
     StaleElementReferenceException
 )
-from config import *
 import pandas as pd
 import time
 import sys
@@ -19,26 +18,36 @@ from typing import cast
 from xlsxwriter.workbook import Workbook as XlsxWorkbook # Alias para não confundir
 import logging
 from ldap3 import Server, Connection, ALL, SUBTREE, ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES
+from config import (
+    OTRS_URL, PASSWORD, IMPLICIT_WAIT,
+    HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OTRS,
+    DOMINIO, USERNAME, INPUT_DIR_BRUTOS,
+    BACKUP_PATH_OTRS, TEMP_PATH_OTRS
+)
 
 # Configurações atualizadas de cabeçalhos incluindo a coluna Unidade
 HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição']
 
 # --- Configuração de logging ---
 logging.basicConfig(
-    filename=str(DEBUG_DIR_OTRS / "otrs_debug.log"),
-    filemode="a",
     level=logging.DEBUG,
-    format="[%(asctime)s] %(levelname)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    # Adicionamos os colchetes [] e removemos os milissegundos do datefmt para ficar limpo
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(DEBUG_DIR_OTRS / "otrs_scraper.log", encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
+logger = logging.getLogger(__name__)
+
+# --- O SEGREDO ESTÁ AQUI: Cala a boca do Selenium e do urllib3 ---
+logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+# -----------------------------------------------------------------
 
 def get_timestamp():
     return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-
-def debug_print(msg):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[DEBUG {ts}] {msg}")
-    logging.debug(msg)
 
 # --- Configuração do AD ---
 """Tenta conectar no AD. Se falhar, avisa no log mas não quebra o robô."""
@@ -99,11 +108,11 @@ def fetch_unidade(username):
         return 'Cadastro Incompleto (AD)'
     
     except Exception as e:
-        # Usa debug_print para manter padrão do arquivo, ou logging se preferir
+        # Usa logger.info() para manter padrão do arquivo, ou logging se preferir
         msg = f"Erro AD lookup para {username}: {e}"
-        # Tenta usar o debug_print definido no arquivo, senão printa normal
+        # Tenta usar o logger.info() definido no arquivo, senão printa normal
         try:
-            debug_print(msg)
+            logger.info(msg)
         except NameError:
             print(msg)
             
@@ -190,7 +199,7 @@ def get_ticket_description(driver):
         return clean
 
     except Exception as e:
-        debug_print(f"Erro em get_ticket_description: {type(e).__name__}: {e}")
+        logger.error(f"Erro em get_ticket_description: {type(e).__name__}: {e}")
         return ""
 
     finally:
@@ -240,14 +249,14 @@ def check_pagination(driver):
         page_links = pagination_span.find_elements(By.TAG_NAME, "a")
         
         if len(page_links) > 0:
-            debug_print("Passo 8.1: Paginação detectada: Verdadeiro")
+            logger.info("Passo 8.1: Paginação detectada: Verdadeiro")
             return True
         else:
-            debug_print("Passo 8.1: Paginação detectada: Falso (única página)")
+            logger.info("Passo 8.1: Paginação detectada: Falso (única página)")
             return False
             
     except Exception as e:
-        debug_print(f"Passo 8.1: Erro na verificação de paginação: {str(e)}")
+        logger.error(f"Passo 8.1: Erro na verificação de paginação: {str(e)}")
         return False
 
 # Extração por linha agora inclui Unidade via AD lookup
@@ -263,28 +272,28 @@ def extract_row_data(driver, row):
             # O .text retorna string vazia se não tiver nada, então é mais seguro que get_attribute
             data['Chamado#'] = cells[3].find_element(By.TAG_NAME, 'a').text.strip()
         except Exception as e:
-            debug_print(f"Erro Chamado#: {e}")
+            logger.error(f"Erro Chamado#: {e}")
 
         # --- Data Criação (Cell 4) ---
         try:
             raw_date = cells[4].find_element(By.TAG_NAME, 'div').get_attribute('title')
             data['Data Criação'] = (raw_date or "").strip()
         except Exception as e:
-            debug_print(f"Erro Data Criação: {e}")
+            logger.error(f"Erro Data Criação: {e}")
 
         # --- Título (Cell 6) ---
         try:
             raw_title = cells[6].find_element(By.TAG_NAME, 'div').get_attribute('title')
             data['Título'] = (raw_title or "").strip()
         except Exception as e:
-            debug_print(f"Erro Título: {e}")
+            logger.error(f"Erro Título: {e}")
 
         # --- Cidade - Prédio (Cell 8) ---
         try:
             raw_city = cells[8].find_element(By.TAG_NAME, 'div').get_attribute('title')
             data['Cidade - Prédio'] = (raw_city or "").strip()
         except Exception as e:
-            debug_print(f"Erro Cidade - Prédio: {e}")
+            logger.error(f"Erro Cidade - Prédio: {e}")
 
         # --- Nome do Usuário (Cell 9) ---
         try:
@@ -292,7 +301,7 @@ def extract_row_data(driver, row):
             client_user = (raw_user or "").strip()
             data['Nome do Usuário'] = client_user
         except Exception as e:
-            debug_print(f"Erro Nome do Usuário: {e}")
+            logger.error(f"Erro Nome do Usuário: {e}")
 
         # --- ID do Cliente e Unidade (Cell 10) ---
         try:
@@ -308,34 +317,34 @@ def extract_row_data(driver, row):
                 data['Unidade'] = "N/A"
 
         except Exception as e:
-            debug_print(f"Erro ID do Cliente ou lookup AD: {e}")
+            logger.error(f"Erro ID do Cliente ou lookup AD: {e}")
 
         # --- Descrição (Processo separado) ---
         try:
             # Aqui passamos o driver e a linha atual (current)
             data['Descrição'] = process_ticket(driver, current)
         except Exception as e:
-            debug_print(f"Erro Descrição: {e}")
+            logger.error(f"Erro Descrição: {e}")
 
-        # debug_print(f"Dados extraídos: {data['Chamado#']}")
+        # logger.info(f"Dados extraídos: {data['Chamado#']}")
         
         return data
     
     except Exception as e:
-        debug_print(f"Erro geral linha: {e}")
+        logger.error(f"Erro geral linha: {e}")
         return data
 
 def process_all_pages(driver):
     all_data, page = [], 1
     while True:
-        debug_print(f"Página {page}: extraindo dados...")
+        logger.info(f"Página {page}: extraindo dados...")
         table = WebDriverWait(driver, EXPLICIT_WAIT).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'table.TableSmall'))
         )
         
         rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
         total_linhas = len(rows)
-        debug_print(f"Linhas detectadas: {total_linhas}")
+        logger.info(f"Linhas detectadas: {total_linhas}")
         
         for idx, row in enumerate(rows):
             try:
@@ -344,17 +353,17 @@ def process_all_pages(driver):
                 
                 # Pega o número do chamado do dicionário retornado
                 chamado_num = data.get('Chamado#', 'N/A')
-                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
+                logger.info(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
             
             except StaleElementReferenceException:
-                debug_print("Linha obsoleta, tentando novamente")
+                logger.error("Linha obsoleta, tentando novamente")
                 # Atualiza a lista de elementos da página
                 rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
                 data = extract_row_data(driver, rows[idx])
                 all_data.append(data)
                 
                 chamado_num = data.get('Chamado#', 'N/A')
-                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
+                logger.info(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
 
         # tentar próxima página via links
         try:
@@ -366,20 +375,20 @@ def process_all_pages(driver):
             if idx + 1 >= len(ordered):
                 break
             next_link = ordered[idx + 1]
-            debug_print(f"Indo para página {next_link.text}")
+            logger.info(f"Indo para página {next_link.text}")
             driver.execute_script("arguments[0].click();", next_link)
             WebDriverWait(driver, EXPLICIT_WAIT).until(EC.staleness_of(table))
             page += 1
         
         except Exception:
-            debug_print("Fim da paginação ou erro ao avançar")
+            logger.error("Fim da paginação ou erro ao avançar")
             break
 
     return all_data
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
 def initial_config():
-    options = webdriver.ChromeOptions()
+    options = webdriver.ChromeOptions() # type: ignore
 
     # Desativa logs desnecessários
     options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"]) # Oculta o "DevTools listening..."
@@ -420,37 +429,37 @@ def initial_config():
 
 # ========== ETAPA 1: LOGIN ========== #
 def login_page(driver):
-    debug_print("Passo 1: Carregando página de login...")
+    logger.info("Passo 1: Carregando página de login...")
     driver.get(OTRS_URL)
     # time.sleep(2)  # Espera inicial anti-bot
 
-    debug_print("Passo 2: Preenchendo credenciais...")
+    logger.info("Passo 2: Preenchendo credenciais...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.presence_of_element_located((By.ID, "User"))
     ).send_keys(USERNAME)
     
     driver.find_element(By.ID, "Password").send_keys(PASSWORD)
 
-    debug_print("Passo 3: Clicando no botão de login...")
+    logger.info("Passo 3: Clicando no botão de login...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.element_to_be_clickable((By.ID, "LoginButton"))
     ).click()
 
 # ========== ETAPA 2: NAVEGAÇÃO PARA FILA ========== #
 def navigation_queue(driver):
-    debug_print("Passo 4: Navegando para fila principal...")
+    logger.info("Passo 4: Navegando para fila principal...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'Action=AgentTicketQueue')]"))
     )
     
-    debug_print("Passo 5: Clicando no link da fila...")
+    logger.info("Passo 5: Clicando no link da fila...")
     queue_link = driver.find_element(
         By.XPATH, "//a[contains(@href, 'Action=AgentTicketQueue')]")
     queue_link.click()    
 
 # ========== ETAPA 3: TODOS OS CHAMADOS ========== #
 def all_chamados(driver):
-    debug_print("Passo 6: Acessando todos os chamados...")
+    logger.info("Passo 6: Acessando todos os chamados...")
     all_tickets_link = WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.element_to_be_clickable(
             (By.XPATH, "//a[contains(@href, 'QueueID=0') and contains(@href, 'Filter=All')]"))
@@ -461,7 +470,7 @@ def all_chamados(driver):
     driver.execute_script("arguments[0].click();", all_tickets_link)
 
     # ========== VERIFICAÇÃO FINAL ========== #
-    debug_print("Passo 7: Validando carregamento...")
+    logger.info("Passo 7: Validando carregamento...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.presence_of_element_located(
             (By.XPATH, "//li[@class='Active ']//a[contains(., 'Todos os Chamados')]")
@@ -479,12 +488,12 @@ def pagination_or_not(driver):
         return len(links) > 1
     
     except Exception as e:
-        debug_print(f"Erro na verificação de paginação: {e}")
+        logger.error(f"Erro na verificação de paginação: {e}")
         return False
 
 # ========== ETAPA 5: EXTRAÇÃO DE DADOS ========== #
 def data_extract(driver, has_pagination):
-    debug_print("Passo 9: Extraindo dados da tabela...")
+    logger.info("Passo 9: Extraindo dados da tabela...")
     
     # Se tem mais de uma página, vai para a função que arrumamos antes
     if has_pagination:
@@ -499,7 +508,7 @@ def data_extract(driver, has_pagination):
         rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
         
         total_linhas = len(rows)
-        debug_print(f"Linhas detectadas: {total_linhas}")
+        logger.info(f"Linhas detectadas: {total_linhas}")
         
         for idx, row in enumerate(rows):
             try:
@@ -508,16 +517,16 @@ def data_extract(driver, has_pagination):
                 
                 # Print no formato [1/21] Lido: 46444521
                 chamado_num = data.get('Chamado#', 'N/A')
-                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
+                logger.info(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
                 
             except StaleElementReferenceException:
-                debug_print("Linha obsoleta, tentando novamente")
+                logger.error("Linha obsoleta, tentando novamente")
                 rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
                 data = extract_row_data(driver, rows[idx])
                 all_data.append(data)
                 
                 chamado_num = data.get('Chamado#', 'N/A')
-                debug_print(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
+                logger.info(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
                 
         return all_data
 
@@ -553,8 +562,7 @@ def brute_data(data):
             text = '' if pd.isna(desc) else str(desc)
             ws.set_row(r, 15 * (text.count('\n')+1))
 
-    debug_print(f"Passo 10.1: Dados finais salvos em: {out_dir}")
-    debug_print(f"Passo 10.2: Total de registros extraídos: {len(df)}")  
+    logger.info(f"SUCESSO! Total de {len(df)} chamados salvos em: {file}")
 
 def scrape_otrs():
     driver = None
@@ -562,7 +570,7 @@ def scrape_otrs():
         # ========== CONFIGURAÇÃO INICIAL ========== #
         options = initial_config()
 
-        driver = webdriver.Chrome(options=options)
+        driver = webdriver.Chrome(options=options) # type: ignore
         driver.implicitly_wait(IMPLICIT_WAIT)
 
         # Login e navegação

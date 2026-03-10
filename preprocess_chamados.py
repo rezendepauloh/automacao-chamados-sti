@@ -9,10 +9,13 @@ from fuzzywuzzy import process
 import shutil, time, tempfile
 from typing import cast
 from xlsxwriter.workbook import Workbook as XlsxWorkbook # Alias para não confundir
+import logging
+import sys
 
 from config import (
     INPUT_DIR_BRUTOS,
-    OUTPUT_DIR_TRATADOS
+    OUTPUT_DIR_TRATADOS,
+    DEBUG_DIR_PREPROCESS
 )
 
 try:
@@ -21,9 +24,17 @@ except ImportError:
     win32 = None
 
 
-def debug_print(msg):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[DEBUG {ts}] {msg}")
+logging.basicConfig(
+    level=logging.DEBUG,
+    # Adicionamos os colchetes [] e removemos os milissegundos do datefmt para ficar limpo
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(DEBUG_DIR_PREPROCESS / "preprocess_chamados.log", encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 # --- Excel auto-fit via COM on Windows ---
@@ -33,7 +44,7 @@ def autofit_excel_rows(filepath: Path):
 
     abs_path = filepath.resolve()
     
-    debug_print(f"Auto-fit nas linhas de {abs_path} …")
+    logger.info(f"Auto-fit nas linhas de {abs_path} …")
     
     excel = win32.DispatchEx('Excel.Application')
     excel.Visible = False
@@ -59,7 +70,7 @@ def safe_read_excel(path: Path) -> pd.DataFrame:
     
     abs_path = path.resolve()
     
-    debug_print(f"Falha de permissão, copiando via COM: {abs_path}")
+    logger.error(f"Falha de permissão, copiando via COM: {abs_path}")
     
     tmp = tempfile.NamedTemporaryFile(suffix=abs_path.suffix, delete=False)
     tmp_path = Path(tmp.name)
@@ -147,7 +158,7 @@ def normalize_text(text: str) -> str:
 def prepare_unidades_lookup():
     units_file = INPUT_DIR_BRUTOS / "Unidades_MPMS.xlsx"
     if not units_file.exists():
-        debug_print(f"Erro: não encontrei {units_file}")
+        logger.error(f"Erro: não encontrei {units_file}")
         sys.exit(1)
     units_df = pd.read_excel(units_file)
     units_df['setor_normalizado'] = units_df['Setor'].apply(normalize_text)
@@ -208,11 +219,11 @@ def process_otrs(ts: str) -> pd.DataFrame:
     files = sorted(INPUT_DIR_BRUTOS.glob("Chamados_OTRS_*.xlsx"))
     
     if not files:
-        debug_print("Nenhum arquivo OTRS encontrado")
+        logger.info("Nenhum arquivo OTRS encontrado")
         sys.exit(1)
     path = files[-1]
     
-    debug_print(f"Processando OTRS: {path.name}")
+    logger.info(f"Processando OTRS: {path.name}")
     
     df = safe_read_excel(path)
     df['Descrição'] = df['Descrição'].apply(clean_otrs_description)
@@ -231,11 +242,11 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     files = sorted(INPUT_DIR_BRUTOS.glob("Chamados_CitSmart_*.xlsx"))
     
     if not files:
-        debug_print("Nenhum arquivo CitSmart encontrado")
+        logger.info("Nenhum arquivo CitSmart encontrado")
         sys.exit(1)
     path = files[-1]
     
-    debug_print(f"Processando CitSmart: {path.name}")
+    logger.info(f"Processando CitSmart: {path.name}")
     
     df = safe_read_excel(path)
     df['Data Criação'] = df['Data Criação'].astype(str)
@@ -283,7 +294,7 @@ def main():
     tamanho_depois = len(combined)
     
     if tamanho_antes != tamanho_depois:
-        debug_print(f"⚠️ {tamanho_antes - tamanho_depois} chamados duplicados foram removidos!")
+        logger.info(f"⚠️ {tamanho_antes - tamanho_depois} chamados duplicados foram removidos!")
     
     # 2. Padroniza a Data de Criação (Resolve os fusos e o padrão americano)
     if 'Data Criação' in combined.columns:
@@ -315,7 +326,7 @@ def main():
     
     out = OUTPUT_DIR_TRATADOS / f"Chamados_Unificados_{ts}.xlsx"
 
-    debug_print(f"Processando Unificado: Chamados_Unificados_{ts}.xlsx")
+    logger.info(f"Processando Unificado: Chamados_Unificados_{ts}.xlsx")
     
     with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
         combined.to_excel(writer, sheet_name='Unificados', index=False)
@@ -332,7 +343,8 @@ def main():
             ws.set_row(r,15*(str(cell).count('\n')+1))
     autofit_excel_rows(out)
     
-    debug_print("Script finalizado!")
+    logger.info("Script finalizado!")
+    # logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")
 
 
 if __name__ == '__main__':

@@ -10,6 +10,8 @@ from datetime import datetime
 import time
 import pandas as pd
 import re
+import logging
+import sys
 from pathlib import Path
 from ldap3 import Server, Connection, ALL, SUBTREE
 from typing import cast
@@ -23,9 +25,22 @@ from config import (
 # ---------------------------
 # Utilitários e Log
 # ---------------------------
-def debug_print(msg):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[DEBUG {ts}] {msg}")
+logging.basicConfig(
+    level=logging.DEBUG,
+    # Adicionamos os colchetes [] e removemos os milissegundos do datefmt para ficar limpo
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(DEBUG_DIR_CITSMART / "citsmart_scraper.log", encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# --- O SEGREDO ESTÁ AQUI: Cala a boca do Selenium e do urllib3 ---
+logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+# -----------------------------------------------------------------
 
 def salvar_screenshot(driver, nome_etapa):
     """Tira um print da tela para vermos exatamente o que o Selenium vê."""
@@ -33,27 +48,27 @@ def salvar_screenshot(driver, nome_etapa):
     filename = f"debug_citsmart_{ts}_{nome_etapa}.png"
     filepath = DEBUG_DIR_CITSMART / filename
     driver.save_screenshot(str(filepath))
-    debug_print(f"📸 Screenshot salvo: {filename}")
+    logger.debug(f"📸 Screenshot salvo: {filename}")
 
 def inspecionar_elemento(driver, seletor, nome_elemento):
     """Extrai informações vitais do elemento antes de tentar clicar."""
-    debug_print(f"🔍 Inspecionando: {nome_elemento} {seletor}")
+    logger.debug(f"🔍 Inspecionando: {nome_elemento} {seletor}")
     try:
         elementos = driver.find_elements(*seletor)
         if not elementos:
-            debug_print(f"❌ O elemento {nome_elemento} não existe no DOM no momento.")
+            logger.debug(f"❌ O elemento {nome_elemento} não existe no DOM no momento.")
             return None
         
         el = elementos[0]
         html_trecho = el.get_attribute('outerHTML')[:150] # Pega os primeiros 150 caracteres
         
-        debug_print(f"Status de {nome_elemento}:")
-        debug_print(f" - Visível na tela? {el.is_displayed()}")
-        debug_print(f" - Habilitado para clique? {el.is_enabled()}")
-        debug_print(f" - HTML encontrado: {html_trecho}...")
+        logger.debug(f"Status de {nome_elemento}:")
+        logger.debug(f" - Visível na tela? {el.is_displayed()}")
+        logger.debug(f" - Habilitado para clique? {el.is_enabled()}")
+        logger.debug(f" - HTML encontrado: {html_trecho}...")
         return el
     except Exception as e:
-        debug_print(f"⚠️ Erro ao inspecionar {nome_elemento}: {e}")
+        logger.error(f"⚠️ Erro ao inspecionar {nome_elemento}: {e}")
         return None
 
 def find_all(ctx, candidates, timeout=5):
@@ -81,7 +96,7 @@ def setup_ad_connection():
         conn = Connection(server, user=f"MPE\\{USERNAME}", password=PASSWORD, auto_bind=True)
         return conn
     except Exception as e:
-        debug_print(f"⚠️ Aviso: Não foi possível conectar ao AD. Erro: {e}")
+        logger.error(f"⚠️ Aviso: Não foi possível conectar ao AD. Erro: {e}")
         return None
 
 def fetch_setor_temp(conn, display_name):
@@ -126,14 +141,14 @@ def fetch_setor_temp(conn, display_name):
         return 'Cadastro Incompleto (AD)'
         
     except Exception as e:
-        debug_print(f"Erro lookup AD para '{display_name}': {e}")
+        logger.error(f"Erro lookup AD para '{display_name}': {e}")
         return 'Erro na Consulta'
 
 # ---------------------------
 # Navegador / Login
 # ---------------------------
 def initial_config():
-    opts = webdriver.ChromeOptions()
+    opts = webdriver.ChromeOptions() # type: ignore
     opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"]) # Oculta o "DevTools listening..."
     opts.add_argument("--disable-blink-features=CSSAnimations,ScrollAnimator")
     opts.add_argument("--incognito")
@@ -151,12 +166,12 @@ def initial_config():
     else:
         opts.add_argument("--start-maximized")
     opts.page_load_strategy = "eager"
-    driver = webdriver.Chrome(options=opts)
+    driver = webdriver.Chrome(options=opts) # type: ignore
     wait = WebDriverWait(driver, timeout=EXPLICIT_WAIT, poll_frequency=0.1)
     return driver, wait
 
 def navigate_to_caixa_entrada(driver, wait):
-    debug_print("Acessando CitSmart e fazendo login…")
+    logger.info("Acessando CitSmart e fazendo login…")
     driver.get(CITSMART_URL)
 
     # 1) E-mail
@@ -176,35 +191,35 @@ def navigate_to_caixa_entrada(driver, wait):
     # 3) KMSI
     try:
         wait.until(EC.presence_of_element_located((By.ID, "KmsiCheckboxField")))
-        debug_print("Pulando KMSI de manter conectado…")
+        logger.info("Pulando KMSI de manter conectado…")
         wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
     except TimeoutException:
         pass
 
     # 4) Redirecionamento Direto para LowCode
-    debug_print("Aguardando carregamento do portal inicial...")
+    logger.info("Aguardando carregamento do portal inicial...")
     wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
     time.sleep(5) 
 
     nova_fila = "https://suporte.mpms.mp.br/inbox/lowcode/form/copilot_novo/default"
-    debug_print(f"Forçando navegação para: {nova_fila}")
+    logger.info(f"Forçando navegação para: {nova_fila}")
     
     driver.switch_to.default_content()
     driver.execute_script(f"window.location.href = '{nova_fila}';")
 
     try:
         wait.until(EC.url_contains("copilot_novo"))
-        debug_print("URL de destino alcançada.")
+        logger.info("URL de destino alcançada.")
         
-        debug_print("Aguardando o iframe 'App'...")
+        logger.info("Aguardando o iframe 'App'...")
         wait.until(EC.frame_to_be_available_and_switch_to_it((By.CSS_SELECTOR, "iframe[title='App']")))
         
         wait.until(EC.presence_of_element_located((By.ID, "pageSize")))
-        debug_print("Sucesso! Interface do Copilot detectada via seletor de paginação.")
+        logger.info("Sucesso! Interface do Copilot detectada via seletor de paginação.")
         
     except Exception as e:
-        debug_print(f"Não detectou o elemento interno: {e}")
-        driver.save_screenshot("erro_iframe_app.png")
+        logger.info(f"Não detectou o elemento interno: {e}")
+        driver.save_screenshot(f"{DEBUG_DIR_CITSMART}/erro_iframe_app_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png")
         raise
 
 # ---------------------------
@@ -215,7 +230,7 @@ def expand_all_records_lowcode(driver, wait):
     Tenta localizar o pager (id='pageSize') e setar para 100 itens.
     Usa o loader específico (.hyper-loading) para sincronizar.
     """
-    debug_print("Tentando expandir registros (LowCode)...")
+    logger.info("Tentando expandir registros (LowCode)...")
     # salvar_screenshot(driver, "1_inicio_expansao")
     
     # Seletor do GIF de carregamento
@@ -229,7 +244,7 @@ def expand_all_records_lowcode(driver, wait):
                 EC.invisibility_of_element_located(loader_loc)
             )
         except TimeoutException:
-            debug_print("Aviso: O loader demorou muito para sumir ou não apareceu.")
+            logger.info("Aviso: O loader demorou muito para sumir ou não apareceu.")
 
     try:
         time.sleep(3) 
@@ -238,7 +253,7 @@ def expand_all_records_lowcode(driver, wait):
         wait_loader_vanish()
         # salvar_screenshot(driver, "2_pos_primeiro_loader")
 
-        debug_print("Procurando o dropdown de itens por página...")
+        logger.info("Procurando o dropdown de itens por página...")
         
         # 2. Espera o select específico (novo ID) aparecer na tela
         dropdown_element = WebDriverWait(driver, 10).until(
@@ -255,11 +270,11 @@ def expand_all_records_lowcode(driver, wait):
             current = ""
 
         if "100" in current:
-            debug_print("Já está exibindo 100 registros.")
+            logger.info("Já está exibindo 100 registros.")
         else:
             # 3. APLICA A MUDANÇA
             dropdown.select_by_visible_text("100")
-            debug_print("Sucesso! Paginação alterada para 100 itens.")
+            logger.info("Sucesso! Paginação alterada para 100 itens.")
             
             # Tira foto exatamente após o clique
             # salvar_screenshot(driver, "3_apos_selecionar_100")
@@ -268,7 +283,7 @@ def expand_all_records_lowcode(driver, wait):
             time.sleep(1) 
             
             # Agora esperamos ele SUMIR de verdade
-            debug_print("Aguardando o loader (.hyper-loading) desaparecer...")
+            logger.info("Aguardando o loader (.hyper-loading) desaparecer...")
             wait_loader_vanish(timeout=30)
             
             # Tira foto do resultado final da tabela
@@ -279,23 +294,23 @@ def expand_all_records_lowcode(driver, wait):
             # Busca pela div específica do AngularJS que contém "Mostrando 1–17 de 17"
             pager_info = driver.find_element(By.CSS_SELECTOR, "div[ng-if='totalTickets']")
             text = pager_info.text.strip()  
-            debug_print(f"Paginação atualizada: {text}")
+            logger.info(f"Paginação atualizada: {text}")
 
             # Usa Regex para capturar o número total que vem depois da palavra "de"
             match = re.search(r"de\s+(\d+)", text)
             if match:
                 return int(match.group(1))
         except Exception as e:
-            debug_print(f"Aviso: Não consegui ler o texto da paginação. Erro: {e}")
+            logger.error(f"Aviso: Não consegui ler o texto da paginação. Erro: {e}")
             
         return 0
 
     except TimeoutException:
-        debug_print("Aviso: Dropdown 'pageSize' não encontrado a tempo. Seguindo com a página atual.")
+        logger.error("Aviso: Dropdown 'pageSize' não encontrado a tempo. Seguindo com a página atual.")
         # salvar_screenshot(driver, "ERRO_timeout")
         return 0
     except Exception as e:
-        debug_print(f"Erro ao expandir registros: {e}")
+        logger.error(f"Erro ao expandir registros: {e}")
         # salvar_screenshot(driver, "ERRO_excecao")
         return 0
 
@@ -311,11 +326,11 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None):
     
     # Se não achou linhas, espera um pouco e tenta de novo (carregamento lento)
     if not rows:
-        debug_print("Nenhuma linha encontrada na tabela. Aguardando 3s...")
+        logger.info("Nenhuma linha encontrada na tabela. Aguardando 3s...")
         time.sleep(3)
         rows = _list_rows(driver)
 
-    debug_print(f"Linhas detectadas: {len(rows)}")
+    logger.info(f"Linhas detectadas: {len(rows)}")
     collected = []
 
     for idx, row in enumerate(rows):
@@ -372,7 +387,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None):
                 "Descrição": descricao,
                 "Data Criação": data_criacao
             })
-            debug_print(f"[{idx+1}/{len(rows)}] Lido: {cid}")
+            logger.info(f"[{idx+1}/{len(rows)}] Lido: {cid}")
 
         except Exception as e:
             # Erros de leitura em uma linha não devem parar o script
@@ -389,13 +404,13 @@ def ir_para_proxima_pagina(driver, wait):
 
         # Se tiver a classe 'disabled', acabaram as páginas
         if "disabled" in btn_next_container.get_attribute("class"):
-            debug_print("Paginação encerrada: Botão 'Próximo' está desabilitado.")
+            logger.info("Paginação encerrada: Botão 'Próximo' está desabilitado.")
             return False
 
         # Clica no link dentro do LI
         link_next = btn_next_container.find_element(By.TAG_NAME, "a")
         driver.execute_script("arguments[0].click();", link_next)
-        debug_print("Navegando para a próxima página...")
+        logger.info("Navegando para a próxima página...")
 
         # Aguarda tabela atualizar
         time.sleep(3)
@@ -403,7 +418,7 @@ def ir_para_proxima_pagina(driver, wait):
         return True
 
     except Exception as e:
-        debug_print(f"Fim da paginação ou erro: {e}")
+        logger.error(f"Fim da paginação ou erro: {e}")
         return False
 
 # ---------------------------
@@ -413,9 +428,9 @@ def scrape_citsmart():
     ad_conn = None
     try:
         ad_conn = setup_ad_connection()
-        debug_print("Conexão AD estabelecida.")
+        logger.info("Conexão AD estabelecida.")
     except Exception as e:
-        debug_print(f"AD indisponível: {e}")
+        logger.error(f"AD indisponível: {e}")
 
     driver, wait = initial_config()
     todos_os_dados = []
@@ -426,14 +441,14 @@ def scrape_citsmart():
 
         pagina = 1
         while True:
-            debug_print(f"--- Processando Página {pagina} ---")
+            logger.info(f"--- Processando Página {pagina} ---")
             
             dados_pagina = process_page(driver, wait, filtro_grupo=None, ad_conn=ad_conn)
             if dados_pagina:
                 todos_os_dados.extend(dados_pagina)
-                debug_print(f"Coletados {len(dados_pagina)} registros nesta página.")
+                logger.info(f"Coletados {len(dados_pagina)} registros nesta página.")
             else:
-                debug_print("Aviso: Página retornou 0 registros.")
+                logger.info("Aviso: Página retornou 0 registros.")
 
             # Tenta ir para próxima página
             if not ir_para_proxima_pagina(driver, wait):
@@ -474,9 +489,9 @@ def scrape_citsmart():
                     text = '' if pd.isna(desc) else str(desc)
                     ws.set_row(r, 15 * (text.count('\n')+1))
 
-            debug_print(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")
+            logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")
         else:
-            debug_print("Nenhum dado foi coletado.")
+            logger.info("Nenhum dado foi coletado.")
 
     finally:
         driver.quit()
