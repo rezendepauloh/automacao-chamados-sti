@@ -314,6 +314,8 @@ def main():
     # =========================================================
     
     out = OUTPUT_DIR_TRATADOS / f"Chamados_Unificados_{ts}.xlsx"
+
+    debug_print(f"Processando Unificado: Chamados_Unificados_{ts}.xlsx")
     
     with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
         combined.to_excel(writer, sheet_name='Unificados', index=False)

@@ -41,13 +41,13 @@ def debug_print(msg):
     logging.debug(msg)
 
 # --- Configuração do AD ---
-ad_server = Server(DOMINIO, get_info=ALL)
-ad_conn = Connection(
-    ad_server,
-    user=f"MPE\\{USERNAME}",
-    password=PASSWORD,
-    auto_bind=True
-)
+"""Tenta conectar no AD. Se falhar, avisa no log mas não quebra o robô."""
+try:
+    # Se o SSL estiver dando erro 10054, deixamos use_ssl=False temporariamente
+    ad_server = Server(DOMINIO, get_info=ALL) 
+    ad_conn = Connection(ad_server, user=f"MPE\\{USERNAME}", password=PASSWORD, auto_bind=True)
+except Exception as e:
+     logging.debug(f"⚠️ Aviso: Não foi possível conectar ao AD. Erro: {e}")
 
 # ---------------------------
 # AD (Active Directory) - Versão Robusta

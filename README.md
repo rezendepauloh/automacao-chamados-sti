@@ -35,16 +35,18 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 
 ## 📂 Estrutura do Projeto
 
+- `salvar_senha.py`: Utilitário de segurança para salvar e criptografar as credenciais de acesso localmente, evitando senhas no código.
 - `citsmart_scraper.py`: Bot para extração do sistema LowCode/CitSmart.
 - `otrs_scraper.py`: Bot para extração do sistema OTRS.
 - `unidades_scraper.py`: Scraper que atualiza a lista de unidades/promotorias do site oficial.
 - `preprocess_chamados.py`: Limpeza, padronização e unificação das bases.
 - `tag_classifier.py`: O "cérebro" do projeto. Treina a IA e classifica novos chamados.
 - `config.py`: Central de configurações e caminhos.
+- `rodar_pipeline.ps1`: Script orquestrador em PowerShell que executa todos os robôs em sequência de forma limpa.
 
-## 📦 Como Instalar
+## 📦 Como Instalar e Configurar
 
-1. Clone o repositório:
+1. **Clone o repositório:**
    ```bash
    git clone [https://github.com/rezendepauloh/automacao-chamados-sti](https://github.com/rezendepauloh/automacao-chamados-sti)
    ```

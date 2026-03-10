@@ -74,9 +74,15 @@ def find_all(ctx, candidates, timeout=5):
 # AD (Active Directory) - Versão Robusta
 # ---------------------------
 def setup_ad_connection():
-    server = Server(DOMINIO, get_info=ALL)
-    conn = Connection(server, user=f"MPE\\{USERNAME}", password=PASSWORD, auto_bind=True)
-    return conn
+    """Tenta conectar no AD. Se falhar, avisa no log mas não quebra o robô."""
+    try:
+        # Se o SSL estiver dando erro 10054, deixamos use_ssl=False temporariamente
+        server = Server(DOMINIO, get_info=ALL) 
+        conn = Connection(server, user=f"MPE\\{USERNAME}", password=PASSWORD, auto_bind=True)
+        return conn
+    except Exception as e:
+        debug_print(f"⚠️ Aviso: Não foi possível conectar ao AD. Erro: {e}")
+        return None
 
 def fetch_setor_temp(conn, display_name):
     if not display_name or not conn:
