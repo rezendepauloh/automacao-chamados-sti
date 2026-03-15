@@ -471,9 +471,16 @@ def format_excel(workbook_or_path, fechar_apos: bool = True):
 
     # ---- Salvar e, se necessário, fechar/quitar ----
     wb.Save()
-    if fechar_apos and not obtained_from_open:
+    
+    # Só fecha se recebermos autorização (fechar_apos = True)
+    if fechar_apos:
         wb.Close(SaveChanges=True)
-        excel_app.Quit()
+        try:
+            # Tenta fechar o aplicativo Excel inteiro APENAS se não houver outras planilhas abertas
+            if excel_app.Workbooks.Count == 0:
+                excel_app.Quit()
+        except Exception:
+            pass
 
     # Se obtained_from_open=True e fechar_apos=False, deixamos o Excel aberto.
     return None
@@ -570,7 +577,7 @@ def read_excel_com_to_df(ws) -> pd.DataFrame:
     
     return df
 
-def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any, Any, bool]:
+def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any, Any, bool, bool]:
     
     # 1. Função para limpar o ID do chamado (Preserva as suas alterações manuais!)
     def clean_ticket_id(series):
@@ -580,16 +587,32 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
     df_tagged_novo = pd.read_excel(novo_excel_path, sheet_name=0)
     df_tagged_novo['Chamado#'] = clean_ticket_id(df_tagged_novo['Chamado#'])
 
-    # Pega carona no Excel aberto na tela
-    excel = win32.Dispatch("Excel.Application") # type: ignore
+    # =====================================================================
+    # NOVA LÓGICA DE CONEXÃO COM O EXCEL
+    # =====================================================================
+    try:
+        # Tenta pegar um Excel que o usuário já tem aberto na tela
+        excel = win32.GetActiveObject("Excel.Application") # type: ignore
+        logger.info("Tem Excel aberto")
+    except Exception:
+        # Se não tem nenhum Excel aberto, cria um novo invisível
+        excel = win32.Dispatch("Excel.Application") # type: ignore
+        excel.Visible = False
+        logger.info("Não tem Excel aberto, abrindo e deixando invisível")
+        
     excel.DisplayAlerts = False
 
     wb_master = None
+    was_already_open = False
+
+    # Vasculha para ver se a nossa planilha master é uma das que estão abertas
     for wb in excel.Workbooks:
         if wb.Name.lower() == master_excel_path.name.lower():
             wb_master = wb
+            was_already_open = True
             break
 
+    # Se ela não estiver aberta, nós abrimos agora
     if wb_master is None:
         wb_master = excel.Workbooks.Open(str(master_excel_path.resolve()))
         
@@ -681,7 +704,7 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
         wb_master.Save()
         logger.info("Planilha master atualizada com sucesso.")
 
-    return excel, wb_master, changed
+    return excel, wb_master, changed, was_already_open
 
 # --------------------------------------------------------------------------
 # 9) Fluxo principal
@@ -753,7 +776,7 @@ def main():
             shutil.copy(out, master)
 
         # Devolve (excel_app, wb_master) para reutilizarmos no format_excel
-        excel_app, wb_master, changed = sync_to_master(out, master)
+        excel_app, wb_master, changed, was_already_open = sync_to_master(out, master)
 
         logger.info("Sincronização com o master concluída.") 
 
@@ -763,10 +786,23 @@ def main():
         # Reaproveitamos a mesma instância COM e o mesmo wb_master
         if changed:
             logger.info("Houve alterações → reaplicando formatação no master.")
-            format_excel((excel_app, wb_master), fechar_apos=False)
+            
+            # MÁGICA AQUI: Se já estava aberta, fechar_apos=False. Se estava fechada, fechar_apos=True
+            format_excel((excel_app, wb_master), fechar_apos=not was_already_open)
+
             logger.info("Formatação do arquivo master concluída.")
         else:
-            logger.info("Nenhuma alteração no master → pulei a formatação.")             
+            logger.info("Nenhuma alteração no master → pulei a formatação.")
+
+            # Se não teve alteração, a função format_excel não roda. Mas precisamos limpar
+            # a sujeira caso a gente tenha aberto a planilha invisível lá no sync_to_master!
+            if not was_already_open:
+                wb_master.Close(SaveChanges=True)
+                try:
+                    if excel_app.Workbooks.Count == 0:
+                        excel_app.Quit()
+                except Exception:
+                    pass        
 
     except Exception:
         logger.error("Erro durante a execução", exc_info=True)
