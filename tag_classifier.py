@@ -1,6 +1,7 @@
 import sys
 import re
 import logging
+from logging.handlers import RotatingFileHandler
 import numpy as np
 from pathlib import Path
 from datetime import datetime
@@ -48,15 +49,25 @@ except ImportError:
 nlp = spacy.load("pt_core_news_sm", disable=["parser", "ner"])
 pt_stop = STOP_WORDS
 
+# --- Configuração de logging ---
+
+# 1. Cria o manipulador rotativo (5 MB de limite, guarda os últimos 3)
+file_handler = RotatingFileHandler(
+    filename=DEBUG_DIR_TAG / "tag_classifier.log", # Mude isso conforme o script (otrs.log, citsmart.log, etc)
+    maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
+    backupCount=3,             # Mantém apenas 3 arquivos de histórico
+    encoding='utf-8'
+)
+
+# 2. Cria o manipulador do terminal (tela)
+stream_handler = logging.StreamHandler(sys.stdout)
+
+# 3. Configura o logging básico passando os nossos dois manipuladores
 logging.basicConfig(
     level=logging.DEBUG,
-    # Adicionamos os colchetes [] e removemos os milissegundos do datefmt para ficar limpo
     format='[%(asctime)s] [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.FileHandler(DEBUG_DIR_TAG / "tag_classifier.log", encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[file_handler, stream_handler]
 )
 logger = logging.getLogger(__name__)
 

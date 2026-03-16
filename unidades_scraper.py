@@ -9,7 +9,7 @@
 
 import re
 import time
-import unidecode
+import unidecode # type: ignore
 import argparse  # [NOVO] Para ler os comandos do terminal
 import pandas as pd
 from pathlib import Path
@@ -35,13 +35,13 @@ def slugify(text: str) -> str:
 # DRIVER
 # ----------------------------------------
 def init_driver(headless=True):
-    opts = webdriver.ChromeOptions()
+    opts = webdriver.ChromeOptions() # type: ignore
     opts.add_argument("--disable-infobars")
     opts.add_argument("--disable-extensions")
     if headless:
         opts.add_argument("--headless=new")
         opts.add_argument("--window-size=1920,1080")
-    return webdriver.Chrome(options=opts)
+    return webdriver.Chrome(options=opts) # type: ignore
 
 # ----------------------------------------
 # SCRAPE PROMOTORIAS
