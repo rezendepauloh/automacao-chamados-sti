@@ -324,7 +324,7 @@ def train_and_tune_model(train_df: pd.DataFrame):
     grid = GridSearchCV(
         pipe, param_grid, scoring="f1_weighted",
         cv=StratifiedKFold(3, shuffle=True, random_state=42),
-        n_jobs=-1, verbose=2
+        n_jobs=1, verbose=2
     )
     # .tolist() transforma a Série do Pandas em uma lista padrão do Python
     # O Pylance aceita listas perfeitamente.
