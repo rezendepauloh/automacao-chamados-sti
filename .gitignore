@@ -34,3 +34,6 @@ old_scripts/
 
 # motor Selenium
 chromedriver.exe
+
+# Entradas manuais
+manual_entries.py
