@@ -9,7 +9,7 @@
 
 import re
 import time
-import unidecode # type: ignore
+import unidecode
 import argparse  # [NOVO] Para ler os comandos do terminal
 import pandas as pd
 from pathlib import Path

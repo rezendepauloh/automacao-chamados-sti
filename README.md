@@ -23,6 +23,14 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 - **Manipulação Avançada:** Uso intensivo de `Pandas` para tratamento de dados.
 - **Integração COM (Win32):** Automação do Microsoft Excel para formatação visual, ajuste de colunas (autofit) e sincronização entre planilhas sem corromper a formatação original.
 
+## 🔒 Segurança e Privacidade
+
+Este projeto foi desenhado respeitando normas de segurança institucional:
+
+- **Gestão de Credenciais:** As senhas não ficam no código. É utilizada a biblioteca `keyring` para armazenar e consultar senhas diretamente no Gerenciador de Credenciais criptografado do Windows.
+- **Dados Sensíveis:** Scripts com dados reais de unidades e servidores, bem como arquivos de log e planilhas geradas, são estritamente ignorados via `.gitignore`.
+- **Execução Stealth (Invisível):** O orquestrador roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background, sem roubo de foco do usuário e sem disparar alertas de antivírus.
+
 ## 🛠️ Tecnologias Utilizadas
 
 - **Linguagem:** Python 3.11+
@@ -35,14 +43,14 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 
 ## 📂 Estrutura do Projeto
 
-- `salvar_senha.py`: Utilitário de segurança para salvar e criptografar as credenciais de acesso localmente, evitando senhas no código.
+- `salvar_senha.py`: Utilitário para salvar e criptografar as credenciais de acesso localmente.
 - `citsmart_scraper.py`: Bot para extração do sistema LowCode/CitSmart.
 - `otrs_scraper.py`: Bot para extração do sistema OTRS.
 - `unidades_scraper.py`: Scraper que atualiza a lista de unidades/promotorias do site oficial.
 - `preprocess_chamados.py`: Limpeza, padronização e unificação das bases.
 - `tag_classifier.py`: O "cérebro" do projeto. Treina a IA e classifica novos chamados.
 - `config.py`: Central de configurações e caminhos.
-- `rodar_pipeline.ps1`: Script orquestrador em PowerShell que executa todos os robôs em sequência de forma limpa.
+- `orquestrador.py`: Script principal executado em background pelo Agendador de Tarefas do Windows para acionar todos os robôs em sequência.
 
 ## 📦 Como Instalar e Configurar
 
