@@ -83,3 +83,7 @@ DEBUG_DIR_TAG = BASE_DIR / "debug_logs" / "tag"
 DEBUG_DIR_TAG.mkdir(parents=True, exist_ok=True)
 TREINO_PATH = OUTPUT_DIR_TRATADOS / "Chamados_Treino.xlsx"
 MODEL_PATH  = MODEL_DIR / "tag_classifier.joblib"
+
+# Sync Master
+DEBUG_DIR_SYNC = BASE_DIR / "debug_logs" / "sync"
+DEBUG_DIR_SYNC.mkdir(parents=True, exist_ok=True)

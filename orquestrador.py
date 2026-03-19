@@ -9,7 +9,8 @@ scripts = [
     "otrs_scraper.py",
     "citsmart_scraper.py",
     "preprocess_chamados.py",
-    "tag_classifier.py"
+    "tag_classifier.py",
+    "sync_master.py"
 ]
 
 # CREATE_NO_WINDOW = 0x08000000 é um comando da API do Windows que 
