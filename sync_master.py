@@ -191,30 +191,105 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
 
     chamados_novos = set(df_tagged_novo['Chamado#'])
     
-    # ======= LÓGICA DE TREINO (FEEDBACK LOOP) =======
+
+
+
+
+
+
+
+
+    # ======= LÓGICA DE TREINO E LIMPEZA DA MASTER =======
+    houve_exclusao = False
     fechados_ids = chamados_master - chamados_novos
+    
     if fechados_ids:
-        logger.info(f"Chamados fechados identificados: {len(fechados_ids)}. Salvando no dataset de treino...")
+        logger.info(f"Chamados fechados identificados: {len(fechados_ids)}. Movendo para Treino e limpando da Master...")
         df_fechados = df_master_tagged[df_master_tagged['Chamado#'].isin(fechados_ids)].copy()
+        
+        # 1. Salva no Treino
         try:
-            if TREINO_PATH.exists():
-                df_treino_atual = pd.read_excel(TREINO_PATH)
-                df_treino_novo = pd.concat([df_treino_atual, df_fechados], ignore_index=True)
-            else:
-                df_treino_novo = df_fechados
-                
-            df_treino_novo = df_treino_novo.drop_duplicates(subset=['Chamado#'], keep='last')
-            df_treino_novo = df_treino_novo.fillna("")
-            df_treino_novo.to_excel(TREINO_PATH, index=False)
-            logger.info("Chamados fechados adicionados ao dataset de treino com sucesso.")
+            # Vacina contra o aviso (FutureWarning) do Pandas
+            df_fechados_clean = df_fechados.dropna(how='all') 
+            
+            if not df_fechados_clean.empty:
+                if TREINO_PATH.exists():
+                    df_treino_atual = pd.read_excel(TREINO_PATH)
+                    df_treino_novo = pd.concat([df_treino_atual, df_fechados_clean], ignore_index=True)
+                else:
+                    df_treino_novo = df_fechados_clean
+                    
+                df_treino_novo = df_treino_novo.drop_duplicates(subset=['Chamado#'], keep='last')
+                df_treino_novo = df_treino_novo.fillna("")
+                df_treino_novo.to_excel(TREINO_PATH, index=False)
+                logger.info("Chamados fechados adicionados ao dataset de treino com sucesso.")
         except Exception as e:
             logger.error(f"Erro ao salvar chamados fechados no treino: {e}", exc_info=True)
+
+        # 2. Deleta as linhas da planilha Master via Excel COM (De baixo para cima!)
+        last_row_master = ws_tagged.Cells(ws_tagged.Rows.Count, 1).End(-4162).Row
+        linhas_deletadas = 0
+        
+        for r in range(last_row_master, 1, -1): # Vai da última linha até a linha 2
+            celula_id = ws_tagged.Cells(r, 1).Value
+            
+            # Limpa o ID lido do Excel (remove o .0 fantasma) para o if funcionar com perfeição
+            raw_id = str(celula_id).strip()
+            if raw_id.endswith('.0'):
+                raw_id = raw_id[:-2]
+                
+            if raw_id in fechados_ids:
+                ws_tagged.Rows(r).Delete()
+                linhas_deletadas += 1
+                
+        logger.info(f"{linhas_deletadas} linhas apagadas da Planilha Master.")
+        houve_exclusao = True
     # ================================================
 
     novos_ids = chamados_novos - chamados_master
     if not novos_ids:
         logger.info("Nenhum chamado novo para adicionar à Master.")
-        return excel, wb_master, False, was_already_open
+        # ATENÇÃO AQUI: Se apagamos linhas, retornamos True para o robô saber que precisa salvar o Excel!
+        return excel, wb_master, houve_exclusao, was_already_open
+
+
+
+
+
+
+    # # ======= LÓGICA DE TREINO (FEEDBACK LOOP) =======
+    # fechados_ids = chamados_master - chamados_novos
+    # if fechados_ids:
+    #     logger.info(f"Chamados fechados identificados: {len(fechados_ids)}. Movendo para Treino e limpando da Master...")
+    #     df_fechados = df_master_tagged[df_master_tagged['Chamado#'].isin(fechados_ids)].copy()
+    #     try:
+    #         if TREINO_PATH.exists():
+    #             df_treino_atual = pd.read_excel(TREINO_PATH)
+    #             df_treino_novo = pd.concat([df_treino_atual, df_fechados], ignore_index=True)
+    #         else:
+    #             df_treino_novo = df_fechados
+                
+    #         df_treino_novo = df_treino_novo.drop_duplicates(subset=['Chamado#'], keep='last')
+    #         df_treino_novo = df_treino_novo.fillna("")
+    #         df_treino_novo.to_excel(TREINO_PATH, index=False)
+    #         logger.info("Chamados fechados adicionados ao dataset de treino com sucesso.")
+    #     except Exception as e:
+    #         logger.error(f"Erro ao salvar chamados fechados no treino: {e}", exc_info=True)
+    # # ================================================
+
+    # novos_ids = chamados_novos - chamados_master
+    # if not novos_ids:
+    #     logger.info("Nenhum chamado novo para adicionar à Master.")
+    #     return excel, wb_master, False, was_already_open
+    
+
+
+
+
+
+
+
+
 
     df_apenas_novos = df_tagged_novo[df_tagged_novo['Chamado#'].isin(novos_ids)].copy()
     
