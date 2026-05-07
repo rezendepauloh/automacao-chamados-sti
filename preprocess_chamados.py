@@ -313,7 +313,7 @@ def main():
             dt_col = dt_col.dt.tz_convert('America/Campo_Grande')
         except Exception:
             pass
-        combined['Data Criação'] = dt_col.dt.strftime('%d/%m/%Y %H:%M:%S').fillna(combined['Data Criação'])
+        combined['Data Criação'] = dt_col.dt.strftime('%Y-%m-%d %H:%M:%S').fillna(combined['Data Criação'])
 
     # 3. Limpa espaços extras no começo e no fim dos IDs e Nomes
     #if 'Chamado#' in combined.columns:

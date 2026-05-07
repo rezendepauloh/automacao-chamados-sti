@@ -82,6 +82,12 @@ def format_excel(excel_data: Tuple[Any, Any], fechar_apos=True):
         except Exception:
             pass
 
+    # 1.1 Aplicar o NumberFormat brasileiro para a coluna Data Criação (Coluna 3)
+    try:
+        ws.Columns(3).NumberFormat = "dd/mm/aaaa hh:mm:ss"
+    except Exception:
+        pass
+
     # 2. Descobrir em que coluna exata a palavra "TAG" está na Master
     tag_col_idx = -1
     for c in range(1, used.Columns.Count + 1):
@@ -253,6 +259,20 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
                 
         # 2. Reordena e filtra as colunas para ficarem EXATAMENTE iguais à master
         df_apenas_novos = df_apenas_novos[colunas_master]
+    # =================================================================
+    
+    # =================================================================
+    # SANITIZAÇÃO DE DATA CRIAÇÃO (Imunidade contra inversão de Dia/Mês)
+    # =================================================================
+    if 'Data Criação' in df_apenas_novos.columns:
+        try:
+            # Força a conversão para datetime (tratando possíveis anomalias)
+            dt_col = pd.to_datetime(df_apenas_novos['Data Criação'], errors='coerce')
+            # Grava estritamente como string formato ISO (YYYY-MM-DD HH:MM:SS)
+            # Isso impede que o Excel COM (que conversa em en-US) inverta dia/mês para dias <= 12
+            df_apenas_novos['Data Criação'] = dt_col.dt.strftime('%Y-%m-%d %H:%M:%S').fillna(df_apenas_novos['Data Criação'])
+        except Exception as e:
+            logger.error(f"Erro ao sanitizar Data Criação para ISO: {e}", exc_info=True)
     # =================================================================
     
     # 🧹 FAXINA CONTRA O 65535: 

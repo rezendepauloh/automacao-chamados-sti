@@ -238,5 +238,22 @@ class TestRequestsBasedUnidadesScraper(unittest.TestCase):
             self.assertEqual(cities[0][2], "agua-clara")
 
 
+class TestDateSanitization(unittest.TestCase):
+    """Testes para o tratamento de fuso horário e padronização ISO de datas."""
+
+    def test_date_conversion_to_iso_string(self):
+        # Testa se as datas no formato brasileiro (ou qualquer formato válido) são convertidas para string ISO
+        df = pd.DataFrame({
+            "Data Criação": ["07/05/2026 12:59:00", "19/12/2025 05:08:00"]
+        })
+        
+        # Simula o fluxo de conversão
+        dt_col = pd.to_datetime(df['Data Criação'], errors='coerce', dayfirst=True)
+        df['Data Criação'] = dt_col.dt.strftime('%Y-%m-%d %H:%M:%S').fillna(df['Data Criação'])
+        
+        self.assertEqual(df.loc[0, 'Data Criação'], "2026-05-07 12:59:00")
+        self.assertEqual(df.loc[1, 'Data Criação'], "2025-12-19 05:08:00")
+
+
 if __name__ == "__main__":
     unittest.main()
