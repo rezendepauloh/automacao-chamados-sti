@@ -22,29 +22,14 @@ from spacy.lang.pt.stop_words import STOP_WORDS
 
 from config import (
     TREINO_PATH, MODEL_PATH, DEBUG_DIR_TAG,
-    OUTPUT_DIR_TRATADOS, OUTPUT_DIR_PRONTO
+    OUTPUT_DIR_TRATADOS, OUTPUT_DIR_PRONTO,
+    setup_logging, cleanup_old_files
 )
 
 # --------------------------------------------------------------------------
 # Configuração de Logging
 # --------------------------------------------------------------------------
-DEBUG_DIR_TAG.mkdir(parents=True, exist_ok=True)
-
-file_handler = RotatingFileHandler(
-    filename=DEBUG_DIR_TAG / "tag_classifier.log",
-    maxBytes=5 * 1024 * 1024,
-    backupCount=3,
-    encoding='utf-8'
-)
-stream_handler = logging.StreamHandler(sys.stdout)
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='[%(asctime)s] [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[file_handler, stream_handler]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging(DEBUG_DIR_TAG / "tag_classifier.log", __name__)
 
 # --------------------------------------------------------------------------
 # Configuração de NLP (spaCy)
@@ -255,6 +240,9 @@ def main():
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out = OUTPUT_DIR_PRONTO / f"Chamados_Tagged_{ts}.xlsx"
     df_tagged.to_excel(out, index=False)
+
+    # Limpeza de planilhas Tagged antigas (mantém no máximo as 10 mais recentes)
+    cleanup_old_files(OUTPUT_DIR_PRONTO, "Chamados_Tagged_*.xlsx", keep_count=10)
     
     logger.info(f"Classificação concluída. Salvo em: {out.name}")
     logger.info("=== FIM DA CLASSIFICAÇÃO ===")

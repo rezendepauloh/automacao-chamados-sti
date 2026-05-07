@@ -4,24 +4,35 @@
 # Para rodar apenas manuais, use:
 # python .\unidades_scraper.py --only-manual ou python .\unidades_scraper.py -m
 
-# Para rodar Selenium + manuais, use:
+# Para rodar a extração completa em tempo real + manuais, use:
 # python .\unidades_scraper.py
 
 import re
 import time
 import unidecode
-import argparse  # [NOVO] Para ler os comandos do terminal
+import argparse
 import pandas as pd
 from pathlib import Path
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import StaleElementReferenceException
+import requests
+from bs4 import BeautifulSoup
+import urllib3
 from manual_entries import get_manual_entries, set_city_into_unidade
 from config import *
-from typing import cast
-from xlsxwriter.workbook import Workbook as XlsxWorkbook
+
+urllib3.disable_warnings()
+
+BASE_DOMAIN = "https://www.mpms.mp.br"
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
+
+def clean_url(url):
+    if not url:
+        return ""
+    if url.startswith("/"):
+        return BASE_DOMAIN + url
+    return url
 
 # ----------------------------------------
 # SLUG
@@ -32,71 +43,80 @@ def slugify(text: str) -> str:
     return s.replace(" ", "-")
 
 # ----------------------------------------
-# DRIVER
-# ----------------------------------------
-def init_driver(headless=True):
-    opts = webdriver.ChromeOptions() # type: ignore
-    opts.add_argument("--disable-infobars")
-    opts.add_argument("--disable-extensions")
-    if headless:
-        opts.add_argument("--headless=new")
-        opts.add_argument("--window-size=1920,1080")
-    return webdriver.Chrome(options=opts) # type: ignore
-
-# ----------------------------------------
 # SCRAPE PROMOTORIAS
 # ----------------------------------------
-def get_cities(driver):
-    driver.get(PROMOTORIAS_URL)
-    WebDriverWait(driver, EXPLICIT_WAIT).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "div.innerpage"))
-    )
-    elems = driver.find_elements(By.CSS_SELECTOR, "div.innerpage a")
+def get_cities():
+    r = requests.get(PROMOTORIAS_URL, headers=HEADERS, verify=False, timeout=15)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    innerpage = soup.find(class_="innerpage")
+    if not innerpage:
+        return []
+        
+    elems = innerpage.find_all("a")
     seen, out = set(), []
     for a in elems:
         text = a.text.strip()
-        href = a.get_attribute("href") or ""
+        href = a.get("href") or ""
         if not text or "/promotorias/" not in href:
             continue
+        href = clean_url(href)
         slug = href.rstrip("/").split("/")[-1]
         if slug in seen or href.rstrip("/") == PROMOTORIAS_URL.rstrip("/"):
             continue
         seen.add(slug)
-        out.append((text, href.rstrip("/"), slug))
+        out.append((text, href, slug))
     return out
 
-def get_promotoria_urls(driver, city_url, slug):
-    driver.get(city_url)
-    WebDriverWait(driver, EXPLICIT_WAIT).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "div.innerpage"))
-    )
+def get_promotoria_urls(city_url, slug):
+    r = requests.get(city_url, headers=HEADERS, verify=False, timeout=15)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    innerpage = soup.find(class_="innerpage")
+    if not innerpage:
+        return []
+    
     urls = []
-    for a in driver.find_elements(By.CSS_SELECTOR, "div.innerpage a"):
-        try:
-            href = a.get_attribute("href")
-        except StaleElementReferenceException:
-            continue
-        if href and f"/promotorias/{slug}/" in href and href.rstrip("/") != city_url:
-            if href not in urls:
-                urls.append(href)
+    for a in innerpage.find_all("a"):
+        href = a.get("href") or ""
+        if href and f"/promotorias/{slug}/" in href and clean_url(href).rstrip("/") != city_url.rstrip("/"):
+            absolute_href = clean_url(href).rstrip("/")
+            if absolute_href not in urls:
+                urls.append(absolute_href)
     return sorted(set(urls))
 
-def scrape_promotoria(driver, city_name, promo_url):
-    driver.get(promo_url)
-    wait = WebDriverWait(driver, EXPLICIT_WAIT)
-    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div#promotorias")))
-
-    root = driver.find_element(By.CSS_SELECTOR, "div#promotorias")
-    nome = root.find_element(By.TAG_NAME, "h2").text.strip()
+def scrape_promotoria(city_name, promo_url):
+    r = requests.get(promo_url, headers=HEADERS, verify=False, timeout=15)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    
+    root = soup.find(id="promotorias")
+    if not root:
+        return {
+            "Cidade": city_name,
+            "Tipo": "Promotoria",
+            "Setor": "Não encontrada",
+            "Titular": "",
+            "Unidade (Prédio)": "",
+            "Telefone": "",
+            "URL": promo_url
+        }
+    
+    nome = root.find("h2").text.strip()
 
     try:
-        titular = root.find_element(By.CSS_SELECTOR, "p.titular span.name").text.replace("Titular:", "").strip()
+        titular = ""
+        titular_p = root.find(class_="titular")
+        if titular_p:
+            name_span = titular_p.find(class_="name")
+            if name_span:
+                titular = name_span.text.replace("Titular:", "").strip()
     except:
         titular = ""
 
     try:
-        address_el = driver.find_element(By.CSS_SELECTOR, "#promotorias address")
-        address_text = address_el.text.strip()
+        address_text = ""
+        address_el = root.find("address")
+        if address_el:
+            address_text = address_el.text.strip()
+            
         m = re.search(r"-\s*([^–-]+)\s*-\s*CEP", address_text)
         raw_building = m.group(1).strip() if m else ""
         city_key = slugify(city_name)
@@ -124,7 +144,10 @@ def scrape_promotoria(driver, city_name, promo_url):
         building = ""
 
     try:
-        tel = root.find_element(By.CSS_SELECTOR, "p.phone").text.replace("Telefone:", "").strip()
+        tel = ""
+        phone_p = root.find(class_="phone")
+        if phone_p:
+            tel = phone_p.text.replace("Telefone:", "").strip()
     except:
         tel = ""
 
@@ -141,33 +164,54 @@ def scrape_promotoria(driver, city_name, promo_url):
 # ----------------------------------------
 # SCRAPE PROCURADORIAS
 # ----------------------------------------
-def get_procuradorias(driver):
-    driver.get(PROCURADORIAS_URL)
-    WebDriverWait(driver, EXPLICIT_WAIT).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "div.innerpage"))
-    )
+def get_procuradorias():
+    r = requests.get(PROCURADORIAS_URL, headers=HEADERS, verify=False, timeout=15)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    innerpage = soup.find(class_="innerpage")
+    if not innerpage:
+        return []
+    
     links = []
-    for a in driver.find_elements(By.CSS_SELECTOR, "div.innerpage a"):
-        href = a.get_attribute("href") or ""
-        if "/procuradorias/" in href and href.rstrip("/") != PROCURADORIAS_URL.rstrip("/"):
-            links.append(href.rstrip("/"))
+    for a in innerpage.find_all("a"):
+        href = a.get("href") or ""
+        if "/procuradorias/" in href and clean_url(href).rstrip("/") != PROCURADORIAS_URL.rstrip("/"):
+            links.append(clean_url(href).rstrip("/"))
     return sorted(set(links))
 
-def scrape_procuradoria(driver, url):
-    driver.get(url)
-    WebDriverWait(driver, EXPLICIT_WAIT).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "div#procuradorias"))
-    )
-    root = driver.find_element(By.CSS_SELECTOR, "div#procuradorias")
-    nome = root.find_element(By.TAG_NAME, "h2").text.strip()
+def scrape_procuradoria(url):
+    r = requests.get(url, headers=HEADERS, verify=False, timeout=15)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    
+    root = soup.find(id="procuradorias")
+    if not root:
+        return {
+            "Cidade": "Campo Grande",
+            "Tipo": "Procuradoria",
+            "Setor": "Não encontrada",
+            "Titular": "",
+            "Unidade (Prédio)": "Campo Grande - PGJ",
+            "Telefone": "",
+            "URL": url
+        }
+        
+    nome = root.find("h2").text.strip()
     try:
-        titular = root.find_element(By.CSS_SELECTOR, "p.titular span.name").text.strip()
+        titular = ""
+        titular_p = root.find(class_="titular")
+        if titular_p:
+            name_span = titular_p.find(class_="name")
+            if name_span:
+                titular = name_span.text.strip()
     except:
         titular = ""
     try:
-        tel = root.find_element(By.CSS_SELECTOR, "p.phone").text.replace("Telefone:", "").strip()
+        tel = ""
+        phone_p = root.find(class_="phone")
+        if phone_p:
+            tel = phone_p.text.replace("Telefone:", "").strip()
     except:
         tel = ""
+        
     return {
         "Cidade": "Campo Grande",
         "Tipo": "Procuradoria",
@@ -226,27 +270,14 @@ def save_final_excel(df: pd.DataFrame, output_path: Path):
 
     print(f"Salvando arquivo em: {output_path}...")
     
-    with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
-        df.to_excel(writer, sheet_name="Unidades", index=False)
-        wb = cast(XlsxWorkbook, writer.book) # type: ignore
-        wrap = wb.add_format({'text_wrap': True}) 
-        ws  = writer.sheets['Unidades']
-        
-        widths = {
-            'Cidade':20, 'Tipo':15, 'Setor':50, 'Titular':40,
-            'Unidade (Prédio)':25, 'Sigla':20, 'Telefone':30, 'URL':50
-        }
-        
-        for i, col in enumerate(df.columns):
-            fmt = wrap if col in ('Setor','URL') else None
-            ws.set_column(i, i, widths.get(col,20), fmt)
-        
-        # ajusta altura
-        for r, cell in enumerate(df['Setor'], start=1):
-            # Garante que cell é string antes de contar
-            cell_str = str(cell) if pd.notna(cell) else ""
-            lines = cell_str.count("\n")+1
-            ws.set_row(r, 15*lines)
+    widths = {
+        'Cidade':20, 'Tipo':15, 'Setor':50, 'Titular':40,
+        'Unidade (Prédio)':25, 'Sigla':20, 'Telefone':30, 'URL':50
+    }
+    save_df_to_excel_formatted(
+        df, output_path, sheet_name="Unidades",
+        widths=widths, wrap_cols=['Setor','URL'], height_col='Setor'
+    )
     
     print("Concluído!")
 
@@ -307,36 +338,33 @@ def main():
         return
 
     # =========================================================
-    # MODO 2: COMPLETO (SELENIUM + MANUAIS)
+    # MODO 2: COMPLETO (REAL-TIME VIA REQUESTS)
     # =========================================================
-    print("\n=== MODO COMPLETO: INICIANDO SCRAPER (WEB) ===")
+    print("\n=== MODO COMPLETO: INICIANDO SCRAPER (WEB REQUESTS EM TEMPO REAL) ===")
     
-    driver = init_driver(headless=True)
     all_data = []
 
     # 1) Promotorias
-    cities = get_cities(driver)
+    cities = get_cities()
     print(f"Encontradas {len(cities)} comarcas.")
     
     for city, link, slug in cities:
-        urls = get_promotoria_urls(driver, link, slug)
+        urls = get_promotoria_urls(link, slug)
         label = "promotoria" if len(urls)==1 else "promotorias"
         print(f"  {city}: {len(urls)} {label}")
         for u in urls:
-            all_data.append(scrape_promotoria(driver, city, u))
-            print(f"    ✓ {all_data[-1]['Setor']}")
-            time.sleep(0.3)
+            all_data.append(scrape_promotoria(city, u))
+            print(f"    [OK] {all_data[-1]['Setor']}")
+            time.sleep(0.05)
         
     # 2) Procuradorias
-    proc_urls = get_procuradorias(driver)
+    proc_urls = get_procuradorias()
     print(f"\nEncontradas {len(proc_urls)} procuradorias.")
     
     for u in proc_urls:
-        all_data.append(scrape_procuradoria(driver, u))
-        print(f"    ✓ {all_data[-1]['Setor']}")
-        time.sleep(0.3)
-
-    driver.quit()    
+        all_data.append(scrape_procuradoria(u))
+        print(f"    [OK] {all_data[-1]['Setor']}")
+        time.sleep(0.05)    
 
     # 3) Processa dados da Web
     df = pd.DataFrame(all_data)

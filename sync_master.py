@@ -8,7 +8,8 @@ from typing import Tuple, Any
 
 from config import (
     DEBUG_DIR_SYNC, OUTPUT_DIR_PRONTO,
-    MASTER_FILE_PATH, TREINO_PATH
+    MASTER_FILE_PATH, TREINO_PATH,
+    setup_logging
 )
 
 try:
@@ -21,21 +22,7 @@ except ImportError:
 # --------------------------------------------------------------------------
 # Configuração de Logging
 # --------------------------------------------------------------------------
-file_handler = RotatingFileHandler(
-    filename=DEBUG_DIR_SYNC / "sync_master.log",
-    maxBytes=5 * 1024 * 1024,
-    backupCount=3,
-    encoding='utf-8'
-)
-stream_handler = logging.StreamHandler(sys.stdout)
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='[%(asctime)s] [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[file_handler, stream_handler]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging(DEBUG_DIR_SYNC / "sync_master.log", __name__)
 
 # --------------------------------------------------------------------------
 # Funções de Integração COM (Excel)
@@ -185,19 +172,18 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
 
     if not df_master_tagged.empty and 'Chamado#' in df_master_tagged.columns:
         df_master_tagged['Chamado#'] = clean_ticket_id(df_master_tagged['Chamado#'])
-        chamados_master = set(df_master_tagged['Chamado#'])
+        chamados_master = {str(cid).strip() for cid in df_master_tagged['Chamado#'] if cid and str(cid).strip().lower() not in ('nan', 'none', '')}
     else:
         chamados_master = set()
 
-    chamados_novos = set(df_tagged_novo['Chamado#'])
-    
+    chamados_novos = {str(cid).strip() for cid in df_tagged_novo['Chamado#'] if cid and str(cid).strip().lower() not in ('nan', 'none', '')}
 
-
-
-
-
-
-
+    # ======= SALVAGUARDA CONTRA FALHA DE SCRAPING =======
+    if not chamados_novos:
+        logger.warning("⚠️ ALERTA DE SEGURANÇA: A lista de novos chamados está VAZIA! "
+                       "Isso pode indicar uma falha nos scrapers ou problemas de rede/credenciais. "
+                       "Sincronização abortada para evitar a exclusão em massa de chamados ativos na planilha Master.")
+        return excel, wb_master, False, was_already_open
 
     # ======= LÓGICA DE TREINO E LIMPEZA DA MASTER =======
     houve_exclusao = False
@@ -238,7 +224,7 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
             if raw_id.endswith('.0'):
                 raw_id = raw_id[:-2]
                 
-            if raw_id in fechados_ids:
+            if raw_id and raw_id.lower() not in ('none', 'nan', '') and raw_id in fechados_ids:
                 ws_tagged.Rows(r).Delete()
                 linhas_deletadas += 1
                 
@@ -252,51 +238,12 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
         # ATENÇÃO AQUI: Se apagamos linhas, retornamos True para o robô saber que precisa salvar o Excel!
         return excel, wb_master, houve_exclusao, was_already_open
 
-
-
-
-
-
-    # # ======= LÓGICA DE TREINO (FEEDBACK LOOP) =======
-    # fechados_ids = chamados_master - chamados_novos
-    # if fechados_ids:
-    #     logger.info(f"Chamados fechados identificados: {len(fechados_ids)}. Movendo para Treino e limpando da Master...")
-    #     df_fechados = df_master_tagged[df_master_tagged['Chamado#'].isin(fechados_ids)].copy()
-    #     try:
-    #         if TREINO_PATH.exists():
-    #             df_treino_atual = pd.read_excel(TREINO_PATH)
-    #             df_treino_novo = pd.concat([df_treino_atual, df_fechados], ignore_index=True)
-    #         else:
-    #             df_treino_novo = df_fechados
-                
-    #         df_treino_novo = df_treino_novo.drop_duplicates(subset=['Chamado#'], keep='last')
-    #         df_treino_novo = df_treino_novo.fillna("")
-    #         df_treino_novo.to_excel(TREINO_PATH, index=False)
-    #         logger.info("Chamados fechados adicionados ao dataset de treino com sucesso.")
-    #     except Exception as e:
-    #         logger.error(f"Erro ao salvar chamados fechados no treino: {e}", exc_info=True)
-    # # ================================================
-
-    # novos_ids = chamados_novos - chamados_master
-    # if not novos_ids:
-    #     logger.info("Nenhum chamado novo para adicionar à Master.")
-    #     return excel, wb_master, False, was_already_open
-    
-
-
-
-
-
-
-
-
-
     df_apenas_novos = df_tagged_novo[df_tagged_novo['Chamado#'].isin(novos_ids)].copy()
     
     # =================================================================
     # ALINHAMENTO INTELIGENTE DE COLUNAS
     # =================================================================
-    if not df_master_tagged.empty:
+    if df_master_tagged is not None and len(df_master_tagged.columns) > 0:
         colunas_master = df_master_tagged.columns.tolist()
         
         # 1. Cria colunas vazias caso a master tenha colunas que os dados novos não têm

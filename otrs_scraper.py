@@ -3,54 +3,29 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
-    TimeoutException,
-    NoSuchElementException,
     StaleElementReferenceException
 )
 import pandas as pd
-import time
 import sys
 import os
 import shutil
 from pathlib import Path
 from datetime import datetime
-from typing import cast
-from xlsxwriter.workbook import Workbook as XlsxWorkbook # Alias para não confundir
 import logging
-from logging.handlers import RotatingFileHandler
-from ldap3 import Server, Connection, ALL, SUBTREE, ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES
+from ldap3 import SUBTREE
 from config import (
     OTRS_URL, PASSWORD, IMPLICIT_WAIT,
     HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OTRS,
-    DOMINIO, DOMINIO_CURTO, DOMINIO_MMC, USERNAME, INPUT_DIR_BRUTOS,
-    BACKUP_PATH_OTRS, TEMP_PATH_OTRS
+    DOMINIO_MMC, USERNAME, INPUT_DIR_BRUTOS,
+    BACKUP_PATH_OTRS, TEMP_PATH_OTRS, setup_logging, save_df_to_excel_formatted,
+    setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
 )
 
 # Configurações atualizadas de cabeçalhos incluindo a coluna Unidade
 HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição']
 
 # --- Configuração de logging ---
-
-# 1. Cria o manipulador rotativo (5 MB de limite, guarda os últimos 3)
-file_handler = RotatingFileHandler(
-    filename=DEBUG_DIR_OTRS / "otrs_scraper.log", # Mude isso conforme o script (otrs.log, citsmart.log, etc)
-    maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
-    backupCount=3,             # Mantém apenas 3 arquivos de histórico
-    encoding='utf-8'
-)
-
-# 2. Cria o manipulador do terminal (tela)
-stream_handler = logging.StreamHandler(sys.stdout)
-
-# 3. Configura o logging básico passando os nossos dois manipuladores
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='[%(asctime)s] [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[file_handler, stream_handler]
-)
-
-logger = logging.getLogger(__name__)
+logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
 
 # (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
@@ -61,73 +36,16 @@ def get_timestamp():
     return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
 # --- Configuração do AD ---
-"""Tenta conectar no AD. Se falhar, avisa no log mas não quebra o robô."""
-try:
-    # Se o SSL estiver dando erro 10054, deixamos use_ssl=False temporariamente
-    ad_server = Server(DOMINIO, get_info=ALL) 
-    ad_conn = Connection(ad_server, user=f"{DOMINIO_CURTO}\\{USERNAME}", password=PASSWORD, auto_bind=True)
-except Exception as e:
-     logging.debug(f"⚠️ Aviso: Não foi possível conectar ao AD. Erro: {e}")
+ad_conn = setup_ad_connection()
 
 # ---------------------------
 # AD (Active Directory) - Versão Robusta
 # ---------------------------
 def fetch_unidade(username):
     """
-    Busca a unidade do usuário no AD usando o sAMAccountName.
-    Prioridade: department -> physicalDeliveryOfficeName -> Cadastro Incompleto.
+    Busca a unidade do usuário no AD usando o sAMAccountName de forma unificada.
     """
-    # Proteção básica
-    if not username or not ad_conn:
-        return ''
-
-    try:
-        search_filter = f'(sAMAccountName={username})'
-        
-        # Agora pedimos os dois atributos na consulta
-        target_attrs = ['department', 'physicalDeliveryOfficeName']
-
-        ad_conn.search(
-            search_base=f'{DOMINIO_MMC}',
-            search_filter=search_filter,
-            search_scope=SUBTREE,
-            attributes=target_attrs
-        )
-
-        if not ad_conn.entries:
-            return 'Não encontrado no AD'
-        
-        # Pega a primeira entrada e converte para dicionário (mais seguro)
-        entry = ad_conn.entries[0].entry_attributes_as_dict
-        
-        # 1. TENTATIVA PRINCIPAL: DEPARTAMENTO
-        # O LDAP retorna uma lista, pegamos o primeiro item ou string vazia
-        dept_list = entry.get('department', [])
-        dept = dept_list[0] if dept_list else None
-        
-        if dept and str(dept).strip():
-            return str(dept).strip()
-        
-        # 2. TENTATIVA SECUNDÁRIA: ESCRITÓRIO (OFFICE)
-        office_list = entry.get('physicalDeliveryOfficeName', [])
-        office = office_list[0] if office_list else None
-        
-        if office and str(office).strip():
-            return str(office).strip()
-
-        # 3. FALHA
-        return 'Cadastro Incompleto (AD)'
-    
-    except Exception as e:
-        # Usa logger.info() para manter padrão do arquivo, ou logging se preferir
-        msg = f"Erro AD lookup para {username}: {e}"
-        # Tenta usar o logger.info() definido no arquivo, senão printa normal
-        try:
-            logger.info(msg)
-        except NameError:
-            print(msg)
-            
-        return ''
+    return fetch_ad_department(ad_conn, username, is_username=True)
 
 def backup_master():
     """Create a backup of the existing master file."""
@@ -270,8 +188,8 @@ def check_pagination(driver):
         logger.error(f"Passo 8.1: Erro na verificação de paginação: {str(e)}")
         return False
 
-# Extração por linha agora inclui Unidade via AD lookup
-def extract_row_data(driver, row):
+# Extração por linha agora inclui Unidade via AD lookup e cache inteligente de descrições
+def extract_row_data(driver, row, cache=None):
     data = {h: '' for h in HEADERS}
     try:
         # Garante que a linha está visível
@@ -330,10 +248,15 @@ def extract_row_data(driver, row):
         except Exception as e:
             logger.error(f"Erro ID do Cliente ou lookup AD: {e}")
 
-        # --- Descrição (Processo separado) ---
+        # --- Descrição (Processo separado com Cache Inteligente) ---
         try:
-            # Aqui passamos o driver e a linha atual (current)
-            data['Descrição'] = process_ticket(driver, current)
+            cid = data['Chamado#']
+            if cache and cid in cache:
+                data['Descrição'] = cache[cid]
+                logger.info(f"⚡ [CACHE MATCH] Descrição do chamado {cid} recuperada INSTANTANEAMENTE do cache anterior!")
+            else:
+                # Aqui passamos o driver e a linha atual (current)
+                data['Descrição'] = process_ticket(driver, current)
         except Exception as e:
             logger.error(f"Erro Descrição: {e}")
 
@@ -345,7 +268,7 @@ def extract_row_data(driver, row):
         logger.error(f"Erro geral linha: {e}")
         return data
 
-def process_all_pages(driver):
+def process_all_pages(driver, cache=None):
     all_data, page = [], 1
     while True:
         logger.info(f"Página {page}: extraindo dados...")
@@ -359,7 +282,7 @@ def process_all_pages(driver):
         
         for idx, row in enumerate(rows):
             try:
-                data = extract_row_data(driver, row)
+                data = extract_row_data(driver, row, cache=cache)
                 all_data.append(data)
                 
                 # Pega o número do chamado do dicionário retornado
@@ -370,7 +293,7 @@ def process_all_pages(driver):
                 logger.error("Linha obsoleta, tentando novamente")
                 # Atualiza a lista de elementos da página
                 rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
-                data = extract_row_data(driver, rows[idx])
+                data = extract_row_data(driver, rows[idx], cache=cache)
                 all_data.append(data)
                 
                 chamado_num = data.get('Chamado#', 'N/A')
@@ -396,47 +319,6 @@ def process_all_pages(driver):
             break
 
     return all_data
-
-# ========== CONFIGURAÇÃO INICIAL ========== #
-def initial_config():
-    options = webdriver.ChromeOptions() # type: ignore
-
-    # Desativa logs desnecessários
-    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"]) # Oculta o "DevTools listening..."
-
-    # --- SILENCIADORES DO CHROME ---
-    options.add_argument('--log-level=3')         # Silencia logs internos (mostra apenas erros fatais)
-    options.add_argument('--disable-logging')     # Desabilita o motor de log do navegador
-    # -------------------------------
-    
-    # Configurações para evitar pop-ups
-    options.add_experimental_option("prefs", {
-        "credentials_enable_service": False,
-        "profile.password_manager_enabled": False
-    })
-    options.add_argument("--incognito")
-    options.add_argument("--disable-infobars")
-    options.add_argument("--no-default-browser-check")
-    
-    if not HEADLESS:
-        options.add_argument("--start-maximized")
-    else:
-        options.add_argument("--headless=new")  # Modo headless moderno
-        options.add_argument("--window-size=1920,1080")
-
-    # Bloqueio de imagens/CSS (opcional)
-    prefs = {
-        "profile.managed_default_content_settings.images": 2,
-        "profile.managed_default_content_settings.stylesheets": 2,
-        "profile.managed_default_content_settings.fonts": 2,
-    }
-    options.add_experimental_option("prefs", prefs)
-
-    # Versão alternativa para Chrome antigo
-    # options.add_argument("--disable-gpu")
-    # options.add_argument("--no-sandbox")
-
-    return options
 
 # ========== ETAPA 1: LOGIN ========== #
 def login_page(driver):
@@ -503,12 +385,12 @@ def pagination_or_not(driver):
         return False
 
 # ========== ETAPA 5: EXTRAÇÃO DE DADOS ========== #
-def data_extract(driver, has_pagination):
+def data_extract(driver, has_pagination, cache=None):
     logger.info("Passo 9: Extraindo dados da tabela...")
     
     # Se tem mais de uma página, vai para a função que arrumamos antes
     if has_pagination:
-        return process_all_pages(driver)
+        return process_all_pages(driver, cache=cache)
     
     # Se tem só UMA página, ele cai aqui:
     else:
@@ -523,7 +405,7 @@ def data_extract(driver, has_pagination):
         
         for idx, row in enumerate(rows):
             try:
-                data = extract_row_data(driver, row)
+                data = extract_row_data(driver, row, cache=cache)
                 all_data.append(data)
                 
                 # Print no formato [1/21] Lido: 46444521
@@ -533,7 +415,7 @@ def data_extract(driver, has_pagination):
             except StaleElementReferenceException:
                 logger.error("Linha obsoleta, tentando novamente")
                 rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
-                data = extract_row_data(driver, rows[idx])
+                data = extract_row_data(driver, rows[idx], cache=cache)
                 all_data.append(data)
                 
                 chamado_num = data.get('Chamado#', 'N/A')
@@ -549,39 +431,46 @@ def brute_data(data):
     ts = get_timestamp()
     file = out_dir / f"Chamados_OTRS_{ts}.xlsx"
 
-    with pd.ExcelWriter(file, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
-        wb = cast(XlsxWorkbook, writer.book)
-        wrap = wb.add_format({'text_wrap': True})
-        ws = writer.sheets['Sheet1']
-
-        widths = {
-            'Chamado#': 15,
-            'Data Criação': 20,
-            'Título': 40,
-            'Cidade - Prédio': 25,
-            'Unidade': 40,
-            'Nome do Usuário': 25,
-            'ID do Cliente': 15,
-            'Descrição': 100
-        }
-        for i, col in enumerate(df.columns):
-            fmt = wrap if col=='Descrição' else None
-            ws.set_column(i, i, widths.get(col,20), fmt)
-        
-        for r, desc in enumerate(df['Descrição'], start=1):
-            text = '' if pd.isna(desc) else str(desc)
-            ws.set_row(r, 15 * (text.count('\n')+1))
+    widths = {
+        'Chamado#': 15,
+        'Data Criação': 20,
+        'Título': 40,
+        'Cidade - Prédio': 25,
+        'Unidade': 40,
+        'Nome do Usuário': 25,
+        'ID do Cliente': 15,
+        'Descrição': 100
+    }
+    save_df_to_excel_formatted(
+        df, file, sheet_name="Sheet1",
+        widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+    )
 
     logger.info(f"SUCESSO! Total de {len(df)} chamados salvos em: {file}")
 
 def scrape_otrs():
+    # Carrega cache do último arquivo de OTRS gerado para evitar cliques repetidos
+    cache = {}
+    try:
+        out_dir = Path("01 - Dados Brutos")
+        existing_files = sorted(out_dir.glob("Chamados_OTRS_*.xlsx"))
+        if existing_files:
+            latest_file = existing_files[-1]
+            logger.info(f"Carregando cache de descrições do arquivo mais recente: {latest_file.name}")
+            df_old = pd.read_excel(latest_file, dtype=str)
+            for _, row_old in df_old.iterrows():
+                cid = str(row_old.get('Chamado#', '')).strip()
+                desc = row_old.get('Descrição', '')
+                if cid and desc and pd.notna(desc) and str(desc).strip():
+                    cache[cid] = str(desc).strip()
+            logger.info(f"Sucesso! {len(cache)} descrições carregadas no cache de memória.")
+    except Exception as cache_err:
+        logger.warning(f"Aviso: Não foi possível carregar cache de descrições anteriores: {cache_err}")
+
     driver = None
     try:
         # ========== CONFIGURAÇÃO INICIAL ========== #
-        options = initial_config()
-
-        driver = webdriver.Chrome(options=options) # type: ignore
+        driver = get_chrome_driver(headless=HEADLESS, block_media=True)
         driver.implicitly_wait(IMPLICIT_WAIT)
 
         # Login e navegação
@@ -592,11 +481,14 @@ def scrape_otrs():
         # Verifica paginação
         has_pagination = pagination_or_not(driver)
 
-        # Extrai dados
-        data = data_extract(driver, has_pagination)
+        # Extrai dados passando o cache
+        data = data_extract(driver, has_pagination, cache=cache)
         
         # Salvando em "01 - Dados Brutos"
         brute_data(data)
+        
+        # Limpeza de arquivos antigos (mantém no máximo os 10 últimos)
+        cleanup_old_files(INPUT_DIR_BRUTOS, "Chamados_OTRS_*.xlsx", keep_count=10)
         
         return True  # Indica sucesso
 

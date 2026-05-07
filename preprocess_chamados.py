@@ -16,7 +16,10 @@ import sys
 from config import (
     INPUT_DIR_BRUTOS,
     OUTPUT_DIR_TRATADOS,
-    DEBUG_DIR_PREPROCESS
+    DEBUG_DIR_PREPROCESS,
+    setup_logging,
+    save_df_to_excel_formatted,
+    cleanup_old_files
 )
 
 try:
@@ -25,27 +28,7 @@ except ImportError:
     win32 = None
 
 # --- Configuração de logging ---
-
-# 1. Cria o manipulador rotativo (5 MB de limite, guarda os últimos 3)
-file_handler = RotatingFileHandler(
-    filename=DEBUG_DIR_PREPROCESS / "preprocess_chamados.log", # Mude isso conforme o script (otrs.log, citsmart.log, etc)
-    maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
-    backupCount=3,             # Mantém apenas 3 arquivos de histórico
-    encoding='utf-8'
-)
-
-# 2. Cria o manipulador do terminal (tela)
-stream_handler = logging.StreamHandler(sys.stdout)
-
-# 3. Configura o logging básico passando os nossos dois manipuladores
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='[%(asctime)s] [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[file_handler, stream_handler]
-)
-
-logger = logging.getLogger(__name__)
+logger = setup_logging(DEBUG_DIR_PREPROCESS / "preprocess_chamados.log", __name__)
 
 # --- Excel auto-fit via COM on Windows ---
 def autofit_excel_rows(filepath: Path):
@@ -171,6 +154,8 @@ def prepare_unidades_lookup():
         logger.error(f"Erro: não encontrei {units_file}")
         sys.exit(1)
     units_df = pd.read_excel(units_file)
+    # Limpa linhas com valores nulos para evitar casamentos falsos de nulos
+    units_df = units_df.dropna(subset=['Setor', 'Unidade (Prédio)'])
     units_df['setor_normalizado'] = units_df['Setor'].apply(normalize_text)
     units_df['prédio_normalizado'] = units_df['Unidade (Prédio)'].apply(normalize_text)
     
@@ -178,7 +163,22 @@ def prepare_unidades_lookup():
 
 
 def match_unidade(row: pd.Series, units_df: pd.DataFrame, base: str) -> pd.Series:
-    query = normalize_text(row['Unidade'])
+    val = row.get('Unidade', '')
+    if pd.isna(val):
+        return pd.Series()
+    val_str = str(val).strip()
+    # Ignora valores vazios, genéricos ou de falha do AD para evitar falso positivo no fuzzy matching
+    if not val_str or val_str.lower() in (
+        'nan', 'n/a', 'nao encontrada no ad', 'sem departamento', 
+        'não encontrado no ad', 'cadastro incompleto (ad)', 'erro na consulta',
+        'cadastro incompleto', 'nao encontrado', 'não encontrada'
+    ):
+        return pd.Series()
+
+    query = normalize_text(val_str)
+    if not query or query == 'nan':
+        return pd.Series()
+
     matches = process.extractBests(query, units_df['setor_normalizado'], score_cutoff=75, limit=1)
     
     if matches:
@@ -277,19 +277,12 @@ def main():
     # salvar ambos
     for name, df in [('OTRS', otrs_df), ('CitSmart', citsmart_df)]:
         out = OUTPUT_DIR_TRATADOS / f"{name}_tratado_{ts}.xlsx"
-        with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
-            df.to_excel(writer, sheet_name=name, index=False)
-            wb = cast(XlsxWorkbook, writer.book)
-            ws = writer.sheets[name]
-            wrap = wb.add_format({'text_wrap': True})
-            widths = {col:25 for col in df.columns}
-            widths['Descrição'] = 100
-            
-            for i,col in enumerate(df.columns):
-                ws.set_column(i,i,widths.get(col,15), wrap if col=='Descrição' else None)
-            
-            for r,cell in enumerate(df['Descrição'], start=1):
-                ws.set_row(r,15*(str(cell).count('\n')+1))
+        widths = {col: 25 for col in df.columns}
+        widths['Descrição'] = 100
+        save_df_to_excel_formatted(
+            df, out, sheet_name=name,
+            widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+        )
         autofit_excel_rows(out)
     
     # unificar
@@ -308,12 +301,19 @@ def main():
     
     # 2. Padroniza a Data de Criação (Resolve os fusos e o padrão americano)
     if 'Data Criação' in combined.columns:
-        combined['Data Criação'] = pd.to_datetime(
+        # pd.to_datetime com utc=True converte todos os horários de forma consistente,
+        # em seguida convertemos de volta para o fuso horário local de Campo Grande para não distorcer as horas
+        dt_col = pd.to_datetime(
             combined['Data Criação'], 
             errors='coerce', 
             dayfirst=True, 
             utc=True
-        ).dt.strftime('%d/%m/%Y %H:%M:%S').fillna(combined['Data Criação'])
+        )
+        try:
+            dt_col = dt_col.dt.tz_convert('America/Campo_Grande')
+        except Exception:
+            pass
+        combined['Data Criação'] = dt_col.dt.strftime('%d/%m/%Y %H:%M:%S').fillna(combined['Data Criação'])
 
     # 3. Limpa espaços extras no começo e no fim dos IDs e Nomes
     #if 'Chamado#' in combined.columns:
@@ -338,20 +338,18 @@ def main():
 
     logger.info(f"Processando Unificado: Chamados_Unificados_{ts}.xlsx")
     
-    with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
-        combined.to_excel(writer, sheet_name='Unificados', index=False)
-        wb = cast(XlsxWorkbook, writer.book)
-        ws = writer.sheets['Unificados']
-        wrap = wb.add_format({'text_wrap': True})
-        widths = {col:25 for col in combined.columns}
-        widths['Descrição'] = 100
-        
-        for i,col in enumerate(combined.columns):
-            ws.set_column(i,i,widths.get(col,15), wrap if col=='Descrição' else None)
-        
-        for r,cell in enumerate(combined['Descrição'], start=1):
-            ws.set_row(r,15*(str(cell).count('\n')+1))
+    widths = {col: 25 for col in combined.columns}
+    widths['Descrição'] = 100
+    save_df_to_excel_formatted(
+        combined, out, sheet_name='Unificados',
+        widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+    )
     autofit_excel_rows(out)
+    
+    # Limpeza de planilhas unificadas antigas (mantém no máximo as 10 mais recentes)
+    cleanup_old_files(OUTPUT_DIR_TRATADOS, "Chamados_Unificados_*.xlsx", keep_count=10)
+    cleanup_old_files(OUTPUT_DIR_TRATADOS, "OTRS_tratado_*.xlsx", keep_count=10)
+    cleanup_old_files(OUTPUT_DIR_TRATADOS, "CitSmart_tratado_*.xlsx", keep_count=10)
     
     logger.info("Script finalizado!")
     # logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")

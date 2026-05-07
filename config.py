@@ -87,3 +87,220 @@ MODEL_PATH  = MODEL_DIR / "tag_classifier.joblib"
 # Sync Master
 DEBUG_DIR_SYNC = BASE_DIR / "debug_logs" / "sync"
 DEBUG_DIR_SYNC.mkdir(parents=True, exist_ok=True)
+
+# -----------------------------------------------------------------------------
+# LOGGING CENTRALIZADO
+# -----------------------------------------------------------------------------
+import sys
+import logging
+import pandas as pd
+from logging.handlers import RotatingFileHandler
+
+def setup_logging(log_file: Path, name: str = __name__) -> logging.Logger:
+    """Configura o logging rotativo e para terminal de forma unificada e centralizada."""
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    file_handler = RotatingFileHandler(
+        filename=log_file,
+        maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
+        backupCount=3,             # Mantém apenas 3 arquivos de histórico
+        encoding='utf-8'
+    )
+    stream_handler = logging.StreamHandler(sys.stdout)
+    
+    # Configura o basicConfig. force=True reinicia handlers anteriores
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='[%(asctime)s] [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[file_handler, stream_handler],
+        force=True
+    )
+    return logging.getLogger(name)
+
+
+def save_df_to_excel_formatted(
+    df: pd.DataFrame,
+    output_path: Path,
+    sheet_name: str = "Sheet1",
+    widths: dict = None,
+    wrap_cols: list = None,
+    height_col: str = None
+):
+    """
+    Salva um DataFrame no Excel usando xlsxwriter e aplica formatação de 
+    larguras, quebra de texto (wrap text) e ajuste dinâmico de altura de linhas.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    if widths is None:
+        widths = {}
+    if wrap_cols is None:
+        wrap_cols = []
+        
+    with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+        wb = writer.book
+        ws = writer.sheets[sheet_name]
+        wrap_format = wb.add_format({'text_wrap': True})
+        
+        # 1. Aplica larguras e quebra de texto nas colunas
+        for i, col in enumerate(df.columns):
+            fmt = wrap_format if col in wrap_cols else None
+            width = widths.get(col, 20)
+            ws.set_column(i, i, width, fmt)
+            
+        # 2. Ajusta dinamicamente a altura das linhas com base em quebras de linha (\n)
+        if height_col and height_col in df.columns:
+            for r, cell in enumerate(df[height_col], start=1):
+                cell_str = str(cell) if pd.notna(cell) else ""
+                lines = cell_str.count("\n") + 1
+                ws.set_row(r, 15 * lines)
+
+
+def cleanup_old_files(directory: Path, pattern: str, keep_count: int = 10) -> None:
+    """
+    Remove arquivos antigos correspondentes ao padrão especificado no diretório,
+    mantendo apenas a quantidade dos mais recentes definidos por `keep_count`.
+    """
+    try:
+        import os
+        files = sorted(directory.glob(pattern), key=os.path.getmtime)
+        if len(files) > keep_count:
+            to_delete = files[:-keep_count]
+            for file in to_delete:
+                try:
+                    file.unlink()
+                    logging.getLogger().info(f"[LIMPEZA] Arquivo antigo removido: {file.name}")
+                except Exception as e:
+                    logging.getLogger().warning(f"Não foi possível remover arquivo {file.name}: {e}")
+    except Exception as e:
+        logging.getLogger().error(f"Erro na rotina de limpeza para o padrão '{pattern}': {e}")
+
+
+def setup_ad_connection():
+    """Tenta conectar no AD (Active Directory) de forma unificada e centralizada."""
+    try:
+        from ldap3 import Server, Connection, ALL
+        server = Server(DOMINIO, get_info=ALL)
+        conn = Connection(server, user=f"{DOMINIO_CURTO}\\{USERNAME}", password=PASSWORD, auto_bind=True)
+        return conn
+    except Exception as e:
+        import logging
+        logging.getLogger().debug(f"⚠️ Aviso: Não foi possível conectar ao AD. Erro: {e}")
+        return None
+
+
+def fetch_ad_department(conn, query_val: str, is_username: bool = True) -> str:
+    """
+    Busca o departamento/unidade de um usuário no AD de forma robusta e unificada.
+    Se is_username=True, busca por sAMAccountName (usado no OTRS).
+    Se is_username=False, busca por displayName/cn/name (usado no CitSmart).
+    Retorna o departamento, ou escritório, ou mensagens padronizadas de falha.
+    """
+    if not conn or not query_val:
+        return ""
+        
+    try:
+        from ldap3 import SUBTREE
+        target_attrs = ['department', 'physicalDeliveryOfficeName']
+        
+        if is_username:
+            search_filters = [f'(sAMAccountName={query_val})']
+        else:
+            search_filters = [
+                f'(displayName={query_val})',
+                f'(cn={query_val})',
+                f'(name={query_val})',
+                f'(displayName=*{query_val}*)'
+            ]
+            
+        entry = None
+        for filt in search_filters:
+            conn.search(
+                search_base=f'{DOMINIO_MMC}',
+                search_filter=filt,
+                search_scope=SUBTREE,
+                attributes=target_attrs
+            )
+            if conn.entries:
+                entry = conn.entries[0].entry_attributes_as_dict
+                break
+                
+        if not entry:
+            return 'Não encontrado no AD'
+            
+        # 1. Tenta Departamento (department)
+        dept_list = entry.get('department', [])
+        dept = dept_list[0] if dept_list else None
+        if dept and str(dept).strip():
+            return str(dept).strip()
+            
+        # 2. Tenta Escritório/Prédio (physicalDeliveryOfficeName)
+        office_list = entry.get('physicalDeliveryOfficeName', [])
+        office = office_list[0] if office_list else None
+        if office and str(office).strip():
+            return str(office).strip()
+            
+        return 'Cadastro Incompleto (AD)'
+        
+    except Exception as e:
+        import logging
+        logging.getLogger().error(f"Erro AD lookup para {query_val}: {e}")
+        return 'Erro na Consulta'
+
+
+def get_chrome_driver(
+    headless: bool = True,
+    page_load_strategy: str = None,
+    block_media: bool = False,
+    disable_gpu: bool = False
+):
+    """
+    Inicializa o Selenium Chrome Driver de forma unificada e profissional com silenciadores de log,
+    modo incógnito, modo headless e tratamento de tamanho de tela.
+    """
+    from selenium import webdriver
+    
+    opts = webdriver.ChromeOptions()
+    
+    # Desativa logs desnecessários do Chrome
+    opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    opts.add_argument('--log-level=3')
+    opts.add_argument('--disable-logging')
+    opts.add_argument("--incognito")
+    opts.add_argument("--disable-infobars")
+    opts.add_argument("--no-default-browser-check")
+    opts.add_argument("--disable-extensions")
+    opts.add_argument("--disable-blink-features=CSSAnimations,ScrollAnimator")
+    
+    # Previne pop-ups de senhas e credenciais
+    opts.add_experimental_option("prefs", {
+        "credentials_enable_service": False,
+        "profile.password_manager_enabled": False
+    })
+    
+    # Estratégia de carregamento de página
+    if page_load_strategy:
+        opts.page_load_strategy = page_load_strategy
+        
+    # Bloqueio opcional de imagens e CSS (para economia de banda e CPU no OTRS)
+    if block_media:
+        prefs = {
+            "profile.managed_default_content_settings.images": 2,
+            "profile.managed_default_content_settings.stylesheets": 2,
+            "profile.managed_default_content_settings.fonts": 2,
+        }
+        opts.add_experimental_option("prefs", prefs)
+        
+    # Configuração headless
+    if headless:
+        opts.add_argument("--headless=new")
+        opts.add_argument("--window-size=1920,1080")
+        if disable_gpu:
+            opts.add_argument("--disable-gpu")
+    else:
+        opts.add_argument("--start-maximized")
+        
+    driver = webdriver.Chrome(options=opts)
+    return driver

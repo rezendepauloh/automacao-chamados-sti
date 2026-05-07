@@ -5,49 +5,26 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 from datetime import datetime
 import time
 import pandas as pd
 import re
 import logging
-from logging.handlers import RotatingFileHandler
-import sys
 from pathlib import Path
-from ldap3 import Server, Connection, ALL, SUBTREE
-from typing import cast
-from xlsxwriter.workbook import Workbook as XlsxWorkbook # Alias para não confundir
+from ldap3 import SUBTREE
 from config import (
     CITSMART_URL, CITSMART_EMAIL, PASSWORD,
     HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_CITSMART,
-    DOMINIO, DOMINIO_CURTO, DOMINIO_MMC, USERNAME
+    setup_logging, save_df_to_excel_formatted,
+    setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
 )
 
 # ---------------------------
 # Utilitários e Log
 # ---------------------------
 # --- Configuração de logging ---
-
-# 1. Cria o manipulador rotativo (5 MB de limite, guarda os últimos 3)
-file_handler = RotatingFileHandler(
-    filename=DEBUG_DIR_CITSMART / "citsmart_scraper.log", # Mude isso conforme o script (otrs.log, citsmart.log, etc)
-    maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
-    backupCount=3,             # Mantém apenas 3 arquivos de histórico
-    encoding='utf-8'
-)
-
-# 2. Cria o manipulador do terminal (tela)
-stream_handler = logging.StreamHandler(sys.stdout)
-
-# 3. Configura o logging básico passando os nossos dois manipuladores
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='[%(asctime)s] [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[file_handler, stream_handler]
-)
-
-logger = logging.getLogger(__name__)
+logger = setup_logging(DEBUG_DIR_CITSMART / "citsmart_scraper.log", __name__)
 
 # (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
@@ -100,85 +77,17 @@ def find_all(ctx, candidates, timeout=5):
 # ---------------------------
 # AD (Active Directory) - Versão Robusta
 # ---------------------------
-def setup_ad_connection():
-    """Tenta conectar no AD. Se falhar, avisa no log mas não quebra o robô."""
-    try:
-        # Se o SSL estiver dando erro 10054, deixamos use_ssl=False temporariamente
-        server = Server(DOMINIO, get_info=ALL) 
-        conn = Connection(server, user=f"{DOMINIO_CURTO}\\{USERNAME}", password=PASSWORD, auto_bind=True)
-        return conn
-    except Exception as e:
-        logger.error(f"⚠️ Aviso: Não foi possível conectar ao AD. Erro: {e}")
-        return None
-
-def fetch_setor_temp(conn, display_name):
-    if not display_name or not conn:
-        return 'Sem Departamento'
-        
-    try:
-        target_attrs = ['department', 'physicalDeliveryOfficeName']
-        
-        # Tenta várias formas de encontrar o usuário
-        search_filters = [
-            f'(displayName={display_name})',
-            f'(cn={display_name})',
-            f'(name={display_name})',
-            f'(displayName=*{display_name}*)'
-        ]
-        
-        entry = None
-        for filt in search_filters:
-            conn.search(
-                search_base=f'{DOMINIO_MMC}',
-                search_filter=filt,
-                search_scope=SUBTREE,
-                attributes=target_attrs
-            )
-            if conn.entries:
-                entry = conn.entries[0].entry_attributes_as_dict
-                break # Encontrou, para de procurar
-        
-        if not entry:
-            return 'Não encontrado no AD'
-
-        # Tenta Departamento, se vazio tenta Escritório (Office)
-        dept = entry.get('department', [''])[0]
-        if dept and str(dept).strip():
-            return str(dept).strip()
-        
-        office = entry.get('physicalDeliveryOfficeName', [''])[0]
-        if office and str(office).strip():
-            return str(office).strip()
-        
-        return 'Cadastro Incompleto (AD)'
-        
-    except Exception as e:
-        logger.error(f"Erro lookup AD para '{display_name}': {e}")
-        return 'Erro na Consulta'
+def fetch_setor_temp(conn, query_val, is_username=False):
+    """
+    Busca o setor do usuário no AD de forma unificada e parametrizável.
+    """
+    return fetch_ad_department(conn, query_val, is_username=is_username)
 
 # ---------------------------
 # Navegador / Login
 # ---------------------------
 def initial_config():
-    opts = webdriver.ChromeOptions() # type: ignore
-    opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"]) # Oculta o "DevTools listening..."
-    opts.add_argument("--disable-blink-features=CSSAnimations,ScrollAnimator")
-    opts.add_argument("--incognito")
-
-    # --- SILENCIADORES DO CHROME ---
-    opts.add_argument('--log-level=3')         # Silencia logs internos (mostra apenas erros fatais)
-    opts.add_argument('--disable-logging')     # Desabilita o motor de log do navegador
-    # -------------------------------
-
-
-    if HEADLESS:
-        opts.add_argument("--headless=new")
-        opts.add_argument("--disable-gpu")
-        opts.add_argument("--window-size=1920,1080")
-    else:
-        opts.add_argument("--start-maximized")
-    opts.page_load_strategy = "eager"
-    driver = webdriver.Chrome(options=opts) # type: ignore
+    driver = get_chrome_driver(headless=HEADLESS, page_load_strategy="eager", disable_gpu=True)
     wait = WebDriverWait(driver, timeout=EXPLICIT_WAIT, poll_frequency=0.1)
     return driver, wait
 
@@ -272,6 +181,63 @@ def expand_all_records_lowcode(driver, wait):
             EC.element_to_be_clickable((By.ID, "pageSize"))
         )
         
+        # Injeta o interceptador de XHR para capturar o JSON de chamados diretamente do AngularJS/LowCode!
+        logger.info("Injetando interceptador XHR no contexto do iframe para captura direta de JSON...")
+        driver.execute_script("""
+            (function() {
+                if (window.__xhr_patched__) return;
+                window.__xhr_patched__ = true;
+                window.__captured_tickets__ = null;
+
+                var oldOpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(method, url) {
+                    this._url = url;
+                    return oldOpen.apply(this, arguments);
+                };
+
+                var oldSend = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.send = function() {
+                    var self = this;
+                    var oldOnReadyStateChange = this.onreadystatechange;
+                    this.onreadystatechange = function() {
+                        if (self.readyState === 4 && self.status === 200) {
+                            if (self._url && self._url.indexOf('tb_ticket_queue/list') !== -1) {
+                                try {
+                                    var data = JSON.parse(self.responseText);
+                                    var candidate = null;
+                                    if (Array.isArray(data)) {
+                                        candidate = data;
+                                    } else if (data && Array.isArray(data.list)) {
+                                        candidate = data.list;
+                                    }
+                                    
+                                    // Valida se o candidato é de fato um array de chamados (deve conter ticket_id ou id)
+                                    if (candidate && candidate.length > 0) {
+                                        var has_ticket_id = candidate.some(function(item) {
+                                            return item && (item.ticket_id || item.id);
+                                        });
+                                        if (has_ticket_id) {
+                                            // Mantém o maior lote capturado e evita que requests menores de atualização sobrescrevam
+                                            if (!window.__captured_tickets__ || candidate.length > window.__captured_tickets__.length) {
+                                                window.__captured_tickets__ = candidate;
+                                                console.log("🔥 [CAPTURED TICKETS] " + window.__captured_tickets__.length + " chamados gravados!");
+                                            }
+                                        }
+                                    }
+                                } catch(e) {
+                                    console.error('Error parsing captured tickets:', e);
+                                }
+                            }
+                        }
+                        if (oldOnReadyStateChange) {
+                            return oldOnReadyStateChange.apply(this, arguments);
+                        }
+                    };
+                    return oldSend.apply(this, arguments);
+                };
+            })();
+        """)
+
         # Usa o Select do Selenium para interagir com ele
         dropdown = Select(dropdown_element)
         
@@ -282,7 +248,17 @@ def expand_all_records_lowcode(driver, wait):
             current = ""
 
         if "100" in current:
-            logger.info("Já está exibindo 100 registros.")
+            logger.info("Já está exibindo 100 registros. Forçando toggle (100 -> 50 -> 100) para registrar captura de rede...")
+            dropdown.select_by_visible_text("50")
+            time.sleep(1.5)
+            # Re-localiza elemento para evitar StaleElementReferenceException
+            dropdown_element = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.ID, "pageSize"))
+            )
+            dropdown = Select(dropdown_element)
+            dropdown.select_by_visible_text("100")
+            time.sleep(1)
+            wait_loader_vanish(timeout=30)
         else:
             # 3. APLICA A MUDANÇA
             dropdown.select_by_visible_text("100")
@@ -332,8 +308,82 @@ def _list_rows(driver):
     except:
         return []
 
-def process_page(driver, wait, filtro_grupo=None, ad_conn=None):
+def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
     # Nota: Já estamos no iframe correto, não precisa de switch_to_incidents
+    
+    # 1. TENTA EXTRAÇÃO ULTRARRÁPIDA VIA JSON INTERCEPTADO NO XHR
+    try:
+        captured = driver.execute_script("return window.__captured_tickets__;")
+        if captured and isinstance(captured, list) and len(captured) > 0:
+            logger.info(f"⚡ [PROCESSO ULTRA-RÁPIDO] Processando {len(captured)} chamados capturados diretamente via JSON de rede!")
+            collected = []
+            for idx, ticket in enumerate(captured):
+                try:
+                    cid = str(ticket.get("ticket_id", ""))
+                    if not cid:
+                        continue
+                        
+                    solicitante_nome = ticket.get("ticket_requester", "")
+                    
+                    # Extração do ID do Cliente (username do email_solicitante)
+                    id_cliente = ""
+                    email_solicitante = ticket.get("email_solicitante", "")
+                    if email_solicitante and "@" in email_solicitante:
+                        id_cliente = email_solicitante.split("@")[0].strip()
+                    
+                    # Tratamento inteligente de Data
+                    data_criacao = ""
+                    iso_str = ticket.get("ticket_creationdate_str", "")
+                    if iso_str:
+                        try:
+                            # "2026-05-07T11:12:07.396Z" -> "07/05/2026 11:12"
+                            clean_iso = iso_str.split(".")[0].replace("Z", "")
+                            dt = datetime.strptime(clean_iso, "%Y-%m-%dT%H:%M:%S")
+                            data_criacao = dt.strftime("%d/%m/%Y %H:%M")
+                        except Exception:
+                            data_criacao = iso_str
+
+                    # Verificação de Cache
+                    if cache and cid in cache:
+                        collected.append({
+                            "Chamado#": cid,
+                            "ID do Cliente": id_cliente,
+                            "Nome do Usuário": solicitante_nome,
+                            "Unidade": cache[cid].get('Unidade') or "Não encontrada no AD",
+                            "Descrição": cache[cid].get('Descrição') or "",
+                            "Data Criação": data_criacao
+                        })
+                        logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE MATCH] Chamado {cid} recuperado INSTANTANEAMENTE do cache anterior!")
+                        continue
+                    
+                    # Enriquecimento AD se disponível, senão usa unidade nativa do JSON
+                    localidade = "Não encontrada no AD"
+                    if ad_conn:
+                        if id_cliente:
+                            # Consulta super rápida e 100% precisa por sAMAccountName (username)
+                            localidade = fetch_setor_temp(ad_conn, id_cliente, is_username=True)
+                        elif solicitante_nome:
+                            localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
+                    else:
+                        localidade = ticket.get("ticket_unit", "") or ticket.get("nome_unidade", "Não encontrada")
+                            
+                    collected.append({
+                        "Chamado#": cid,
+                        "ID do Cliente": id_cliente,
+                        "Nome do Usuário": solicitante_nome,
+                        "Unidade": localidade,
+                        "Descrição": ticket.get("ticket_description_long", "") or ticket.get("ticket_description", ""),
+                        "Data Criação": data_criacao
+                    })
+                    logger.info(f"[{idx+1}/{len(captured)}] Processado JSON: {cid} (Login: {id_cliente})")
+                except Exception as row_err:
+                    logger.error(f"Erro ao parsear ticket do JSON: {row_err}")
+                    continue
+            return collected
+    except Exception as e:
+        logger.warning(f"Aviso: Não foi possível usar extração ultrarrápida JS ({e}). Usando modo tradicional...")
+
+    # 2. SE NÃO HOUVER JSON, SEGUI COM O MÉTODO TRADICIONAL DE RASPAGEM DO DOM
     rows = _list_rows(driver)
     
     # Se não achou linhas, espera um pouco e tenta de novo (carregamento lento)
@@ -342,7 +392,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None):
         time.sleep(3)
         rows = _list_rows(driver)
 
-    logger.info(f"Linhas detectadas: {len(rows)}")
+    logger.info(f"Linhas detectadas no DOM: {len(rows)}")
     collected = []
 
     for idx, row in enumerate(rows):
@@ -360,49 +410,62 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None):
                     return ""
 
             # --- Extração ---
-            # Chave 1: Número (limpamos ícones com Regex)
             num_bruto = get_val("1")
             num_match = re.search(r'\d+', num_bruto)
             cid = num_match.group(0) if num_match else ""
 
             if not cid: continue # Pula linhas inválidas
 
-            # Chaves mapeadas do seu HTML
             solicitante_full = get_val("6")
             data_criacao = get_val("9")
-            descricao = get_val("10", is_description=True)
 
-            # --- Enriquecimento AD ---
-            localidade = "Não encontrada no AD"
+            # --- Tratamento inteligente de login/id_cliente ---
             solicitante_nome = solicitante_full
+            id_cliente = ""
             
-            # Tenta limpar "Nome (login)" para buscar só pelo nome ou login
-            login_busca = solicitante_full
             if "(" in solicitante_full:
                 try:
                     partes = solicitante_full.split("(")
                     solicitante_nome = partes[0].strip()
-                    # Pega o que está dentro dos parênteses como login
-                    login_busca = partes[1].replace(")", "").strip()
+                    id_cliente = partes[1].replace(")", "").strip()
                 except:
                     pass
-            
+
+            # Verificação de Cache
+            if cache and cid in cache:
+                collected.append({
+                    "Chamado#": cid,
+                    "ID do Cliente": id_cliente,
+                    "Nome do Usuário": solicitante_nome,
+                    "Unidade": cache[cid].get('Unidade') or "Não encontrada no AD",
+                    "Descrição": cache[cid].get('Descrição') or "",
+                    "Data Criação": data_criacao
+                })
+                logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE MATCH] Lido DOM via Cache: {cid}")
+                continue
+
+            descricao = get_val("10", is_description=True)
+
+            # --- Enriquecimento AD ---
+            localidade = "Não encontrada no AD"
             if ad_conn:
-                # Tenta buscar pelo login extraído OU pelo nome completo
-                # A função fetch_setor_temp agora é inteligente e tenta displayName, cn, etc.
-                localidade = fetch_setor_temp(ad_conn, solicitante_nome)
+                if id_cliente:
+                    # Consulta direta pelo sAMAccountName (login) extraído dos parênteses do DOM
+                    localidade = fetch_setor_temp(ad_conn, id_cliente, is_username=True)
+                else:
+                    localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
 
             collected.append({
                 "Chamado#": cid,
+                "ID do Cliente": id_cliente,
                 "Nome do Usuário": solicitante_nome,
                 "Unidade": localidade,
                 "Descrição": descricao,
                 "Data Criação": data_criacao
             })
-            logger.info(f"[{idx+1}/{len(rows)}] Lido: {cid}")
+            logger.info(f"[{idx+1}/{len(rows)}] Lido DOM: {cid} (Login: {id_cliente})")
 
         except Exception as e:
-            # Erros de leitura em uma linha não devem parar o script
             continue
 
     return collected
@@ -437,6 +500,27 @@ def ir_para_proxima_pagina(driver, wait):
 # Fluxo principal
 # ---------------------------
 def scrape_citsmart():
+    # Carrega cache do último arquivo de CitSmart gerado
+    cache = {}
+    try:
+        out_dir = Path("01 - Dados Brutos")
+        existing_files = sorted(out_dir.glob("Chamados_CitSmart_*.xlsx"))
+        if existing_files:
+            latest_file = existing_files[-1]
+            logger.info(f"Carregando cache de descrições do arquivo mais recente de CitSmart: {latest_file.name}")
+            df_old = pd.read_excel(latest_file, dtype=str)
+            for _, row_old in df_old.iterrows():
+                cid = str(row_old.get('Chamado#', '')).strip()
+                desc = row_old.get('Descrição', '')
+                if cid and desc and pd.notna(desc) and str(desc).strip():
+                    cache[cid] = {
+                        'Descrição': str(desc).strip(),
+                        'Unidade': str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) else ''
+                    }
+            logger.info(f"Sucesso! {len(cache)} chamados carregados no cache do CitSmart.")
+    except Exception as cache_err:
+        logger.warning(f"Aviso: Não foi possível carregar cache do CitSmart: {cache_err}")
+
     ad_conn = None
     try:
         ad_conn = setup_ad_connection()
@@ -455,7 +539,7 @@ def scrape_citsmart():
         while True:
             logger.info(f"--- Processando Página {pagina} ---")
             
-            dados_pagina = process_page(driver, wait, filtro_grupo=None, ad_conn=ad_conn)
+            dados_pagina = process_page(driver, wait, filtro_grupo=None, ad_conn=ad_conn, cache=cache)
             if dados_pagina:
                 todos_os_dados.extend(dados_pagina)
                 logger.info(f"Coletados {len(dados_pagina)} registros nesta página.")
@@ -476,32 +560,23 @@ def scrape_citsmart():
             file = out_dir / f"Chamados_CitSmart_{ts}.xlsx"
 
             df = pd.DataFrame(todos_os_dados)
-            with pd.ExcelWriter(file, engine="openpyxl") as writer:
-                df.to_excel(writer, sheet_name="Chamados", index=False)
-
-            with pd.ExcelWriter(file, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False)
-                wb = cast(XlsxWorkbook, writer.book)
-                wrap = wb.add_format({'text_wrap': True})
-                ws = writer.sheets['Sheet1']
-
-                widths = {
-                    'Chamado#': 15,
-                    'Nome do Usuário': 25,
-                    'Unidade': 40,
-                    'Descrição': 100,
-                    'Data Criação': 20
-                }
-
-                for i, col in enumerate(df.columns):
-                    fmt = wrap if col=='Descrição' else None
-                    ws.set_column(i, i, widths.get(col,20), fmt)
-                
-                for r, desc in enumerate(df['Descrição'], start=1):
-                    text = '' if pd.isna(desc) else str(desc)
-                    ws.set_row(r, 15 * (text.count('\n')+1))
+            widths = {
+                'Chamado#': 15,
+                'ID do Cliente': 20,
+                'Nome do Usuário': 25,
+                'Unidade': 40,
+                'Descrição': 100,
+                'Data Criação': 20
+            }
+            save_df_to_excel_formatted(
+                df, file, sheet_name="Chamados",
+                widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+            )
 
             logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")
+            
+            # Limpeza de arquivos antigos (mantém no máximo os 10 últimos do CitSmart)
+            cleanup_old_files(out_dir, "Chamados_CitSmart_*.xlsx", keep_count=10)
         else:
             logger.info("Nenhum dado foi coletado.")
 
