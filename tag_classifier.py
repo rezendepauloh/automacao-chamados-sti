@@ -188,6 +188,117 @@ def predict_tags(df_novos: pd.DataFrame, pipeline: Pipeline) -> pd.DataFrame:
     df_result['TAG'] = list(y_pred)
     return df_result
 
+def normalize_for_extraction(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    text = text.lower()
+    # Remove acentos
+    accent_map = {
+        'á':'a','à':'a','â':'a','ã':'a','ä':'a',
+        'é':'e','è':'e','ê':'e','ë':'e',
+        'í':'i','ì':'i','î':'i','ï':'i',
+        'ó':'o','ò':'o','ô':'o','õ':'o','ö':'o',
+        'ú':'u','ù':'u','û':'u','ü':'u',
+        'ç':'c','ñ':'n', 'ª':'a', 'º':'o'
+    }
+    text = ''.join(accent_map.get(c, c) for c in text)
+    return text
+
+def detect_and_update_remote_locations(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Analisa a descrição dos chamados procurando por menções a localidades físicas 
+    de Campo Grande em contextos de trabalho remoto ou teletrabalho.
+    Se encontrar, atualiza a coluna 'Cidade - Prédio' e 'Unidade'.
+    """
+    logger.info("Analisando descrições para identificar técnicos remotos / teletrabalho em outros prédios...")
+    df_result = df.copy()
+    
+    # Prédios conhecidos de Campo Grande e seus padrões de busca em regex (normalizados)
+    predios_cg_patterns = {
+        "Campo Grande - Chácara Cachoeira": [r"chacara\s+cachoeira", r"\bchacara\b"],
+        "Campo Grande - Ricardo Brandão": [r"ricardo\s+brandao"],
+        "Campo Grande - Rua da Paz": [r"rua\s+da\s+paz", r"\bda\s+paz\b"],
+        "Campo Grande - PGJ": [r"\bpgj\b", r"parque\s+dos\s+poderes", r"procuradoria\s+geral"],
+        "Campo Grande - Casa da Mulher Brasileira": [r"casa\s+da\s+mulher", r"mulher\s+brasileira"],
+        "Campo Grande - GAECO": [r"\bgaeco\b"],
+        "Campo Grande - DMP": [r"\bdmp\b"]
+    }
+    
+    # Expressões regulares estruturais de contexto físico/remoto
+    context_patterns = [
+        r"\bteletrabalho\b",
+        r"trabalho\s+remoto",
+        r"apoio\s+remoto",
+        r"suporte\s+remoto",
+        r"trabalhando\b",
+        r"presencialmente\b",
+        r"fisicamente\b",
+        r"sala\s+(?:do|de)\s+apoio",
+        r"sala\s+(?:do|de)\s+suporte",
+        r"desempenhar\s+(?:minhas\s+)?funcoes",
+        r"\bestou\s+(?:na|no|em|trabalhando)\b",
+        r"\bunidade\s+(?:de\s+|da\s+)?",
+        r"\bpredio\s+(?:de\s+|da\s+)?",
+        r"\blotado\s+(?:na|no|em)\b",
+        r"\blotada\s+(?:na|no|em)\b"
+    ]
+    
+    updated_count = 0
+    
+    for idx, row in df_result.iterrows():
+        desc = row.get("Descrição", "")
+        if not desc or pd.isna(desc):
+            continue
+            
+        desc_norm = normalize_for_extraction(desc)
+        
+        matched_predio = None
+        for predio_oficial, patterns in predios_cg_patterns.items():
+            for pattern in patterns:
+                match = re.search(pattern, desc_norm)
+                if match:
+                    # Verifica contexto ao redor (100 caracteres antes ou depois)
+                    match_pos = match.start()
+                    start_ctx = max(0, match_pos - 100)
+                    end_ctx = min(len(desc_norm), match.end() + 100)
+                    context_chunk = desc_norm[start_ctx:end_ctx]
+                    
+                    has_context = any(re.search(pat, context_chunk) for pat in context_patterns)
+                    if has_context:
+                        matched_predio = predio_oficial
+                        
+                        # Detecta sufixo II / 2 / Unidade II logo após o match (até 25 caracteres depois)
+                        after_match = desc_norm[match.end():match.end() + 25]
+                        suffix_ii_pattern = r"\b(ii|2|unidade\s+ii|unidade\s+2)\b"
+                        if re.search(suffix_ii_pattern, after_match):
+                            matched_predio += " II"
+                        break
+            if matched_predio:
+                break
+                
+        if matched_predio:
+            current_predio = str(row.get("Cidade - Prédio", "")).strip()
+            
+            # Se já for o prédio correto (incluindo tratamento de sufixo "II" se já tiver), ignora
+            if current_predio.lower() == matched_predio.lower():
+                continue
+                
+            # Atualiza o DataFrame
+            df_result.at[idx, "Cidade - Prédio"] = matched_predio
+            df_result.at[idx, "Unidade"] = "Trabalho remoto"
+            
+            chamado_id = row.get("Chamado#", "N/D")
+            usuario = row.get("Nome do Usuário", "N/D")
+            logger.info(
+                f"✨ [REDIRECIONAMENTO REMOTO] Chamado {chamado_id} ({usuario}): "
+                f"Alterado de '{current_predio}' -> '{matched_predio}' "
+                f"(Unidade: 'Trabalho remoto') com base no contexto na descrição."
+            )
+            updated_count += 1
+            
+    logger.info(f"Análise de localidades concluída. {updated_count} chamados atualizados.")
+    return df_result
+
 def needs_retrain(treino_path: Path, model_path: Path) -> bool:
     """Verifica se a base de treino é mais recente que o modelo salvo."""
     return (not model_path.exists()) or (
@@ -235,6 +346,9 @@ def main():
     # 3. Classifica
     df_tagged = predict_tags(df_unificado, pipeline)
     df_tagged.drop(columns=['Descrição_Limpa'], inplace=True, errors='ignore')
+
+    # 3.5 Redirecionamento inteligente de Técnicos Remotos
+    df_tagged = detect_and_update_remote_locations(df_tagged)
 
     # 4. Salva a saída final do classificador
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

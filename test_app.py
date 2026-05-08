@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 # Importação dos módulos do projeto
 from preprocess_chamados import clean_otrs_description, normalize_text
-from tag_classifier import clean_text
+from tag_classifier import clean_text, normalize_for_extraction, detect_and_update_remote_locations
 from unidades_scraper import make_sigla
 from manual_entries import set_city_into_unidade
 from config import save_df_to_excel_formatted, cleanup_old_files
@@ -253,6 +253,70 @@ class TestDateSanitization(unittest.TestCase):
         
         self.assertEqual(df.loc[0, 'Data Criação'], "2026-05-07 12:59:00")
         self.assertEqual(df.loc[1, 'Data Criação'], "2025-12-19 05:08:00")
+
+
+class TestRemoteLocationExtraction(unittest.TestCase):
+    """Testes para o redirecionamento inteligente de técnicos remotos via NLP/Heurísticas."""
+
+    def test_felipe_ferrari_case_ricardo_brandao_ii(self):
+        # Caso 1: Felipe Ferrari (Costa Rica -> Ricardo Brandão II)
+        df = pd.DataFrame({
+            "Chamado#": [84990],
+            "Nome do Usuário": ["Felipe Ferrari Marcolin"],
+            "Cidade - Prédio": ["Costa Rica - Sede"],
+            "Unidade": ["Costa Rica - Sede"],
+            "Descrição": ["Felipe Ferrari Marcolin está lotado em Costa Rica - Sede, mas Angela está trabalhando na Sala do Suporte de Apoio Remoto na Ricardo Brandão - Unidade II e solicitou apoio na instalação do software."]
+        })
+        df_updated = detect_and_update_remote_locations(df)
+        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Campo Grande - Ricardo Brandão II")
+        self.assertEqual(df_updated.loc[0, "Unidade"], "Trabalho remoto")
+
+    def test_nadson_borges_case_chacara_cachoeira_ii(self):
+        # Caso 2: Nadson Borges (Aquidauana -> Chácara Cachoeira II)
+        df = pd.DataFrame({
+            "Chamado#": [84995],
+            "Nome do Usuário": ["Nadson Matheus Borges"],
+            "Cidade - Prédio": ["Aquidauana - Sede"],
+            "Unidade": ["Aquidauana - Sede"],
+            "Descrição": ["Considerando que passei a desempenhar minhas funções em teletrabalho a partir de hoje, na sala do apoio remoto, na Unidade Chácara Cachoeira II, peço revisão de rede."]
+        })
+        df_updated = detect_and_update_remote_locations(df)
+        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Campo Grande - Chácara Cachoeira II")
+        self.assertEqual(df_updated.loc[0, "Unidade"], "Trabalho remoto")
+
+    def test_false_positive_no_remote_context(self):
+        # Caso 3: Menção à Chácara Cachoeira mas sem contexto de trabalho remoto
+        df = pd.DataFrame({
+            "Chamado#": [85000],
+            "Nome do Usuário": ["José Silva"],
+            "Cidade - Prédio": ["Aquidauana - Sede"],
+            "Unidade": ["Aquidauana - Sede"],
+            "Descrição": ["Minha impressora aqui em Aquidauana quebrou. Preciso de suporte urgente. Não tem nada a ver com Chácara Cachoeira."]
+        })
+        df_updated = detect_and_update_remote_locations(df)
+        # Não deve alterar
+        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Aquidauana - Sede")
+        self.assertEqual(df_updated.loc[0, "Unidade"], "Aquidauana - Sede")
+
+    def test_remote_context_without_ii_suffix(self):
+        # Caso 4: Presença remota em prédio padrão (sem II)
+        df = pd.DataFrame({
+            "Chamado#": [85010],
+            "Nome do Usuário": ["Reginaldo Vilanova"],
+            "Cidade - Prédio": ["Ponta Porã - Sede"],
+            "Unidade": ["Ponta Porã - Sede"],
+            "Descrição": ["Estou trabalhando temporariamente no prédio da Rua da Paz para acompanhar o treinamento da equipe."]
+        })
+        df_updated = detect_and_update_remote_locations(df)
+        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Campo Grande - Rua da Paz")
+        self.assertEqual(df_updated.loc[0, "Unidade"], "Trabalho remoto")
+
+    def test_normalize_for_extraction(self):
+        # Caso 5: Limpeza e normalização fina de acentuações, casing e tipos nulos
+        self.assertEqual(normalize_for_extraction("Olá, Chácara Cachoeira, Ricardo Brandão, GAECO!"), "ola, chacara cachoeira, ricardo brandao, gaeco!")
+        self.assertEqual(normalize_for_extraction("AQUIDAÚANA, CORUMBÁ, TRABALHO REMÔTO."), "aquidauana, corumba, trabalho remoto.")
+        self.assertEqual(normalize_for_extraction(None), "")
+        self.assertEqual(normalize_for_extraction(123), "")
 
 
 if __name__ == "__main__":

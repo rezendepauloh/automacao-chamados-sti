@@ -88,6 +88,11 @@ MODEL_PATH  = MODEL_DIR / "tag_classifier.joblib"
 DEBUG_DIR_SYNC = BASE_DIR / "debug_logs" / "sync"
 DEBUG_DIR_SYNC.mkdir(parents=True, exist_ok=True)
 
+# Orquestrador
+DEBUG_DIR_ORQUESTRADOR = BASE_DIR / "debug_logs" / "orquestrador"
+DEBUG_DIR_ORQUESTRADOR.mkdir(parents=True, exist_ok=True)
+LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"
+
 # -----------------------------------------------------------------------------
 # LOGGING CENTRALIZADO
 # -----------------------------------------------------------------------------
@@ -96,8 +101,34 @@ import logging
 import pandas as pd
 from logging.handlers import RotatingFileHandler
 
+class SafeStreamWrapper:
+    """Wrapper para streams que previne travamentos catastróficos por UnicodeEncodeError no Windows."""
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, data):
+        try:
+            self.stream.write(data)
+        except UnicodeEncodeError:
+            try:
+                # Tenta codificar substituindo caracteres não suportados por '?'
+                encoding = getattr(self.stream, "encoding", None) or "ascii"
+                safe_data = data.encode(encoding, errors="replace").decode(encoding)
+                self.stream.write(safe_data)
+            except Exception:
+                # Fallback final em ASCII absoluto
+                safe_data = data.encode("ascii", errors="replace").decode("ascii")
+                self.stream.write(safe_data)
+
+    def flush(self):
+        if hasattr(self.stream, "flush"):
+            self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
 def setup_logging(log_file: Path, name: str = __name__) -> logging.Logger:
-    """Configura o logging rotativo e para terminal de forma unificada e centralizada."""
+    """Configura o logging rotativo e para terminal de forma unificada e centralizada com proteção Unicode."""
     log_file.parent.mkdir(parents=True, exist_ok=True)
     
     file_handler = RotatingFileHandler(
@@ -106,7 +137,10 @@ def setup_logging(log_file: Path, name: str = __name__) -> logging.Logger:
         backupCount=3,             # Mantém apenas 3 arquivos de histórico
         encoding='utf-8'
     )
-    stream_handler = logging.StreamHandler(sys.stdout)
+    
+    # Envelopa sys.stdout com nosso wrapper de proteção unicode
+    safe_stdout = SafeStreamWrapper(sys.stdout)
+    stream_handler = logging.StreamHandler(safe_stdout)
     
     # Configura o basicConfig. force=True reinicia handlers anteriores
     logging.basicConfig(

@@ -1,6 +1,4 @@
 import sys
-import logging
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import pandas as pd
 import shutil
@@ -111,9 +109,27 @@ def format_excel(excel_data: Tuple[Any, Any], fechar_apos=True):
                     row_range = ws.Range(ws.Cells(r, 1), ws.Cells(r, used.Columns.Count))
                     row_range.Interior.Color = hex_to_excel_color(TAG_COLORS[tag_name])
 
-    # 5. Ativar a "Quebra de Texto" (Wrap) para a Descrição e ajustar a altura da linha (AutoFit)
-    used.WrapText = True
-    used.Rows.AutoFit()
+    # 5. Ativar a "Quebra de Texto" (Wrap) de forma GLOBAL para todas as colunas
+    # Isso garante que se qualquer metadado (ex: "Cidade - Prédio") for muito longo, ele quebre a linha e fique legível sem ser cortado
+    try:
+        used.WrapText = True
+    except Exception:
+        pass
+
+    # 5.1 Reseta a altura de todas as linhas de dados para um padrão uniforme antes de rodar o AutoFit.
+    # Isso remove travamentos e overrides manuais antigos e garante que o Excel recalcule a altura ideal do zero!
+    if used.Rows.Count > 1:
+        try:
+            data_rows = ws.Range(ws.Cells(2, 1), ws.Cells(used.Rows.Count, used.Columns.Count))
+            data_rows.RowHeight = 20
+        except Exception:
+            pass
+
+    # 5.2 Manda o Excel recalcular a altura ideal de todas as linhas de forma precisa
+    try:
+        used.Rows.AutoFit()
+    except Exception:
+        pass
 
     # ---- Guardar o ficheiro ----
     wb.Save()
