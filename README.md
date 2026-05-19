@@ -30,8 +30,10 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 
 ### 5. Gestão Centralizada (Dashboard Web e Banco de Dados)
 - **Painel Interativo Premium (Streamlit):** Interface gráfica web lindíssima e responsiva (Hot-Reloading) para acompanhamento dos chamados em tempo real, com ordenação inteligente de datas e filtros dinâmicos de Status, Unidade, Usuário e TAG de IA.
+- **Deep Linking Centralizado (Acesso em Um Clique):** Geração dinâmica de URLs diretas para os chamados tanto no OTRS quanto no CitSmart. Exibido de forma ultra-elegante no Streamlit através de `st.column_config.LinkColumn` (coluna "Link Direto") e pelo botão nativo `st.link_button` no modal de detalhes, permitindo abrir o chamado de origem em uma nova aba instantaneamente.
 - **Gestão de Visibilidade Dinâmica:** Controle avançado via UI (ex: toggle elegante na barra lateral para mostrar ou ocultar o IP de rede dos usuários sob demanda).
 - **Persistência Inteligente (SQLite):** Todo o tráfego de dados gerado é consolidado num banco de dados local leve e ultra-rápido (`chamados.db`), que monitora e gerencia os estados lógicos de "Aberto" e "Fechado" autonomamente conforme chamados novos chegam ou desaparecem da fila de triagem.
+
 
 ---
 

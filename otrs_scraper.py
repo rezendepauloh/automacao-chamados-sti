@@ -23,7 +23,7 @@ from config import (
 )
 
 # Configurações atualizadas de cabeçalhos incluindo a coluna Unidade
-HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem', 'Comentários']
+HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem', 'Link', 'Comentários']
 
 # --- Configuração de logging ---
 logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
@@ -140,21 +140,38 @@ def get_ticket_details(driver):
                 except:
                     pass
                 
-                # Tenta buscar o autor via span.Hidden (contém o sender completo)
+                # Tenta buscar o autor de forma ultra robusta
+                autor = ""
+                
+                # 1. Tenta pelo span.Hidden (que contém Nome + E-mail completo)
                 try:
                     sender_span = h2.find_element(By.CSS_SELECTOR, 'span.Hidden')
-                    autor = sender_span.text.strip()
+                    autor = sender_span.get_attribute("textContent").strip()
                 except:
-                    # Fallback para o span visível ou texto do h2
+                    pass
+                    
+                # 2. Se falhar ou vier vazio, tenta pelo span visível
+                if not autor:
                     try:
                         sender_span = h2.find_element(By.CSS_SELECTOR, 'span:not(.Hidden)')
-                        autor = sender_span.text.strip()
+                        autor = sender_span.get_attribute("textContent").strip()
                     except:
                         pass
-                
-                # Limpezas adicionais de aspas
+                        
+                # 3. Se ainda estiver vazio, busca o padrão "por [Nome]" no texto completo do H2
+                if not autor:
+                    try:
+                        h2_text = h2.get_attribute("textContent")
+                        if "por " in h2_text:
+                            autor = h2_text.split("por ")[-1].strip()
+                    except:
+                        pass
+                        
+                # 4. Tratamento final e limpeza
                 if autor:
                     autor = autor.replace('"', '').strip()
+                else:
+                    autor = "Sistema"
             except Exception as meta_err:
                 logger.warning(f"Erro ao extrair metadados do artigo {idx+1}: {meta_err}")
             
@@ -260,12 +277,13 @@ def extract_row_data(driver, row, cache=None):
         current = WebDriverWait(driver, EXPLICIT_WAIT).until(EC.visibility_of(row))
         cells = current.find_elements(By.TAG_NAME, 'td')
 
-        # --- Chamado# (Cell 3) ---
+        # --- Chamado# e Link (Cell 3) ---
         try:
-            # O .text retorna string vazia se não tiver nada, então é mais seguro que get_attribute
-            data['Chamado#'] = cells[3].find_element(By.TAG_NAME, 'a').text.strip()
+            a_elem = cells[3].find_element(By.TAG_NAME, 'a')
+            data['Chamado#'] = a_elem.text.strip()
+            data['Link'] = a_elem.get_attribute('href') or ""
         except Exception as e:
-            logger.error(f"Erro Chamado#: {e}")
+            logger.error(f"Erro Chamado# / Link: {e}")
 
         # --- Data Criação (Cell 4) ---
         try:
@@ -316,6 +334,8 @@ def extract_row_data(driver, row, cache=None):
             if cache and cid in cache and cache[cid].get('Descrição'):
                 data['Descrição'] = cache[cid]['Descrição']
                 data['Comentários'] = cache[cid].get('Comentários', '[]')
+                if 'Link' not in data or not data['Link']:
+                    data['Link'] = cache[cid].get('Link', '')
                 logger.info(f"⚡ [CACHE MATCH] Descrição e Comentários do chamado {cid} recuperados INSTANTANEAMENTE do cache anterior!")
             else:
                 # Aqui passamos o driver e a linha atual (current)
@@ -532,6 +552,7 @@ def brute_data(data):
         'ID do Cliente': 15,
         'Descrição': 100,
         'IP_Origem': 15,
+        'Link': 40,
         'Comentários': 50
     }
     save_df_to_excel_formatted(
@@ -555,11 +576,13 @@ def scrape_otrs():
                 cid = str(row_old.get('Chamado#', '')).strip()
                 desc = row_old.get('Descrição', '')
                 ip = row_old.get('IP_Origem', '')
+                link = row_old.get('Link', '')
                 comments = row_old.get('Comentários', '[]')
                 if cid:
                     cache[cid] = {
                         'Descrição': str(desc).strip() if pd.notna(desc) else '',
                         'IP_Origem': str(ip).strip() if pd.notna(ip) else '',
+                        'Link': str(link).strip() if pd.notna(link) else '',
                         'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
                     }
             logger.info(f"Sucesso! {len(cache)} descrições, IPs e comentários carregados no cache de memória do OTRS.")

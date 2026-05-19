@@ -405,6 +405,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                                 "Descrição": cached_desc,
                                 "Data Criação": data_criacao,
                                 "IP_Origem": cached_ip,
+                                "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                                 "Comentários": comments_json
                             })
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE MATCH] Chamado {cid} (com IP: {cached_ip}) recuperado do cache anterior!")
@@ -424,6 +425,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                                 "Descrição": cached_desc,
                                 "Data Criação": data_criacao,
                                 "IP_Origem": sccm_ip,
+                                "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                                 "Comentários": comments_json
                             })
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE PARCIAL] Chamado {cid} recuperado do cache anterior, consultando IP no SCCM...")
@@ -452,6 +454,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Descrição": ticket.get("ticket_description_long", "") or ticket.get("ticket_description", ""),
                         "Data Criação": data_criacao,
                         "IP_Origem": sccm_ip,
+                        "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                         "Comentários": comments_json
                     })
                     logger.info(f"[{idx+1}/{len(captured)}] Processado JSON: {cid} (Login: {id_cliente})")
@@ -528,6 +531,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Descrição": cached_desc,
                         "Data Criação": data_criacao,
                         "IP_Origem": cached_ip,
+                        "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                         "Comentários": comments_json
                     })
                     logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE MATCH] Lido DOM via Cache: {cid} (IP: {cached_ip})")
@@ -546,6 +550,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Descrição": cached_desc,
                         "Data Criação": data_criacao,
                         "IP_Origem": sccm_ip,
+                        "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                         "Comentários": comments_json
                     })
                     logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE PARCIAL] Lido DOM via Cache: {cid}, consultando IP no SCCM...")
@@ -575,6 +580,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                 "Descrição": descricao,
                 "Data Criação": data_criacao,
                 "IP_Origem": sccm_ip,
+                "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                 "Comentários": comments_json
             })
             logger.info(f"[{idx+1}/{len(rows)}] Lido DOM: {cid} (Login: {id_cliente})")
@@ -627,12 +633,14 @@ def scrape_citsmart():
                 cid = str(row_old.get('Chamado#', '')).strip()
                 desc = row_old.get('Descrição', '')
                 ip = row_old.get('IP_Origem', '')
+                link = row_old.get('Link', '')
                 comments = row_old.get('Comentários', '[]')
                 if cid:
                     cache[cid] = {
                         'Descrição': str(desc).strip() if pd.notna(desc) else '',
                         'Unidade': str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) else '',
                         'IP_Origem': str(ip).strip() if pd.notna(ip) else '',
+                        'Link': str(link).strip() if pd.notna(link) else '',
                         'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
                     }
             logger.info(f"Sucesso! {len(cache)} chamados carregados no cache do CitSmart.")
@@ -686,6 +694,7 @@ def scrape_citsmart():
                 'Descrição': 100,
                 'Data Criação': 20,
                 'IP_Origem': 15,
+                'Link': 40,
                 'Comentários': 50
             }
             save_df_to_excel_formatted(

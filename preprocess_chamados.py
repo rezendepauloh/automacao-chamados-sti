@@ -245,10 +245,14 @@ def process_otrs(ts: str) -> pd.DataFrame:
     
     if 'Comentários' not in df.columns:
         df['Comentários'] = '[]'
+    if 'IP_Origem' not in df.columns:
+        df['IP_Origem'] = ""
+    if 'Link' not in df.columns:
+        df['Link'] = ""
     
     # colunas finais
     cols = ["Chamado#","Nome do Usuário","ID do Cliente","Data Criação",
-            "Cidade - Prédio","Unidade","Descrição","Base","Título","Comentários"]
+            "Cidade - Prédio","Unidade","Descrição","Base","Título","IP_Origem","Link","Comentários"]
     
     return df[cols]
 
@@ -274,9 +278,15 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     
     if 'Comentários' not in df.columns:
         df['Comentários'] = '[]'
+    if 'IP_Origem' not in df.columns:
+        df['IP_Origem'] = ""
+    if 'ID do Cliente' not in df.columns:
+        df['ID do Cliente'] = ""
+    if 'Link' not in df.columns:
+        df['Link'] = ""
     
-    cols = ["Chamado#","Nome do Usuário","Data Criação",
-            "Cidade - Prédio","Unidade","Descrição","Base","Título","Comentários"]
+    cols = ["Chamado#","Nome do Usuário","ID do Cliente","Data Criação",
+            "Cidade - Prédio","Unidade","Descrição","Base","Título","IP_Origem","Link","Comentários"]
     
     return df[cols]
 
@@ -342,7 +352,7 @@ def main():
             combined[col] = ""
             
     # 5. Organiza a ordem base das colunas (O classificador só vai espremer a TAG no meio depois)
-    colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base', 'Título', 'Comentários']
+    colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base', 'Título', 'IP_Origem', 'Link', 'Comentários']
     colunas_existentes = [c for c in colunas_ordem if c in combined.columns]
     combined = combined[colunas_existentes]
     # =========================================================

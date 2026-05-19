@@ -51,6 +51,8 @@ def setup_database():
     columns = [col[1] for col in cursor.fetchall()]
     if 'base' not in columns:
         cursor.execute("ALTER TABLE chamados ADD COLUMN base TEXT")
+    if 'link' not in columns:
+        cursor.execute("ALTER TABLE chamados ADD COLUMN link TEXT")
         
     conn.commit()
     conn.close()
@@ -86,26 +88,26 @@ def save_tickets_to_db(df: pd.DataFrame):
             UPDATE chamados SET
                 titulo = ?, cidade_predio = ?, unidade = ?, localidade_fisica = ?,
                 usuario = ?, id_cliente = ?, descricao = ?, tag = ?, ip_origem = ?,
-                data_atualizacao = ?, base = ?
+                data_atualizacao = ?, base = ?, link = ?
             WHERE id = ?
             """, (
                 row.get('Título', ''), row.get('Cidade - Prédio', ''), row.get('Unidade', ''),
                 row.get('Localidade física', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''),
                 row.get('Descrição', ''), row.get('TAG', ''), row.get('IP_Origem', ''),
-                now, row.get('Base', ''), cid
+                now, row.get('Base', ''), row.get('Link', ''), cid
             ))
         else:
             # Se não existe, insere como Aberto
             cursor.execute("""
             INSERT INTO chamados (
                 id, data_criacao, titulo, cidade_predio, unidade, localidade_fisica,
-                usuario, id_cliente, descricao, tag, ip_origem, status, data_atualizacao, base
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?)
+                usuario, id_cliente, descricao, tag, ip_origem, status, data_atualizacao, base, link
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, ?)
             """, (
                 cid, row.get('Data Criação', ''), row.get('Título', ''),
                 row.get('Cidade - Prédio', ''), row.get('Unidade', ''), row.get('Localidade física', ''),
                 row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''), row.get('Descrição', ''),
-                row.get('TAG', ''), row.get('IP_Origem', ''), now, row.get('Base', '')
+                row.get('TAG', ''), row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', '')
             ))
             
         # Salva os comentários se a coluna 'Comentários' estiver presente (Atômico na mesma transação)

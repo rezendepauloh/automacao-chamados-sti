@@ -182,6 +182,12 @@ else:
                     st.success(f"Status atualizado para {new_status}!")
                     st.rerun()
                     
+            # Botão para abrir o chamado original
+            link_url = row.get('link')
+            if link_url:
+                st.markdown("---")
+                st.link_button("🔗 Abrir Chamado Original", link_url, use_container_width=True)
+                    
         st.markdown("---")
         
         # Accordion para a Descrição
@@ -204,11 +210,11 @@ else:
 
     # Colunas para exibir
     cols_to_show = [
-        'id', 'status', 'tag', 'localidade_fisica', 
+        'id', 'link', 'status', 'tag', 'localidade_fisica', 
         'cidade_predio', 'unidade', 'usuario', 'datetime_obj', 'base'
     ]
     if show_ip:
-        cols_to_show.insert(8, 'ip_origem') # Insere antes da base
+        cols_to_show.insert(9, 'ip_origem') # Insere antes da base
     
     st.subheader("Lista de Chamados")
     st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha na tabela abaixo para abrir os Detalhes e Descrição no Modal.")
@@ -230,6 +236,7 @@ else:
             "usuario": st.column_config.TextColumn("Usuário"),
             "datetime_obj": st.column_config.DatetimeColumn("Data Criação", format="DD/MM/YYYY HH:mm:ss"),
             "ip_origem": st.column_config.TextColumn("IP de Origem"),
+            "link": st.column_config.LinkColumn("Link Direto", display_text="Abrir 🔗"),
             "base": st.column_config.TextColumn("Base"),
         },
         hide_index=True,
