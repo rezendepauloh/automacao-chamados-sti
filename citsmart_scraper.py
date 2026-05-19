@@ -12,6 +12,8 @@ import pandas as pd
 import re
 import logging
 from pathlib import Path
+import json
+import html
 from ldap3 import SUBTREE
 from config import (
     CITSMART_URL, CITSMART_EMAIL, PASSWORD,
@@ -302,6 +304,17 @@ def expand_all_records_lowcode(driver, wait):
         # salvar_screenshot(driver, "ERRO_excecao")
         return 0
 
+def clean_html_comment(html_str):
+    if not html_str:
+        return ""
+    # Remove tags HTML
+    txt = re.sub(r'<[^>]*>', ' ', html_str)
+    # Decodifica entidades HTML
+    txt = html.unescape(txt)
+    # Remove linhas vazias redundantes
+    lines = [line.strip() for line in txt.splitlines() if line.strip()]
+    return "\n".join(lines)
+
 def _list_rows(driver):
     try:
         return driver.find_elements(By.CSS_SELECTOR, "#table tbody tr")
@@ -343,6 +356,39 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         except Exception:
                             data_criacao = iso_str
 
+                    # Carrega comentários do cache
+                    comments_list = []
+                    if cache and cid in cache:
+                        cached_comments_str = cache[cid].get('Comentários', '[]')
+                        try:
+                            comments_list = json.loads(cached_comments_str)
+                        except:
+                            pass
+
+                    # Tenta extrair o último comentário do JSON atual
+                    ticket_ocorrencia = ticket.get("ticket_ocorrencia")
+                    if ticket_ocorrencia and ticket_ocorrencia.strip():
+                        texto_limpo = clean_html_comment(ticket_ocorrencia)
+                        data_reg = ticket.get("ticket_ocorrencia_dataregistro_br") or ticket.get("ticket_ocorrencia_dataregistro")
+                        autor = ticket.get("responsible_ocorrencia") or "Sistema"
+                        
+                        new_comment = {
+                            "data": str(data_reg).strip() if data_reg else datetime.now().strftime("%d/%m/%Y %H:%M"),
+                            "autor": str(autor).strip(),
+                            "texto": texto_limpo
+                        }
+                        
+                        # Evita duplicidade comparando data e conteúdo
+                        exists = False
+                        for existing in comments_list:
+                            if existing.get('data') == new_comment['data'] and existing.get('texto') == new_comment['texto']:
+                                exists = True
+                                break
+                        if not exists:
+                            comments_list.append(new_comment)
+
+                    comments_json = json.dumps(comments_list, ensure_ascii=False)
+
                     # Verificação de Cache
                     if cache and cid in cache:
                         cached_ip = cache[cid].get('IP_Origem') or ""
@@ -358,7 +404,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                                 "Unidade": cached_unidade or "Não encontrada no AD",
                                 "Descrição": cached_desc,
                                 "Data Criação": data_criacao,
-                                "IP_Origem": cached_ip
+                                "IP_Origem": cached_ip,
+                                "Comentários": comments_json
                             })
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE MATCH] Chamado {cid} (com IP: {cached_ip}) recuperado do cache anterior!")
                             continue
@@ -376,7 +423,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                                 "Unidade": cached_unidade or "Não encontrada no AD",
                                 "Descrição": cached_desc,
                                 "Data Criação": data_criacao,
-                                "IP_Origem": sccm_ip
+                                "IP_Origem": sccm_ip,
+                                "Comentários": comments_json
                             })
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE PARCIAL] Chamado {cid} recuperado do cache anterior, consultando IP no SCCM...")
                             continue
@@ -385,7 +433,6 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                     localidade = "Não encontrada no AD"
                     if ad_conn:
                         if id_cliente:
-                            # Consulta super rápida e 100% precisa por sAMAccountName (username)
                             localidade = fetch_setor_temp(ad_conn, id_cliente, is_username=True)
                         elif solicitante_nome:
                             localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
@@ -404,7 +451,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Unidade": localidade,
                         "Descrição": ticket.get("ticket_description_long", "") or ticket.get("ticket_description", ""),
                         "Data Criação": data_criacao,
-                        "IP_Origem": sccm_ip
+                        "IP_Origem": sccm_ip,
+                        "Comentários": comments_json
                     })
                     logger.info(f"[{idx+1}/{len(captured)}] Processado JSON: {cid} (Login: {id_cliente})")
                 except Exception as row_err:
@@ -462,6 +510,9 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                 except:
                     pass
 
+            # Carrega comentários do cache se existirem no DOM
+            comments_json = cache[cid].get('Comentários', '[]') if (cache and cid in cache) else '[]'
+
             # Verificação de Cache
             if cache and cid in cache:
                 cached_ip = cache[cid].get('IP_Origem') or ""
@@ -476,7 +527,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Unidade": cached_unidade or "Não encontrada no AD",
                         "Descrição": cached_desc,
                         "Data Criação": data_criacao,
-                        "IP_Origem": cached_ip
+                        "IP_Origem": cached_ip,
+                        "Comentários": comments_json
                     })
                     logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE MATCH] Lido DOM via Cache: {cid} (IP: {cached_ip})")
                     continue
@@ -493,7 +545,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Unidade": cached_unidade or "Não encontrada no AD",
                         "Descrição": cached_desc,
                         "Data Criação": data_criacao,
-                        "IP_Origem": sccm_ip
+                        "IP_Origem": sccm_ip,
+                        "Comentários": comments_json
                     })
                     logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE PARCIAL] Lido DOM via Cache: {cid}, consultando IP no SCCM...")
                     continue
@@ -521,7 +574,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                 "Unidade": localidade,
                 "Descrição": descricao,
                 "Data Criação": data_criacao,
-                "IP_Origem": sccm_ip
+                "IP_Origem": sccm_ip,
+                "Comentários": comments_json
             })
             logger.info(f"[{idx+1}/{len(rows)}] Lido DOM: {cid} (Login: {id_cliente})")
 
@@ -567,17 +621,19 @@ def scrape_citsmart():
         existing_files = sorted(out_dir.glob("Chamados_CitSmart_*.xlsx"))
         if existing_files:
             latest_file = existing_files[-1]
-            logger.info(f"Carregando cache de descrições do arquivo mais recente de CitSmart: {latest_file.name}")
+            logger.info(f"Carregando cache de descrições e comentários do arquivo mais recente de CitSmart: {latest_file.name}")
             df_old = pd.read_excel(latest_file, dtype=str)
             for _, row_old in df_old.iterrows():
                 cid = str(row_old.get('Chamado#', '')).strip()
                 desc = row_old.get('Descrição', '')
                 ip = row_old.get('IP_Origem', '')
+                comments = row_old.get('Comentários', '[]')
                 if cid:
                     cache[cid] = {
                         'Descrição': str(desc).strip() if pd.notna(desc) else '',
                         'Unidade': str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) else '',
-                        'IP_Origem': str(ip).strip() if pd.notna(ip) else ''
+                        'IP_Origem': str(ip).strip() if pd.notna(ip) else '',
+                        'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
                     }
             logger.info(f"Sucesso! {len(cache)} chamados carregados no cache do CitSmart.")
     except Exception as cache_err:
@@ -629,11 +685,12 @@ def scrape_citsmart():
                 'Unidade': 40,
                 'Descrição': 100,
                 'Data Criação': 20,
-                'IP_Origem': 15
+                'IP_Origem': 15,
+                'Comentários': 50
             }
             save_df_to_excel_formatted(
                 df, file, sheet_name="Chamados",
-                widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+                widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
             )
 
             logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")

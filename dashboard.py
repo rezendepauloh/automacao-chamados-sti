@@ -188,6 +188,17 @@ else:
         with st.expander(f"📝 #1 - {row['Data Formatada']} (Descrição)", expanded=True):
             st.text(row['descricao'])
             
+        # Comentários / Notas históricas
+        from database import get_comments_by_ticket
+        comments = get_comments_by_ticket(row['id'])
+        if comments:
+            st.markdown("### 💬 Histórico de Notas e Acompanhamentos")
+            # Exibe cada comentário em um expander elegante
+            for i, c in enumerate(comments, start=2):
+                header = f"🕒 #{i} – {c['data']} – por {c['autor']}"
+                with st.expander(header):
+                    st.text(c['texto'])
+            
         if st.button("Fechar", key="close_modal_btn"):
             st.rerun()
 

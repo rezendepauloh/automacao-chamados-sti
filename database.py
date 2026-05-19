@@ -34,6 +34,18 @@ def setup_database():
     )
     """)
     
+    # Criando a tabela de comentarios se não existir
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS comentarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chamado_id TEXT,
+        data TEXT,
+        autor TEXT,
+        texto TEXT,
+        FOREIGN KEY(chamado_id) REFERENCES chamados(id) ON DELETE CASCADE
+    )
+    """)
+    
     # Verifica se a coluna 'base' existe (Migração automática)
     cursor.execute("PRAGMA table_info(chamados)")
     columns = [col[1] for col in cursor.fetchall()]
@@ -96,6 +108,22 @@ def save_tickets_to_db(df: pd.DataFrame):
                 row.get('TAG', ''), row.get('IP_Origem', ''), now, row.get('Base', '')
             ))
             
+        # Salva os comentários se a coluna 'Comentários' estiver presente (Atômico na mesma transação)
+        comments_val = row.get('Comentários', '[]')
+        if pd.notna(comments_val) and str(comments_val).strip() and str(comments_val).strip() != '[]':
+            import json
+            try:
+                comments_list = json.loads(str(comments_val))
+                if isinstance(comments_list, list):
+                    cursor.execute("DELETE FROM comentarios WHERE chamado_id = ?", (cid,))
+                    for comment in comments_list:
+                        cursor.execute("""
+                        INSERT INTO comentarios (chamado_id, data, autor, texto)
+                        VALUES (?, ?, ?, ?)
+                        """, (cid, comment.get('data', ''), comment.get('autor', ''), comment.get('texto', '')))
+            except Exception:
+                pass
+            
     conn.commit()
     conn.close()
 
@@ -137,3 +165,39 @@ def update_ticket_status(cid: str, new_status: str):
     
     conn.commit()
     conn.close()
+
+def save_comments_to_db(chamado_id: str, comments: list):
+    """
+    Salva a lista de comentários de um chamado no banco de dados.
+    Cada comentário na lista deve ser um dicionário: {'data': '...', 'autor': '...', 'texto': '...'}
+    Remove os comentários antigos daquele chamado antes de inserir os novos para evitar duplicados.
+    """
+    setup_database()
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Remove antigos para evitar duplicidade
+    cursor.execute("DELETE FROM comentarios WHERE chamado_id = ?", (chamado_id,))
+    
+    for comment in comments:
+        cursor.execute("""
+        INSERT INTO comentarios (chamado_id, data, autor, texto)
+        VALUES (?, ?, ?, ?)
+        """, (chamado_id, comment.get('data', ''), comment.get('autor', ''), comment.get('texto', '')))
+        
+    conn.commit()
+    conn.close()
+
+def get_comments_by_ticket(chamado_id: str) -> list:
+    """Retorna todos os comentários de um chamado ordenados por id."""
+    setup_database()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT data, autor, texto FROM comentarios 
+    WHERE chamado_id = ? 
+    ORDER BY id ASC
+    """, (chamado_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{'data': r[0], 'autor': r[1], 'texto': r[2]} for r in rows]

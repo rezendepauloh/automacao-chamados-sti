@@ -243,9 +243,12 @@ def process_otrs(ts: str) -> pd.DataFrame:
     # Adiciona fallback para Título caso não exista por algum motivo
     df['Título'] = df.get('Título', '').fillna('')
     
+    if 'Comentários' not in df.columns:
+        df['Comentários'] = '[]'
+    
     # colunas finais
     cols = ["Chamado#","Nome do Usuário","ID do Cliente","Data Criação",
-            "Cidade - Prédio","Unidade","Descrição","Base","Título"]
+            "Cidade - Prédio","Unidade","Descrição","Base","Título","Comentários"]
     
     return df[cols]
 
@@ -269,8 +272,11 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     # CitSmart não tem Título nativo, então criamos vazio
     df['Título'] = ""
     
+    if 'Comentários' not in df.columns:
+        df['Comentários'] = '[]'
+    
     cols = ["Chamado#","Nome do Usuário","Data Criação",
-            "Cidade - Prédio","Unidade","Descrição","Base","Título"]
+            "Cidade - Prédio","Unidade","Descrição","Base","Título","Comentários"]
     
     return df[cols]
 
@@ -288,7 +294,7 @@ def main():
         widths['Descrição'] = 100
         save_df_to_excel_formatted(
             df, out, sheet_name=name,
-            widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+            widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
         )
         autofit_excel_rows(out)
     
@@ -336,7 +342,7 @@ def main():
             combined[col] = ""
             
     # 5. Organiza a ordem base das colunas (O classificador só vai espremer a TAG no meio depois)
-    colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base', 'Título']
+    colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base', 'Título', 'Comentários']
     colunas_existentes = [c for c in colunas_ordem if c in combined.columns]
     combined = combined[colunas_existentes]
     # =========================================================
@@ -349,7 +355,7 @@ def main():
     widths['Descrição'] = 100
     save_df_to_excel_formatted(
         combined, out, sheet_name='Unificados',
-        widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+        widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
     )
     autofit_excel_rows(out)
     

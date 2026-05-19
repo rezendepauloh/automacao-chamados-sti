@@ -8,6 +8,7 @@ from selenium.common.exceptions import (
 import pandas as pd
 import sys
 import os
+import json
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -22,7 +23,7 @@ from config import (
 )
 
 # Configurações atualizadas de cabeçalhos incluindo a coluna Unidade
-HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem']
+HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem', 'Comentários']
 
 # --- Configuração de logging ---
 logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
@@ -101,39 +102,102 @@ def merge_data(new_df: pd.DataFrame) -> pd.DataFrame:
     logging.debug(f"Merged data - added: {len(df_add)}, updated: {len(df_update)}, dropped: {len(to_drop)}")
     return merged
 
-def get_ticket_description(driver):
+def get_ticket_details(driver):
     """
-    Extrai apenas o corpo da primeira nota (#1) do container #ArticleItems,
-    descartando todas as notas posteriores e cabeçalhos estáticos.
+    Extrai a descrição (primeira nota) e todos os comentários subsequentes
+    das notas contidas no container #ArticleItems.
     """
+    desc = ""
+    comments = []
+    
     try:
-        # 1) Espera o container principal aparecer
+        # Espera o container principal aparecer
         container = WebDriverWait(driver, EXPLICIT_WAIT).until(
             EC.presence_of_element_located((By.ID, "ArticleItems"))
         )
-
-        # 2) Busca todos os iframes dentro dele e pega o primeiro (nota #1)
-        iframes = container.find_elements(By.TAG_NAME, "iframe")
-        if not iframes:
-            raw = container.text
-        else:
-            driver.switch_to.frame(iframes[0])
-            body = WebDriverWait(driver, EXPLICIT_WAIT).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            raw = body.text
-
-        # 3) Remove linhas em branco e faz strip em cada linha
-        clean = "\n".join(line.strip() for line in raw.splitlines() if line.strip())
-        return clean
-
+        
+        # Encontra todas as notas (widgets simples de artigos)
+        widgets = container.find_elements(By.CSS_SELECTOR, "div.WidgetSimple")
+        logger.info(f"Detectados {len(widgets)} artigos/notas no chamado zoom.")
+        
+        for idx, widget in enumerate(widgets):
+            # 1. Extração de Metadados (Data e Autor)
+            data_envio = ""
+            autor = "Desconhecido"
+            
+            try:
+                # Localiza o título/h2 do cabeçalho
+                h2 = widget.find_element(By.TAG_NAME, "h2")
+                
+                # Tenta buscar a data via span[title*="Criado"], span[title*="Created"]
+                try:
+                    date_span = h2.find_element(By.CSS_SELECTOR, 'span[title*="Criado"], span[title*="Created"]')
+                    raw_title = date_span.get_attribute("title") or ""
+                    if ":" in raw_title:
+                        data_envio = raw_title.split(":", 1)[1].strip()
+                    else:
+                        data_envio = date_span.text.strip()
+                except:
+                    pass
+                
+                # Tenta buscar o autor via span.Hidden (contém o sender completo)
+                try:
+                    sender_span = h2.find_element(By.CSS_SELECTOR, 'span.Hidden')
+                    autor = sender_span.text.strip()
+                except:
+                    # Fallback para o span visível ou texto do h2
+                    try:
+                        sender_span = h2.find_element(By.CSS_SELECTOR, 'span:not(.Hidden)')
+                        autor = sender_span.text.strip()
+                    except:
+                        pass
+                
+                # Limpezas adicionais de aspas
+                if autor:
+                    autor = autor.replace('"', '').strip()
+            except Exception as meta_err:
+                logger.warning(f"Erro ao extrair metadados do artigo {idx+1}: {meta_err}")
+            
+            # 2. Extração do Conteúdo (Texto da nota via iframe)
+            texto_nota = ""
+            try:
+                # OTRS usa um iframe para isolar o HTML da nota
+                iframe = widget.find_element(By.TAG_NAME, "iframe")
+                driver.switch_to.frame(iframe)
+                
+                body = WebDriverWait(driver, EXPLICIT_WAIT).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                texto_nota = body.text
+                driver.switch_to.default_content()
+            except Exception as iframe_err:
+                driver.switch_to.default_content()
+                logger.warning(f"Erro ao acessar iframe do artigo {idx+1}: {iframe_err}")
+                # Fallback de leitura de texto direta se não achar iframe
+                try:
+                    content_div = widget.find_element(By.CSS_SELECTOR, "div.ArticleMailContent, div.Content")
+                    texto_nota = content_div.text
+                except:
+                    pass
+            
+            # Limpa linhas vazias e faz strip
+            clean_text = "\n".join(line.strip() for line in texto_nota.splitlines() if line.strip())
+            
+            # Se for o primeiro artigo (idx == 0), é a descrição principal do chamado
+            if idx == 0:
+                desc = clean_text
+            else:
+                # Do segundo em diante, são comentários/notas de acompanhamento
+                comments.append({
+                    "data": data_envio or datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    "autor": autor or "Sistema",
+                    "texto": clean_text
+                })
+                
     except Exception as e:
-        logger.error(f"Erro em get_ticket_description: {type(e).__name__}: {e}")
-        return ""
-
-    finally:
-        # sempre volta pro contexto principal
-        driver.switch_to.default_content()
+        logger.error(f"Erro geral em get_ticket_details: {e}")
+        
+    return desc, comments
 
 # Processa um ticket individualmente
 def process_ticket(driver, row):
@@ -150,7 +214,7 @@ def process_ticket(driver, row):
         lambda d: d.current_url != current_url and EC.presence_of_element_located((By.ID, "ArticleItems"))(d)
     )
 
-    desc = get_ticket_description(driver)
+    desc, comments = get_ticket_details(driver)
 
     # volta para lista
     driver.execute_script("window.history.go(-1);")
@@ -165,7 +229,7 @@ def process_ticket(driver, row):
             EC.presence_of_element_located((By.CSS_SELECTOR, "table.TableSmall"))
         )
 
-    return desc
+    return desc, comments
 
 def check_pagination(driver):
     """Verifica se existe paginação de resultados"""
@@ -251,12 +315,15 @@ def extract_row_data(driver, row, cache=None):
             cid = data['Chamado#']
             if cache and cid in cache and cache[cid].get('Descrição'):
                 data['Descrição'] = cache[cid]['Descrição']
-                logger.info(f"⚡ [CACHE MATCH] Descrição do chamado {cid} recuperada INSTANTANEAMENTE do cache anterior!")
+                data['Comentários'] = cache[cid].get('Comentários', '[]')
+                logger.info(f"⚡ [CACHE MATCH] Descrição e Comentários do chamado {cid} recuperados INSTANTANEAMENTE do cache anterior!")
             else:
                 # Aqui passamos o driver e a linha atual (current)
-                data['Descrição'] = process_ticket(driver, current)
+                desc, comments = process_ticket(driver, current)
+                data['Descrição'] = desc
+                data['Comentários'] = json.dumps(comments, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"Erro Descrição: {e}")
+            logger.error(f"Erro Descrição e Comentários: {e}")
  
         # --- Extração de IP (OTRS ou SCCM ou Cache) ---
         desc = data.get('Descrição', '')
@@ -464,11 +531,12 @@ def brute_data(data):
         'Nome do Usuário': 25,
         'ID do Cliente': 15,
         'Descrição': 100,
-        'IP_Origem': 15
+        'IP_Origem': 15,
+        'Comentários': 50
     }
     save_df_to_excel_formatted(
         df, file, sheet_name="Sheet1",
-        widths=widths, wrap_cols=['Descrição'], height_col='Descrição'
+        widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
     )
 
     logger.info(f"SUCESSO! Total de {len(df)} chamados salvos em: {file}")
@@ -481,18 +549,20 @@ def scrape_otrs():
         existing_files = sorted(out_dir.glob("Chamados_OTRS_*.xlsx"))
         if existing_files:
             latest_file = existing_files[-1]
-            logger.info(f"Carregando cache de descrições e IPs do arquivo mais recente: {latest_file.name}")
+            logger.info(f"Carregando cache de descrições, IPs e comentários do arquivo mais recente: {latest_file.name}")
             df_old = pd.read_excel(latest_file, dtype=str)
             for _, row_old in df_old.iterrows():
                 cid = str(row_old.get('Chamado#', '')).strip()
                 desc = row_old.get('Descrição', '')
                 ip = row_old.get('IP_Origem', '')
+                comments = row_old.get('Comentários', '[]')
                 if cid:
                     cache[cid] = {
                         'Descrição': str(desc).strip() if pd.notna(desc) else '',
-                        'IP_Origem': str(ip).strip() if pd.notna(ip) else ''
+                        'IP_Origem': str(ip).strip() if pd.notna(ip) else '',
+                        'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
                     }
-            logger.info(f"Sucesso! {len(cache)} descrições e IPs carregados no cache de memória do OTRS.")
+            logger.info(f"Sucesso! {len(cache)} descrições, IPs e comentários carregados no cache de memória do OTRS.")
     except Exception as cache_err:
         logger.warning(f"Aviso: Não foi possível carregar cache do OTRS: {cache_err}")
 
