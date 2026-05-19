@@ -240,9 +240,12 @@ def process_otrs(ts: str) -> pd.DataFrame:
     df['Base'] = 'OTRS'
     df = enrich_with_unidades(df, base='OTRS')
     
+    # Adiciona fallback para Título caso não exista por algum motivo
+    df['Título'] = df.get('Título', '').fillna('')
+    
     # colunas finais
     cols = ["Chamado#","Nome do Usuário","ID do Cliente","Data Criação",
-            "Cidade - Prédio","Unidade","Descrição","Base"]
+            "Cidade - Prédio","Unidade","Descrição","Base","Título"]
     
     return df[cols]
 
@@ -262,8 +265,12 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     df['Data Criação'] = df['Data Criação'].astype(str)
     df['Base'] = 'CitSmart'
     df = enrich_with_unidades(df, base='CitSmart')
+    
+    # CitSmart não tem Título nativo, então criamos vazio
+    df['Título'] = ""
+    
     cols = ["Chamado#","Nome do Usuário","Data Criação",
-            "Cidade - Prédio","Unidade","Descrição","Base"]
+            "Cidade - Prédio","Unidade","Descrição","Base","Título"]
     
     return df[cols]
 
@@ -329,7 +336,7 @@ def main():
             combined[col] = ""
             
     # 5. Organiza a ordem base das colunas (O classificador só vai espremer a TAG no meio depois)
-    colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base']
+    colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base', 'Título']
     colunas_existentes = [c for c in colunas_ordem if c in combined.columns]
     combined = combined[colunas_existentes]
     # =========================================================

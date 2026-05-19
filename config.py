@@ -284,6 +284,99 @@ def fetch_ad_department(conn, query_val: str, is_username: bool = True) -> str:
         return 'Erro na Consulta'
 
 
+def fetch_ip_from_sccm(username: str) -> str:
+    """
+    Consulta o SCCM via PowerShell (CIM/WMI) para obter o IP do último computador
+    onde o usuário esteve logado, usando credenciais de administrador (se configuradas).
+    """
+    if not username:
+        return ""
+        
+    import subprocess
+    import logging
+    import re
+    import keyring
+    
+    logger = logging.getLogger(__name__)
+    
+    site_server = "srv-1046.in.mpe.ms.gov.br"
+    site_code = "PGJ"
+    
+    # 1. Recupera as credenciais do administrador do SCCM no cofre de senhas do Windows
+    admin_user = "paulo_admin"
+    admin_password = keyring.get_password("sccm_admin", admin_user)
+    
+    # 2. Monta a consulta WMI
+    query = f"SELECT * FROM SMS_R_System WHERE LastLogonUserName LIKE '%{username}%'"
+    
+    # 3. Constrói o comando do PowerShell dependendo de termos ou não a senha do admin
+    if admin_password:
+        logger.info(f"Consultando SCCM para o usuário: {username} (Usando credenciais de {admin_user})")
+        # Garante o formato DOMINIO\usuario usando o domínio correto carregado do .env
+        domain_user = admin_user
+        if "\\" not in domain_user and "@" not in domain_user:
+            short_domain = DOMINIO_CURTO or "MPE"
+            domain_user = f"{short_domain}\\{admin_user}"
+            
+        # Escapa caracteres especiais na senha para o PowerShell
+        escaped_password = admin_password.replace('"', '`"').replace('$', '`$')
+        
+        ps_command = (
+            f'$secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force; '
+            f'$mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd); '
+            f'Get-WmiObject -ComputerName {site_server} -Namespace \'root\\sms\\site_{site_code}\' '
+            f'-Query "{query}" -Credential $mycreds -Authentication PacketPrivacy | Select-Object IPAddresses | ConvertTo-Json'
+        )
+    else:
+        logger.info(f"Consultando SCCM para o usuário: {username} (Sem credenciais adicionais)")
+        ps_command = f"Get-CimInstance -ComputerName {site_server} -Namespace 'root\\sms\\site_{site_code}' -Query \"{query}\" | Select-Object IPAddresses | ConvertTo-Json"
+    
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_command],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            encoding='cp1252',
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        
+        if result.returncode != 0:
+            error_output = result.stderr.strip()
+            if "Acesso negado" in error_output or "Access denied" in error_output or "Acesso Negado" in error_output:
+                logger.warning(f"Acesso negado ao consultar SCCM para {username}. Requer privilégios elevados de rede.")
+                return "Acesso Negado"
+            logger.error(f"Erro ao consultar SCCM para {username}: {error_output}")
+            return ""
+            
+        output = result.stdout.strip()
+        if not output:
+            logger.info(f"Nenhum registro encontrado no SCCM para {username}.")
+            return ""
+            
+        # Procura por IPs que começam com 10.
+        ips = re.findall(r'10\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
+        if ips:
+            logger.info(f"IP encontrado no SCCM para {username}: {ips[0]}")
+            return ips[0]
+            
+        # Tenta pegar qualquer IPv4
+        ipv4s = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
+        if ipv4s:
+            logger.info(f"IP (não-10) encontrado no SCCM para {username}: {ipv4s[0]}")
+            return ipv4s[0]
+            
+        logger.info(f"Nenhum IP válido encontrado no retorno do SCCM para {username}.")
+        return ""
+        
+    except subprocess.TimeoutExpired:
+        logger.error(f"Timeout ao consultar SCCM para {username}.")
+        return "Timeout"
+    except Exception as e:
+        logger.error(f"Exceção ao consultar SCCM para {username}: {e}")
+        return "Erro"
+
+
 def get_chrome_driver(
     headless: bool = True,
     page_load_strategy: str = None,

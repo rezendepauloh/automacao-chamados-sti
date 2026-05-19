@@ -345,16 +345,41 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
 
                     # Verificação de Cache
                     if cache and cid in cache:
-                        collected.append({
-                            "Chamado#": cid,
-                            "ID do Cliente": id_cliente,
-                            "Nome do Usuário": solicitante_nome,
-                            "Unidade": cache[cid].get('Unidade') or "Não encontrada no AD",
-                            "Descrição": cache[cid].get('Descrição') or "",
-                            "Data Criação": data_criacao
-                        })
-                        logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE MATCH] Chamado {cid} recuperado INSTANTANEAMENTE do cache anterior!")
-                        continue
+                        cached_ip = cache[cid].get('IP_Origem') or ""
+                        cached_unidade = cache[cid].get('Unidade') or ""
+                        cached_desc = cache[cid].get('Descrição') or ""
+                        
+                        # Se temos o IP no cache, aproveitamos 100%
+                        if cached_ip:
+                            collected.append({
+                                "Chamado#": cid,
+                                "ID do Cliente": id_cliente,
+                                "Nome do Usuário": solicitante_nome,
+                                "Unidade": cached_unidade or "Não encontrada no AD",
+                                "Descrição": cached_desc,
+                                "Data Criação": data_criacao,
+                                "IP_Origem": cached_ip
+                            })
+                            logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE MATCH] Chamado {cid} (com IP: {cached_ip}) recuperado do cache anterior!")
+                            continue
+                        else:
+                            # Se não temos o IP, reaproveitamos os outros dados do cache e apenas buscamos o IP
+                            sccm_ip = ""
+                            if id_cliente:
+                                from config import fetch_ip_from_sccm
+                                sccm_ip = fetch_ip_from_sccm(id_cliente)
+                            
+                            collected.append({
+                                "Chamado#": cid,
+                                "ID do Cliente": id_cliente,
+                                "Nome do Usuário": solicitante_nome,
+                                "Unidade": cached_unidade or "Não encontrada no AD",
+                                "Descrição": cached_desc,
+                                "Data Criação": data_criacao,
+                                "IP_Origem": sccm_ip
+                            })
+                            logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE PARCIAL] Chamado {cid} recuperado do cache anterior, consultando IP no SCCM...")
+                            continue
                     
                     # Enriquecimento AD se disponível, senão usa unidade nativa do JSON
                     localidade = "Não encontrada no AD"
@@ -367,13 +392,19 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                     else:
                         localidade = ticket.get("ticket_unit", "") or ticket.get("nome_unidade", "Não encontrada")
                             
+                    sccm_ip = ""
+                    if id_cliente:
+                        from config import fetch_ip_from_sccm
+                        sccm_ip = fetch_ip_from_sccm(id_cliente)
+
                     collected.append({
                         "Chamado#": cid,
                         "ID do Cliente": id_cliente,
                         "Nome do Usuário": solicitante_nome,
                         "Unidade": localidade,
                         "Descrição": ticket.get("ticket_description_long", "") or ticket.get("ticket_description", ""),
-                        "Data Criação": data_criacao
+                        "Data Criação": data_criacao,
+                        "IP_Origem": sccm_ip
                     })
                     logger.info(f"[{idx+1}/{len(captured)}] Processado JSON: {cid} (Login: {id_cliente})")
                 except Exception as row_err:
@@ -433,16 +464,39 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
 
             # Verificação de Cache
             if cache and cid in cache:
-                collected.append({
-                    "Chamado#": cid,
-                    "ID do Cliente": id_cliente,
-                    "Nome do Usuário": solicitante_nome,
-                    "Unidade": cache[cid].get('Unidade') or "Não encontrada no AD",
-                    "Descrição": cache[cid].get('Descrição') or "",
-                    "Data Criação": data_criacao
-                })
-                logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE MATCH] Lido DOM via Cache: {cid}")
-                continue
+                cached_ip = cache[cid].get('IP_Origem') or ""
+                cached_unidade = cache[cid].get('Unidade') or ""
+                cached_desc = cache[cid].get('Descrição') or ""
+                
+                if cached_ip:
+                    collected.append({
+                        "Chamado#": cid,
+                        "ID do Cliente": id_cliente,
+                        "Nome do Usuário": solicitante_nome,
+                        "Unidade": cached_unidade or "Não encontrada no AD",
+                        "Descrição": cached_desc,
+                        "Data Criação": data_criacao,
+                        "IP_Origem": cached_ip
+                    })
+                    logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE MATCH] Lido DOM via Cache: {cid} (IP: {cached_ip})")
+                    continue
+                else:
+                    sccm_ip = ""
+                    if id_cliente:
+                        from config import fetch_ip_from_sccm
+                        sccm_ip = fetch_ip_from_sccm(id_cliente)
+                        
+                    collected.append({
+                        "Chamado#": cid,
+                        "ID do Cliente": id_cliente,
+                        "Nome do Usuário": solicitante_nome,
+                        "Unidade": cached_unidade or "Não encontrada no AD",
+                        "Descrição": cached_desc,
+                        "Data Criação": data_criacao,
+                        "IP_Origem": sccm_ip
+                    })
+                    logger.info(f"[{idx+1}/{len(rows)}] ⚡ [CACHE PARCIAL] Lido DOM via Cache: {cid}, consultando IP no SCCM...")
+                    continue
 
             descricao = get_val("10", is_description=True)
 
@@ -455,13 +509,19 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                 else:
                     localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
 
+            sccm_ip = ""
+            if id_cliente:
+                from config import fetch_ip_from_sccm
+                sccm_ip = fetch_ip_from_sccm(id_cliente)
+
             collected.append({
                 "Chamado#": cid,
                 "ID do Cliente": id_cliente,
                 "Nome do Usuário": solicitante_nome,
                 "Unidade": localidade,
                 "Descrição": descricao,
-                "Data Criação": data_criacao
+                "Data Criação": data_criacao,
+                "IP_Origem": sccm_ip
             })
             logger.info(f"[{idx+1}/{len(rows)}] Lido DOM: {cid} (Login: {id_cliente})")
 
@@ -512,10 +572,12 @@ def scrape_citsmart():
             for _, row_old in df_old.iterrows():
                 cid = str(row_old.get('Chamado#', '')).strip()
                 desc = row_old.get('Descrição', '')
-                if cid and desc and pd.notna(desc) and str(desc).strip():
+                ip = row_old.get('IP_Origem', '')
+                if cid:
                     cache[cid] = {
-                        'Descrição': str(desc).strip(),
-                        'Unidade': str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) else ''
+                        'Descrição': str(desc).strip() if pd.notna(desc) else '',
+                        'Unidade': str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) else '',
+                        'IP_Origem': str(ip).strip() if pd.notna(ip) else ''
                     }
             logger.info(f"Sucesso! {len(cache)} chamados carregados no cache do CitSmart.")
     except Exception as cache_err:
@@ -566,7 +628,8 @@ def scrape_citsmart():
                 'Nome do Usuário': 25,
                 'Unidade': 40,
                 'Descrição': 100,
-                'Data Criação': 20
+                'Data Criação': 20,
+                'IP_Origem': 15
             }
             save_df_to_excel_formatted(
                 df, file, sheet_name="Chamados",

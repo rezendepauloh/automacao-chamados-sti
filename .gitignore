@@ -18,6 +18,7 @@ ENV/
 02 - Dados tratados/
 03 - Dados prontos/
 debug_logs/
+chamados.db
 
 # Logs
 *.log

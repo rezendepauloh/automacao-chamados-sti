@@ -22,7 +22,7 @@ from config import (
 )
 
 # Configurações atualizadas de cabeçalhos incluindo a coluna Unidade
-HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição']
+HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem']
 
 # --- Configuração de logging ---
 logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
@@ -239,26 +239,50 @@ def extract_row_data(driver, row, cache=None):
             data['ID do Cliente'] = client_id
             
             # Lookup Unidade no AD
-            # (Assumindo que fetch_unidade lida bem com string vazia, senão adicione um if)
             if client_id:
                 data['Unidade'] = fetch_unidade(client_id)
             else:
                 data['Unidade'] = "N/A"
-
         except Exception as e:
             logger.error(f"Erro ID do Cliente ou lookup AD: {e}")
 
         # --- Descrição (Processo separado com Cache Inteligente) ---
         try:
             cid = data['Chamado#']
-            if cache and cid in cache:
-                data['Descrição'] = cache[cid]
+            if cache and cid in cache and cache[cid].get('Descrição'):
+                data['Descrição'] = cache[cid]['Descrição']
                 logger.info(f"⚡ [CACHE MATCH] Descrição do chamado {cid} recuperada INSTANTANEAMENTE do cache anterior!")
             else:
                 # Aqui passamos o driver e a linha atual (current)
                 data['Descrição'] = process_ticket(driver, current)
         except Exception as e:
             logger.error(f"Erro Descrição: {e}")
+ 
+        # --- Extração de IP (OTRS ou SCCM ou Cache) ---
+        desc = data.get('Descrição', '')
+        ip_encontrado = ""
+        
+        # 1. Tenta recuperar o IP do cache anterior
+        if cache and cid in cache and cache[cid].get('IP_Origem'):
+            ip_encontrado = cache[cid]['IP_Origem']
+            data['IP_Origem'] = ip_encontrado
+            logger.info(f"⚡ [CACHE MATCH] IP do chamado {cid} recuperado do cache anterior: {ip_encontrado}")
+            
+        # 2. Se não tinha no cache, busca na descrição
+        if not ip_encontrado and desc:
+            import re
+            ip_match = re.search(r'IP:\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', desc)
+            if ip_match:
+                ip_encontrado = ip_match.group(1)
+                data['IP_Origem'] = ip_encontrado
+                logger.info(f"IP encontrado na descrição do OTRS: {ip_encontrado}")
+                
+        # 3. Se ainda não tem IP, faz a consulta ao SCCM
+        if not ip_encontrado and data.get('ID do Cliente'):
+            from config import fetch_ip_from_sccm
+            sccm_ip = fetch_ip_from_sccm(data['ID do Cliente'])
+            if sccm_ip:
+                data['IP_Origem'] = sccm_ip
 
         # logger.info(f"Dados extraídos: {data['Chamado#']}")
         
@@ -439,7 +463,8 @@ def brute_data(data):
         'Unidade': 40,
         'Nome do Usuário': 25,
         'ID do Cliente': 15,
-        'Descrição': 100
+        'Descrição': 100,
+        'IP_Origem': 15
     }
     save_df_to_excel_formatted(
         df, file, sheet_name="Sheet1",
@@ -456,16 +481,20 @@ def scrape_otrs():
         existing_files = sorted(out_dir.glob("Chamados_OTRS_*.xlsx"))
         if existing_files:
             latest_file = existing_files[-1]
-            logger.info(f"Carregando cache de descrições do arquivo mais recente: {latest_file.name}")
+            logger.info(f"Carregando cache de descrições e IPs do arquivo mais recente: {latest_file.name}")
             df_old = pd.read_excel(latest_file, dtype=str)
             for _, row_old in df_old.iterrows():
                 cid = str(row_old.get('Chamado#', '')).strip()
                 desc = row_old.get('Descrição', '')
-                if cid and desc and pd.notna(desc) and str(desc).strip():
-                    cache[cid] = str(desc).strip()
-            logger.info(f"Sucesso! {len(cache)} descrições carregadas no cache de memória.")
+                ip = row_old.get('IP_Origem', '')
+                if cid:
+                    cache[cid] = {
+                        'Descrição': str(desc).strip() if pd.notna(desc) else '',
+                        'IP_Origem': str(ip).strip() if pd.notna(ip) else ''
+                    }
+            logger.info(f"Sucesso! {len(cache)} descrições e IPs carregados no cache de memória do OTRS.")
     except Exception as cache_err:
-        logger.warning(f"Aviso: Não foi possível carregar cache de descrições anteriores: {cache_err}")
+        logger.warning(f"Aviso: Não foi possível carregar cache do OTRS: {cache_err}")
 
     driver = None
     try:

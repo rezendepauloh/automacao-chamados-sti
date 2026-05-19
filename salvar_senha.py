@@ -1,11 +1,32 @@
 import keyring
 import os
 
-# Pega o mesmo usuário que o config.py usa (username)
+# Pega o mesmo usuário que o config.py usa (username) para o contexto diário
 usuario_windows = os.getlogin() 
-senha_real = input("Digite a sua senha da rede/AD: ")
+senha_real = input("Digite a sua senha da rede/AD (para OTRS/CitSmart): ")
 
-# Salva no cofre do Windows
+# Salva no cofre do Windows para o usuário logado
 keyring.set_password("otrs", usuario_windows, senha_real)
 keyring.set_password("citSmart", usuario_windows, senha_real)
 print(f"✅ Senha salva com sucesso no cofre do Windows para o usuário: {usuario_windows}")
+
+print("\n" + "="*60)
+print("🔑 CONFIGURAÇÃO OPCIONAL: USUÁRIO ADMINISTRADOR DO SCCM")
+print("="*60)
+print("Se você deseja rodar a consulta de IPs no SCCM com privilégios de Administrador,")
+print("podemos salvar a senha da conta administradora (ex: paulo_admin) no seu cofre.")
+print("Assim, o script diário continuará rodando com o seu usuário comum, mas fará")
+print("as consultas do SCCM fingindo ser o administrador com segurança!")
+
+quer_salvar = input("\nDeseja salvar a senha da conta de Admin para SCCM? (S/N): ").strip().upper()
+if quer_salvar == 'S':
+    admin_user = "paulo_admin"
+    print(f"\n--> Configurando credenciais para: {admin_user}")
+    senha_admin = input("Digite a senha de rede do usuário administrador (paulo_admin): ").strip()
+    if senha_admin:
+        keyring.set_password("sccm_admin", admin_user, senha_admin)
+        print(f"\n✅ Senha de administrador salva com sucesso para a conta: {admin_user}!")
+    else:
+        print("\n⚠️ Nenhuma senha digitada. Configuração de Admin ignorada.")
+else:
+    print("\nℹ️ Configuração de Admin ignorada.")
