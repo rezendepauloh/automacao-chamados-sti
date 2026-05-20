@@ -71,13 +71,29 @@
     input:focus {
       border-color: #ff4b4b;
     }
+    .btn-clear {
+      background-color: transparent;
+      border: 1px solid rgba(250, 250, 250, 0.2);
+      color: #fafafa;
+      border-radius: 4px;
+      padding: 7px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+      outline: none;
+    }
+    .btn-clear:hover {
+      border-color: #ff4b4b;
+      color: #ff4b4b;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
       <input type="text" id="search" placeholder="🔍 Pesquisar..." oninput="filterOptions()" style="flex-grow: 1; margin-bottom: 0;">
-      <button onclick="clearSelection()" style="background-color: transparent; border: 1px solid rgba(250, 250, 250, 0.2); color: #fafafa; border-radius: 4px; padding: 7px 12px; font-size: 13px; cursor: pointer; font-family: inherit; transition: all 0.2s;" onmouseover="this.style.borderColor='#ff4b4b'; this.style.color='#ff4b4b'" onmouseout="this.style.borderColor='rgba(250, 250, 250, 0.2)'; this.style.color='#fafafa'">Limpar</button>
+      <button onclick="clearSelection()" class="btn-clear">Limpar</button>
     </div>
     <select id="select-box" multiple onchange="onSelectionChange()"></select>
   </div>
@@ -93,6 +109,66 @@
       window.parent.postMessage(message, "*");
     }
 
+    // Função para aplicar dinamicamente o tema do Streamlit
+    function applyTheme(theme) {
+      if (!theme) return;
+      
+      let styleEl = document.getElementById("streamlit-theme-style");
+      if (!styleEl) {
+        styleEl = document.createElement("style");
+        styleEl.id = "streamlit-theme-style";
+        document.head.appendChild(styleEl);
+      }
+      
+      const primaryColor = theme.primaryColor || "#ff4b4b";
+      const backgroundColor = theme.backgroundColor || "#ffffff";
+      const secondaryBackgroundColor = theme.secondaryBackgroundColor || "#f0f2f6";
+      const textColor = theme.textColor || "#31333f";
+      
+      const isDark = textColor === "#fafafa" || textColor === "#ffffff" || textColor.toLowerCase() === "#f0f2f6";
+      const borderColor = isDark ? "rgba(250, 250, 250, 0.2)" : "rgba(49, 51, 63, 0.2)";
+      
+      styleEl.innerHTML = `
+        body {
+          color: ${textColor};
+        }
+        select {
+          background-color: ${secondaryBackgroundColor};
+          color: ${textColor};
+          border: 1px solid ${borderColor};
+        }
+        select:focus {
+          border-color: ${primaryColor};
+        }
+        select::-webkit-scrollbar-track {
+          background: ${secondaryBackgroundColor};
+        }
+        select::-webkit-scrollbar-thumb {
+          background: ${borderColor};
+        }
+        option:checked {
+          background-color: ${primaryColor} !important;
+          color: white !important;
+        }
+        input {
+          background-color: ${secondaryBackgroundColor};
+          color: ${textColor};
+          border: 1px solid ${borderColor};
+        }
+        input:focus {
+          border-color: ${primaryColor};
+        }
+        .btn-clear {
+          border: 1px solid ${borderColor};
+          color: ${textColor};
+        }
+        .btn-clear:hover {
+          border-color: ${primaryColor};
+          color: ${primaryColor};
+        }
+      `;
+    }
+
     let allOptions = [];
     let selectedValues = [];
     let isInitialized = false;
@@ -101,6 +177,12 @@
     window.addEventListener("message", (event) => {
       if (event.data.type === "streamlit:render") {
         const args = event.data.args;
+        
+        // Aplica o tema dinâmico recebido do Streamlit
+        if (event.data.theme) {
+          applyTheme(event.data.theme);
+        }
+        
         allOptions = args.options || [];
         
         if (!isInitialized) {

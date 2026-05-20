@@ -1,3 +1,13 @@
+import sys
+import asyncio
+
+# Silencia o aviso WinError 10054 (Connection Reset) comum no Windows asyncio
+if sys.platform == 'win32':
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except:
+        pass
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -251,7 +261,7 @@ else:
                 link_url = row.get('link')
                 if link_url:
                     st.markdown("---")
-                    st.link_button("🔗 Abrir Chamado Original", link_url, use_container_width=True)
+                    st.link_button("🔗 Abrir Chamado Original", link_url, width="stretch")
         
         # Accordion para a Descrição
         with st.expander(f"📝 #1 - {row['Data Formatada']} (Descrição)", expanded=True):
@@ -346,7 +356,7 @@ else:
             "base": st.column_config.TextColumn("Base"),
         },
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         on_select="rerun",
         selection_mode="single-row"
     )
@@ -412,7 +422,7 @@ else:
                 }
                 
                 diag = diagnosticos.get(tag, "Análise e resolução de ticket técnico STI.")
-                return f"🧠 *Possível Problema:* {diag}\nSintoma: _{first_sentence}_"
+                return f"🧠 *Possível Problema:* {diag}\n🩺 *Sintoma:* _{first_sentence}_"
 
             from database import get_comments_by_ticket
 
