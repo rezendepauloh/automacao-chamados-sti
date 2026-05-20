@@ -91,6 +91,27 @@ def clean_text(text: str) -> str:
             
     return " ".join(tokens)
 
+def extract_comments_text(comments_val) -> str:
+    """Extrai texto puro dos comentários em formato JSON string ou lista."""
+    if not comments_val or pd.isna(comments_val):
+        return ""
+    import json
+    if isinstance(comments_val, list):
+        comments_list = comments_val
+    else:
+        try:
+            comments_list = json.loads(str(comments_val))
+        except Exception:
+            return str(comments_val)
+            
+    if isinstance(comments_list, list):
+        texts = []
+        for c in comments_list:
+            if isinstance(c, dict):
+                texts.append(str(c.get('texto', '')))
+        return " ".join(texts)
+    return str(comments_val)
+
 # --------------------------------------------------------------------------
 # Funções de Machine Learning
 # --------------------------------------------------------------------------
@@ -282,9 +303,12 @@ def detect_and_update_remote_locations(df: pd.DataFrame) -> pd.DataFrame:
             df_result.at[idx, "Localidade física"] = matched_predio
             updated_count += 1
         else:
-            # Fallback: Concatena Cidade - Prédio e Unidade
+            # Fallback: Concatena Cidade - Prédio e Unidade (removendo " - Sede" desnecessário)
             cidade_predio = str(row.get("Cidade - Prédio", "")).strip()
+            cidade_predio = re.sub(r'\s*-\s*Sede\b', '', cidade_predio, flags=re.IGNORECASE).strip()
+            
             unidade = str(row.get("Unidade", "")).strip()
+            unidade = re.sub(r'\s*-\s*Sede\b', '', unidade, flags=re.IGNORECASE).strip()
             
             if unidade and unidade not in ["N/D", "Não encontrada no AD", "Não encontrada"]:
                 if cidade_predio and cidade_predio != unidade:
@@ -293,6 +317,7 @@ def detect_and_update_remote_locations(df: pd.DataFrame) -> pd.DataFrame:
                     df_result.at[idx, "Localidade física"] = unidade
             else:
                 df_result.at[idx, "Localidade física"] = cidade_predio or "Não identificada"
+
                 
     logger.info(f"Análise de localidades concluída. {updated_count} chamados direcionados por IP/NLP.")
     return df_result
@@ -319,8 +344,13 @@ def main():
     logger.info(f"Lendo base para classificação: {recente.name}")
     df_unificado = pd.read_excel(recente)
     
-    # Prepara descrições
-    df_unificado['Descrição_Limpa'] = df_unificado['Descrição'].apply(clean_text)
+    # Prepara descrições integrando os comentários de acompanhamento para classificação rica em contexto
+    if 'Comentários' not in df_unificado.columns:
+        df_unificado['Comentários'] = '[]'
+    df_unificado['Descrição_Limpa'] = (
+        df_unificado['Descrição'].fillna('') + " " + 
+        df_unificado['Comentários'].apply(extract_comments_text)
+    ).apply(clean_text)
 
     # 2. Carrega ou Treina o Modelo
     if not TREINO_PATH.exists():
@@ -329,7 +359,12 @@ def main():
 
     df_train = pd.read_excel(TREINO_PATH)
     df_train = df_train.dropna(subset=['TAG', 'Descrição'])
-    df_train['Descrição_Limpa'] = df_train['Descrição'].apply(clean_text)
+    if 'Comentários' not in df_train.columns:
+        df_train['Comentários'] = '[]'
+    df_train['Descrição_Limpa'] = (
+        df_train['Descrição'].fillna('') + " " + 
+        df_train['Comentários'].apply(extract_comments_text)
+    ).apply(clean_text)
 
     # Se já existir modelo salvo, reutiliza. Senão, treina um novo.
     if needs_retrain(TREINO_PATH, MODEL_PATH):

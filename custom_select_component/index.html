@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: transparent;
+      font-family: "Source Sans Pro", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #fafafa;
+    }
+    .container {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    select {
+      font-family: inherit;
+      width: 100%;
+      height: 200px;
+      background-color: #262730;
+      color: #fafafa;
+      border: 1px solid rgba(250, 250, 250, 0.2);
+      border-radius: 4px;
+      padding: 6px;
+      font-size: 14px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    select:focus {
+      border-color: #ff4b4b;
+    }
+    /* Estilização da barra de rolagem para combinar com o dark theme */
+    select::-webkit-scrollbar {
+      width: 8px;
+    }
+    select::-webkit-scrollbar-track {
+      background: #262730;
+      border-radius: 4px;
+    }
+    select::-webkit-scrollbar-thumb {
+      background: rgba(250, 250, 250, 0.2);
+      border-radius: 4px;
+    }
+    select::-webkit-scrollbar-thumb:hover {
+      background: rgba(250, 250, 250, 0.4);
+    }
+    option {
+      padding: 4px 8px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    option:checked {
+      background: #ff4b4b !important;
+      color: white !important;
+    }
+    input {
+      font-family: inherit;
+      width: 100%;
+      box-sizing: border-box;
+      background-color: #262730;
+      color: #fafafa;
+      border: 1px solid rgba(250, 250, 250, 0.2);
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 14px;
+      margin-bottom: 8px;
+      outline: none;
+    }
+    input:focus {
+      border-color: #ff4b4b;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+      <input type="text" id="search" placeholder="🔍 Pesquisar..." oninput="filterOptions()" style="flex-grow: 1; margin-bottom: 0;">
+      <button onclick="clearSelection()" style="background-color: transparent; border: 1px solid rgba(250, 250, 250, 0.2); color: #fafafa; border-radius: 4px; padding: 7px 12px; font-size: 13px; cursor: pointer; font-family: inherit; transition: all 0.2s;" onmouseover="this.style.borderColor='#ff4b4b'; this.style.color='#ff4b4b'" onmouseout="this.style.borderColor='rgba(250, 250, 250, 0.2)'; this.style.color='#fafafa'">Limpar</button>
+    </div>
+    <select id="select-box" multiple onchange="onSelectionChange()"></select>
+  </div>
+
+  <script>
+    // Streamlit Component Lib communication protocol
+    function sendMessage(type, data) {
+      const message = {
+        isStreamlitMessage: true,
+        type: type,
+        ...data
+      };
+      window.parent.postMessage(message, "*");
+    }
+
+    let allOptions = [];
+    let selectedValues = [];
+    let isInitialized = false;
+
+    // Listen to data from Streamlit
+    window.addEventListener("message", (event) => {
+      if (event.data.type === "streamlit:render") {
+        const args = event.data.args;
+        allOptions = args.options || [];
+        
+        if (!isInitialized) {
+          selectedValues = args.default || [];
+          renderOptions(allOptions);
+          isInitialized = true;
+        }
+        
+        sendMessage("streamlit:setFrameHeight", { height: 250 });
+      }
+    });
+
+    function renderOptions(options) {
+      const select = document.getElementById("select-box");
+      const searchVal = document.getElementById("search").value.toLowerCase();
+      
+      select.innerHTML = "";
+      options.forEach(optVal => {
+        if (optVal.toLowerCase().includes(searchVal)) {
+          const opt = document.createElement("option");
+          opt.value = optVal;
+          opt.textContent = optVal;
+          if (selectedValues.includes(optVal)) {
+            opt.selected = true;
+          }
+          select.appendChild(opt);
+        }
+      });
+    }
+
+    function filterOptions() {
+      renderOptions(allOptions);
+    }
+
+    function onSelectionChange() {
+      const select = document.getElementById("select-box");
+      const currentSelected = Array.from(select.selectedOptions).map(opt => opt.value);
+      const searchVal = document.getElementById("search").value.toLowerCase();
+      
+      // Update global selected list
+      allOptions.forEach(optVal => {
+        if (optVal.toLowerCase().includes(searchVal)) {
+          if (currentSelected.includes(optVal)) {
+            if (!selectedValues.includes(optVal)) {
+              selectedValues.push(optVal);
+            }
+          } else {
+            selectedValues = selectedValues.filter(val => val !== optVal);
+          }
+        }
+      });
+
+      // Send selections back to Streamlit Python
+      sendMessage("streamlit:setComponentValue", { value: selectedValues });
+    }
+
+    function clearSelection() {
+      selectedValues = [];
+      const select = document.getElementById("select-box");
+      Array.from(select.options).forEach(opt => opt.selected = false);
+      sendMessage("streamlit:setComponentValue", { value: [] });
+    }
+
+    // Signal ready to Streamlit
+    sendMessage("streamlit:componentReady", { apiVersion: 1 });
+  </script>
+</body>
+</html>
