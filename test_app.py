@@ -44,7 +44,8 @@ class TestPreprocessChamados(unittest.TestCase):
         """Testa se a linha de 'Descrição do pedido:' é concatenada horizontalmente."""
         desc = "Descrição do pedido:\nInstalar pacote de software\nno computador novo."
         # A quebra de linha após 'Descrição do pedido:' é mantida de acordo com a lógica original do robô
-        self.assertEqual(clean_otrs_description(desc), "Descrição do pedido:\nInstalar pacote de software no computador novo.")
+        self.assertEqual(clean_otrs_description(desc), 'Instalar pacote de software\nno computador novo.')
+
 
     def test_clean_otrs_description_history_split(self):
         """Testa se o histórico anterior de respostas (#2) é corretamente truncado."""
@@ -237,8 +238,32 @@ class TestRequestsBasedUnidadesScraper(unittest.TestCase):
             self.assertEqual(cities[0][1], "https://www.mpms.mp.br/promotorias/agua-clara")
             self.assertEqual(cities[0][2], "agua-clara")
 
+    def test_scrape_promotoria_parses_html_correctly(self):
+        from unittest.mock import patch
+        from unidades_scraper import scrape_promotoria
+
+        fake_html = """
+        <div id="promotorias">
+            <h2>2ª Promotoria de Justiça de Três Lagoas</h2>
+            <p class="titular"><span class="name">Titular: Dr. João da Silva</span></p>
+            <address>Rua Elviro Mario Mancini, 860 - Centro - Três Lagoas - CEP 79601-020</address>
+            <p class="phone">Telefone: (67) 3521-1234</p>
+        </div>
+        """
+        mock_response = MagicMock()
+        mock_response.text = fake_html
+        mock_response.status_code = 200
+
+        with patch('requests.get', return_value=mock_response):
+            res = scrape_promotoria('Três Lagoas', 'https://www.mpms.mp.br/promotorias/tres-lagoas/2-promotoria')
+            self.assertEqual(res['Setor'], '2ª Promotoria de Justiça de Três Lagoas')
+            self.assertEqual(res['Titular'], 'Dr. João da Silva')
+            self.assertEqual(res['Unidade (Prédio)'], 'Três Lagoas - Sede')
+            self.assertEqual(res['Telefone'], '(67) 3521-1234')
+
 
 class TestDateSanitization(unittest.TestCase):
+
     """Testes para o tratamento de fuso horário e padronização ISO de datas."""
 
     def test_date_conversion_to_iso_string(self):
@@ -268,8 +293,10 @@ class TestRemoteLocationExtraction(unittest.TestCase):
             "Descrição": ["Felipe Ferrari Marcolin está lotado em Costa Rica - Sede, mas Angela está trabalhando na Sala do Suporte de Apoio Remoto na Ricardo Brandão - Unidade II e solicitou apoio na instalação do software."]
         })
         df_updated = detect_and_update_remote_locations(df)
-        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Campo Grande - Ricardo Brandão II")
-        self.assertEqual(df_updated.loc[0, "Unidade"], "Trabalho remoto")
+        self.assertEqual(df_updated.loc[0, "Localidade física"], "Campo Grande - Ricardo Brandão II")
+        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Costa Rica - Sede")
+        self.assertEqual(df_updated.loc[0, "Unidade"], "Costa Rica - Sede")
+
 
     def test_nadson_borges_case_chacara_cachoeira_ii(self):
         # Caso 2: Nadson Borges (Aquidauana -> Chácara Cachoeira II)
@@ -281,8 +308,10 @@ class TestRemoteLocationExtraction(unittest.TestCase):
             "Descrição": ["Considerando que passei a desempenhar minhas funções em teletrabalho a partir de hoje, na sala do apoio remoto, na Unidade Chácara Cachoeira II, peço revisão de rede."]
         })
         df_updated = detect_and_update_remote_locations(df)
-        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Campo Grande - Chácara Cachoeira II")
-        self.assertEqual(df_updated.loc[0, "Unidade"], "Trabalho remoto")
+        self.assertEqual(df_updated.loc[0, "Localidade física"], "Campo Grande - Chácara Cachoeira II")
+        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Aquidauana - Sede")
+        self.assertEqual(df_updated.loc[0, "Unidade"], "Aquidauana - Sede")
+
 
     def test_false_positive_no_remote_context(self):
         # Caso 3: Menção à Chácara Cachoeira mas sem contexto de trabalho remoto
@@ -308,8 +337,10 @@ class TestRemoteLocationExtraction(unittest.TestCase):
             "Descrição": ["Estou trabalhando temporariamente no prédio da Rua da Paz para acompanhar o treinamento da equipe."]
         })
         df_updated = detect_and_update_remote_locations(df)
-        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Campo Grande - Rua da Paz")
-        self.assertEqual(df_updated.loc[0, "Unidade"], "Trabalho remoto")
+        self.assertEqual(df_updated.loc[0, "Localidade física"], "Campo Grande - Rua da Paz")
+        self.assertEqual(df_updated.loc[0, "Cidade - Prédio"], "Ponta Porã - Sede")
+        self.assertEqual(df_updated.loc[0, "Unidade"], "Ponta Porã - Sede")
+
 
     def test_normalize_for_extraction(self):
         # Caso 5: Limpeza e normalização fina de acentuações, casing e tipos nulos
@@ -319,5 +350,104 @@ class TestRemoteLocationExtraction(unittest.TestCase):
         self.assertEqual(normalize_for_extraction(123), "")
 
 
-if __name__ == "__main__":
+class TestOtrsCommentsCleaning(unittest.TestCase):
+    """Testes unitários para a limpeza de comentários do OTRS."""
+
+    def test_clean_otrs_comments_filtering(self):
+        from config import clean_otrs_comments
+        comments = [
+            {'data': '2026-05-21 10:00:00', 'autor': 'suporte@mpms.mp.br', 'texto': 'Comentário automático que deve ser ignorado'},
+            {'data': '2026-05-21 10:05:00', 'autor': 'Central de Atendimento ao Usuário', 'texto': 'Outro comentário automático a ser ignorado'},
+            {'data': '2026-05-21 10:10:00', 'autor': 'paulo.goncalves', 'texto': 'Comentário legítimo que deve ser mantido'}
+        ]
+        cleaned = clean_otrs_comments(comments)
+        self.assertEqual(len(cleaned), 1)
+        self.assertEqual(cleaned[0]['autor'], 'paulo.goncalves')
+
+    def test_clean_otrs_comments_invalid_inputs(self):
+        from config import clean_otrs_comments
+        self.assertEqual(clean_otrs_comments(None), [])
+        self.assertEqual(clean_otrs_comments('[]'), [])
+        self.assertEqual(clean_otrs_comments('invalid json'), [])
+        self.assertEqual(clean_otrs_comments(float('nan')), [])
+
+
+class TestSccmAndHostnameParsing(unittest.TestCase):
+    """Testes unitários para a extração de dados do SCCM via PowerShell/WMI/JSON."""
+
+    @unittest.mock.patch('subprocess.run')
+    def test_fetch_sccm_data_success_json(self, mock_run):
+        from config import fetch_sccm_data, _sccm_cache
+        _sccm_cache.clear()
+        
+        fake_stdout = """
+        {
+            "Name": "SRV-TESTE-01",
+            "IPAddresses": ["192.168.1.5", "10.10.20.30"]
+        }
+        """
+        mock_run.return_value = MagicMock(returncode=0, stdout=fake_stdout, stderr='')
+        
+        res = fetch_sccm_data('testuser')
+        self.assertEqual(res['ip'], '10.10.20.30')
+        self.assertEqual(res['hostname'], 'SRV-TESTE-01')
+
+    @unittest.mock.patch('subprocess.run')
+    def test_fetch_sccm_data_access_denied(self, mock_run):
+        from config import fetch_sccm_data, _sccm_cache
+        _sccm_cache.clear()
+        
+        mock_run.return_value = MagicMock(returncode=1, stdout='', stderr='Get-WmiObject : Acesso negado')
+        
+        res = fetch_sccm_data('testuser')
+        self.assertEqual(res['ip'], 'Acesso Negado')
+        self.assertEqual(res['hostname'], 'Acesso Negado')
+
+    @unittest.mock.patch('subprocess.run')
+    def test_fetch_sccm_data_regex_fallback(self, mock_run):
+        from config import fetch_sccm_data, _sccm_cache
+        _sccm_cache.clear()
+        
+        fake_stdout = 'Name : DESKTOP-ABC123\nIPAddresses : {192.168.0.10, 10.50.60.70}'
+        mock_run.return_value = MagicMock(returncode=0, stdout=fake_stdout, stderr='')
+        
+        res = fetch_sccm_data('fallbackuser')
+        self.assertEqual(res['ip'], '10.50.60.70')
+        self.assertEqual(res['hostname'], 'DESKTOP-ABC123')
+
+
+class TestAdLookupRobustness(unittest.TestCase):
+    """Testes unitários para a busca de departamento/unidade no AD de forma exata e robusta."""
+
+    def test_fetch_ad_department_username_exact_filter(self):
+        from config import fetch_ad_department
+        mock_conn = MagicMock()
+        
+        mock_entry = {
+            'department': ['Secretaria de Tecnologia da Informação'],
+            'physicalDeliveryOfficeName': ['Edifício Sede']
+        }
+        mock_conn.entries = [MagicMock(entry_attributes_as_dict=mock_entry)]
+        
+        dept = fetch_ad_department(mock_conn, 'larasantos', is_username=True)
+        self.assertEqual(dept, 'Secretaria de Tecnologia da Informação')
+        
+        args, kwargs = mock_conn.search.call_args
+        self.assertIn('(sAMAccountName=larasantos)', kwargs.get('search_filter', ''))
+
+    def test_fetch_ad_department_fallback_to_office(self):
+        from config import fetch_ad_department
+        mock_conn = MagicMock()
+        
+        mock_entry = {
+            'department': [],
+            'physicalDeliveryOfficeName': ['Promotoria de Três Lagoas']
+        }
+        mock_conn.entries = [MagicMock(entry_attributes_as_dict=mock_entry)]
+        
+        dept = fetch_ad_department(mock_conn, 'testuser', is_username=True)
+        self.assertEqual(dept, 'Promotoria de Três Lagoas')
+
+
+if __name__ == '__main__':
     unittest.main()

@@ -23,7 +23,8 @@ from spacy.lang.pt.stop_words import STOP_WORDS
 from config import (
     TREINO_PATH, MODEL_PATH, DEBUG_DIR_TAG,
     OUTPUT_DIR_TRATADOS, OUTPUT_DIR_PRONTO,
-    setup_logging, cleanup_old_files
+    setup_logging, cleanup_old_files,
+    clean_otrs_description
 )
 
 # --------------------------------------------------------------------------
@@ -92,25 +93,14 @@ def clean_text(text: str) -> str:
     return " ".join(tokens)
 
 def extract_comments_text(comments_val) -> str:
-    """Extrai texto puro dos comentários em formato JSON string ou lista."""
-    if not comments_val or pd.isna(comments_val):
-        return ""
-    import json
-    if isinstance(comments_val, list):
-        comments_list = comments_val
-    else:
-        try:
-            comments_list = json.loads(str(comments_val))
-        except Exception:
-            return str(comments_val)
-            
-    if isinstance(comments_list, list):
-        texts = []
-        for c in comments_list:
-            if isinstance(c, dict):
-                texts.append(str(c.get('texto', '')))
-        return " ".join(texts)
-    return str(comments_val)
+    """Extrai texto puro dos comentários em formato JSON string ou lista (filtrando robôs)."""
+    from config import clean_otrs_comments
+    cleaned_comments = clean_otrs_comments(comments_val)
+    texts = []
+    for c in cleaned_comments:
+        if isinstance(c, dict):
+            texts.append(str(c.get('texto', '')))
+    return " ".join(texts)
 
 # --------------------------------------------------------------------------
 # Funções de Machine Learning
@@ -348,7 +338,7 @@ def main():
     if 'Comentários' not in df_unificado.columns:
         df_unificado['Comentários'] = '[]'
     df_unificado['Descrição_Limpa'] = (
-        df_unificado['Descrição'].fillna('') + " " + 
+        df_unificado['Descrição'].apply(clean_otrs_description) + " " + 
         df_unificado['Comentários'].apply(extract_comments_text)
     ).apply(clean_text)
 
@@ -362,7 +352,7 @@ def main():
     if 'Comentários' not in df_train.columns:
         df_train['Comentários'] = '[]'
     df_train['Descrição_Limpa'] = (
-        df_train['Descrição'].fillna('') + " " + 
+        df_train['Descrição'].apply(clean_otrs_description) + " " + 
         df_train['Comentários'].apply(extract_comments_text)
     ).apply(clean_text)
 

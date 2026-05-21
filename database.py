@@ -53,6 +53,8 @@ def setup_database():
         cursor.execute("ALTER TABLE chamados ADD COLUMN base TEXT")
     if 'link' not in columns:
         cursor.execute("ALTER TABLE chamados ADD COLUMN link TEXT")
+    if 'hostname' not in columns:
+        cursor.execute("ALTER TABLE chamados ADD COLUMN hostname TEXT")
         
     conn.commit()
     conn.close()
@@ -88,41 +90,41 @@ def save_tickets_to_db(df: pd.DataFrame):
             UPDATE chamados SET
                 titulo = ?, cidade_predio = ?, unidade = ?, localidade_fisica = ?,
                 usuario = ?, id_cliente = ?, descricao = ?, tag = ?, ip_origem = ?,
-                data_atualizacao = ?, base = ?, link = ?
+                data_atualizacao = ?, base = ?, link = ?, hostname = ?
             WHERE id = ?
             """, (
                 row.get('Título', ''), row.get('Cidade - Prédio', ''), row.get('Unidade', ''),
                 row.get('Localidade física', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''),
                 row.get('Descrição', ''), row.get('TAG', ''), row.get('IP_Origem', ''),
-                now, row.get('Base', ''), row.get('Link', ''), cid
+                now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), cid
             ))
         else:
             # Se não existe, insere como Aberto
             cursor.execute("""
             INSERT INTO chamados (
                 id, data_criacao, titulo, cidade_predio, unidade, localidade_fisica,
-                usuario, id_cliente, descricao, tag, ip_origem, status, data_atualizacao, base, link
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, ?)
+                usuario, id_cliente, descricao, tag, ip_origem, status, data_atualizacao, base, link, hostname
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, ?, ?)
             """, (
                 cid, row.get('Data Criação', ''), row.get('Título', ''),
                 row.get('Cidade - Prédio', ''), row.get('Unidade', ''), row.get('Localidade física', ''),
                 row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''), row.get('Descrição', ''),
-                row.get('TAG', ''), row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', '')
+                row.get('TAG', ''), row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', ''),
+                row.get('Hostname', '')
             ))
             
         # Salva os comentários se a coluna 'Comentários' estiver presente (Atômico na mesma transação)
         comments_val = row.get('Comentários', '[]')
         if pd.notna(comments_val) and str(comments_val).strip() and str(comments_val).strip() != '[]':
-            import json
+            from config import clean_otrs_comments
             try:
-                comments_list = json.loads(str(comments_val))
-                if isinstance(comments_list, list):
-                    cursor.execute("DELETE FROM comentarios WHERE chamado_id = ?", (cid,))
-                    for comment in comments_list:
-                        cursor.execute("""
-                        INSERT INTO comentarios (chamado_id, data, autor, texto)
-                        VALUES (?, ?, ?, ?)
-                        """, (cid, comment.get('data', ''), comment.get('autor', ''), comment.get('texto', '')))
+                comments_list = clean_otrs_comments(comments_val)
+                cursor.execute("DELETE FROM comentarios WHERE chamado_id = ?", (cid,))
+                for comment in comments_list:
+                    cursor.execute("""
+                    INSERT INTO comentarios (chamado_id, data, autor, texto)
+                    VALUES (?, ?, ?, ?)
+                    """, (cid, comment.get('data', ''), comment.get('autor', ''), comment.get('texto', '')))
             except Exception:
                 pass
             
@@ -181,7 +183,9 @@ def save_comments_to_db(chamado_id: str, comments: list):
     # Remove antigos para evitar duplicidade
     cursor.execute("DELETE FROM comentarios WHERE chamado_id = ?", (chamado_id,))
     
-    for comment in comments:
+    from config import clean_otrs_comments
+    cleaned_comments = clean_otrs_comments(comments)
+    for comment in cleaned_comments:
         cursor.execute("""
         INSERT INTO comentarios (chamado_id, data, autor, texto)
         VALUES (?, ?, ?, ?)
@@ -191,7 +195,7 @@ def save_comments_to_db(chamado_id: str, comments: list):
     conn.close()
 
 def get_comments_by_ticket(chamado_id: str) -> list:
-    """Retorna todos os comentários de um chamado ordenados por id."""
+    """Retorna todos os comentários de um chamado ordenados por id (filtrando robôs)."""
     setup_database()
     conn = get_connection()
     cursor = conn.cursor()
@@ -202,4 +206,7 @@ def get_comments_by_ticket(chamado_id: str) -> list:
     """, (chamado_id,))
     rows = cursor.fetchall()
     conn.close()
-    return [{'data': r[0], 'autor': r[1], 'texto': r[2]} for r in rows]
+    
+    raw_comments = [{'data': r[0], 'autor': r[1], 'texto': r[2]} for r in rows]
+    from config import clean_otrs_comments
+    return clean_otrs_comments(raw_comments)

@@ -171,7 +171,8 @@
 
     let allOptions = [];
     let selectedValues = [];
-    let isInitialized = false;
+    let lastOptionsJson = "";
+    let lastDefaultJson = "";
 
     // Listen to data from Streamlit
     window.addEventListener("message", (event) => {
@@ -183,12 +184,19 @@
           applyTheme(event.data.theme);
         }
         
-        allOptions = args.options || [];
+        const options = args.options || [];
+        const defaultVals = args.default || [];
         
-        if (!isInitialized) {
-          selectedValues = args.default || [];
+        const optionsJson = JSON.stringify(options);
+        const defaultJson = JSON.stringify(defaultVals);
+        
+        // Se as opções mudaram ou os valores padrão mudaram
+        if (optionsJson !== lastOptionsJson || defaultJson !== lastDefaultJson) {
+          allOptions = options;
+          selectedValues = [...defaultVals];
           renderOptions(allOptions);
-          isInitialized = true;
+          lastOptionsJson = optionsJson;
+          lastDefaultJson = defaultJson;
         }
         
         sendMessage("streamlit:setFrameHeight", { height: 250 });

@@ -394,8 +394,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         cached_ip = cache[cid].get('IP_Origem') or ""
                         cached_unidade = cache[cid].get('Unidade') or ""
                         cached_desc = cache[cid].get('Descrição') or ""
-                        
-                        # Se temos o IP no cache, aproveitamos 100%
+                        cached_hostname = cache[cid].get('Hostname') or ""
+                        # Se temos o IP no cache, aproveitamos 100% (trazendo também o Hostname do cache)
                         if cached_ip:
                             collected.append({
                                 "Chamado#": cid,
@@ -405,17 +405,20 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                                 "Descrição": cached_desc,
                                 "Data Criação": data_criacao,
                                 "IP_Origem": cached_ip,
+                                "Hostname": cache[cid].get('Hostname', '') or '',
                                 "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                                 "Comentários": comments_json
                             })
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE MATCH] Chamado {cid} (com IP: {cached_ip}) recuperado do cache anterior!")
                             continue
                         else:
-                            # Se não temos o IP, reaproveitamos os outros dados do cache e apenas buscamos o IP
+                            # Se não temos o IP, reaproveitamos os outros dados do cache e apenas buscamos o IP e Hostname
                             sccm_ip = ""
+                            sccm_hostname = ""
                             if id_cliente:
-                                from config import fetch_ip_from_sccm
+                                from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
                                 sccm_ip = fetch_ip_from_sccm(id_cliente)
+                                sccm_hostname = fetch_hostname_from_sccm(id_cliente)
                             
                             collected.append({
                                 "Chamado#": cid,
@@ -425,12 +428,13 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                                 "Descrição": cached_desc,
                                 "Data Criação": data_criacao,
                                 "IP_Origem": sccm_ip,
+                                "Hostname": sccm_hostname,
                                 "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                                 "Comentários": comments_json
                             })
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE PARCIAL] Chamado {cid} recuperado do cache anterior, consultando IP no SCCM...")
                             continue
-                    
+                     
                     # Enriquecimento AD se disponível, senão usa unidade nativa do JSON
                     localidade = "Não encontrada no AD"
                     if ad_conn:
@@ -440,12 +444,14 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                             localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
                     else:
                         localidade = ticket.get("ticket_unit", "") or ticket.get("nome_unidade", "Não encontrada")
-                            
+                             
                     sccm_ip = ""
+                    sccm_hostname = ""
                     if id_cliente:
-                        from config import fetch_ip_from_sccm
+                        from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
                         sccm_ip = fetch_ip_from_sccm(id_cliente)
-
+                        sccm_hostname = fetch_hostname_from_sccm(id_cliente)
+ 
                     collected.append({
                         "Chamado#": cid,
                         "ID do Cliente": id_cliente,
@@ -454,6 +460,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Descrição": ticket.get("ticket_description_long", "") or ticket.get("ticket_description", ""),
                         "Data Criação": data_criacao,
                         "IP_Origem": sccm_ip,
+                        "Hostname": sccm_hostname,
                         "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                         "Comentários": comments_json
                     })
@@ -521,6 +528,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                 cached_ip = cache[cid].get('IP_Origem') or ""
                 cached_unidade = cache[cid].get('Unidade') or ""
                 cached_desc = cache[cid].get('Descrição') or ""
+                cached_hostname = cache[cid].get('Hostname') or ""
                 
                 if cached_ip:
                     collected.append({
@@ -531,6 +539,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Descrição": cached_desc,
                         "Data Criação": data_criacao,
                         "IP_Origem": cached_ip,
+                        "Hostname": cached_hostname,
                         "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                         "Comentários": comments_json
                     })
@@ -538,9 +547,11 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                     continue
                 else:
                     sccm_ip = ""
+                    sccm_hostname = ""
                     if id_cliente:
-                        from config import fetch_ip_from_sccm
+                        from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
                         sccm_ip = fetch_ip_from_sccm(id_cliente)
+                        sccm_hostname = fetch_hostname_from_sccm(id_cliente)
                         
                     collected.append({
                         "Chamado#": cid,
@@ -550,6 +561,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         "Descrição": cached_desc,
                         "Data Criação": data_criacao,
                         "IP_Origem": sccm_ip,
+                        "Hostname": sccm_hostname,
                         "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                         "Comentários": comments_json
                     })
@@ -568,9 +580,11 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                     localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
 
             sccm_ip = ""
+            sccm_hostname = ""
             if id_cliente:
-                from config import fetch_ip_from_sccm
+                from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
                 sccm_ip = fetch_ip_from_sccm(id_cliente)
+                sccm_hostname = fetch_hostname_from_sccm(id_cliente)
 
             collected.append({
                 "Chamado#": cid,
@@ -580,6 +594,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                 "Descrição": descricao,
                 "Data Criação": data_criacao,
                 "IP_Origem": sccm_ip,
+                "Hostname": sccm_hostname,
                 "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                 "Comentários": comments_json
             })
@@ -635,11 +650,13 @@ def scrape_citsmart():
                 ip = row_old.get('IP_Origem', '')
                 link = row_old.get('Link', '')
                 comments = row_old.get('Comentários', '[]')
+                hostname = row_old.get('Hostname', '')
                 if cid:
                     cache[cid] = {
                         'Descrição': str(desc).strip() if pd.notna(desc) else '',
                         'Unidade': str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) else '',
                         'IP_Origem': str(ip).strip() if pd.notna(ip) else '',
+                        'Hostname': str(hostname).strip() if pd.notna(hostname) else '',
                         'Link': str(link).strip() if pd.notna(link) else '',
                         'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
                     }
@@ -694,6 +711,7 @@ def scrape_citsmart():
                 'Descrição': 100,
                 'Data Criação': 20,
                 'IP_Origem': 15,
+                'Hostname': 20,
                 'Link': 40,
                 'Comentários': 50
             }

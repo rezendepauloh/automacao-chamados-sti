@@ -22,8 +22,8 @@ from config import (
     setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
 )
 
-# Configurações atualizadas de cabeçalhos incluindo a coluna Unidade
-HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem', 'Link', 'Comentários']
+# Configurações atualizadas de cabeçalhos incluindo a coluna Unidade e Hostname
+HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem', 'Hostname', 'Link', 'Comentários']
 
 # --- Configuração de logging ---
 logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
@@ -328,34 +328,33 @@ def extract_row_data(driver, row, cache=None):
         except Exception as e:
             logger.error(f"Erro ID do Cliente ou lookup AD: {e}")
 
-        # --- Descrição (Processo separado com Cache Inteligente) ---
+        # --- Descrição e Comentários (Sempre obtidos abrindo o chamado para garantir novos comentários) ---
         try:
             cid = data['Chamado#']
-            if cache and cid in cache and cache[cid].get('Descrição'):
-                data['Descrição'] = cache[cid]['Descrição']
-                data['Comentários'] = cache[cid].get('Comentários', '[]')
-                if 'Link' not in data or not data['Link']:
-                    data['Link'] = cache[cid].get('Link', '')
-                logger.info(f"⚡ [CACHE MATCH] Descrição e Comentários do chamado {cid} recuperados INSTANTANEAMENTE do cache anterior!")
-            else:
-                # Aqui passamos o driver e a linha atual (current)
-                desc, comments = process_ticket(driver, current)
-                data['Descrição'] = desc
-                data['Comentários'] = json.dumps(comments, ensure_ascii=False)
+            # Abre o chamado para extrair descrição e a lista atualizada de comentários
+            desc, comments = process_ticket(driver, current)
+            data['Descrição'] = desc
+            data['Comentários'] = json.dumps(comments, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Erro Descrição e Comentários: {e}")
  
-        # --- Extração de IP (OTRS ou SCCM ou Cache) ---
+        # --- Extração de IP e Hostname (OTRS ou SCCM ou Cache) ---
         desc = data.get('Descrição', '')
         ip_encontrado = ""
+        hostname_encontrado = ""
         
-        # 1. Tenta recuperar o IP do cache anterior
-        if cache and cid in cache and cache[cid].get('IP_Origem'):
-            ip_encontrado = cache[cid]['IP_Origem']
-            data['IP_Origem'] = ip_encontrado
-            logger.info(f"⚡ [CACHE MATCH] IP do chamado {cid} recuperado do cache anterior: {ip_encontrado}")
+        # 1. Tenta recuperar do cache anterior
+        if cache and cid in cache:
+            if cache[cid].get('IP_Origem'):
+                ip_encontrado = cache[cid]['IP_Origem']
+                data['IP_Origem'] = ip_encontrado
+            if cache[cid].get('Hostname'):
+                hostname_encontrado = cache[cid]['Hostname']
+                data['Hostname'] = hostname_encontrado
+            if ip_encontrado or hostname_encontrado:
+                logger.info(f"⚡ [CACHE MATCH] IP/Hostname do chamado {cid} recuperado do cache anterior: IP={ip_encontrado}, Hostname={hostname_encontrado}")
             
-        # 2. Se não tinha no cache, busca na descrição
+        # 2. Se não tinha no cache, busca IP na descrição
         if not ip_encontrado and desc:
             import re
             ip_match = re.search(r'IP:\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', desc)
@@ -364,12 +363,26 @@ def extract_row_data(driver, row, cache=None):
                 data['IP_Origem'] = ip_encontrado
                 logger.info(f"IP encontrado na descrição do OTRS: {ip_encontrado}")
                 
-        # 3. Se ainda não tem IP, faz a consulta ao SCCM
-        if not ip_encontrado and data.get('ID do Cliente'):
-            from config import fetch_ip_from_sccm
-            sccm_ip = fetch_ip_from_sccm(data['ID do Cliente'])
-            if sccm_ip:
-                data['IP_Origem'] = sccm_ip
+        # 3. Se ainda não tem IP ou Hostname, faz a consulta ao SCCM
+        if (not ip_encontrado or not hostname_encontrado) and data.get('ID do Cliente'):
+            from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
+            client_id = data['ID do Cliente']
+            
+            if not ip_encontrado:
+                sccm_ip = fetch_ip_from_sccm(client_id)
+                if sccm_ip:
+                    data['IP_Origem'] = sccm_ip
+                    ip_encontrado = sccm_ip
+                    
+            if not hostname_encontrado:
+                sccm_hostname = fetch_hostname_from_sccm(client_id)
+                if sccm_hostname:
+                    data['Hostname'] = sccm_hostname
+                    hostname_encontrado = sccm_hostname
+        else:
+            # Garante que a chave exista no dicionário mesmo vazia
+            if 'Hostname' not in data:
+                data['Hostname'] = hostname_encontrado
 
         # logger.info(f"Dados extraídos: {data['Chamado#']}")
         

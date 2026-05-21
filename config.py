@@ -284,16 +284,24 @@ def fetch_ad_department(conn, query_val: str, is_username: bool = True) -> str:
         return 'Erro na Consulta'
 
 
-def fetch_ip_from_sccm(username: str) -> str:
+_sccm_cache = {}
+
+def fetch_sccm_data(username: str) -> dict:
     """
-    Consulta o SCCM via PowerShell (CIM/WMI) para obter o IP do último computador
-    onde o usuário esteve logado, usando credenciais de administrador (se configuradas).
+    Consulta o SCCM via PowerShell (CIM/WMI) para obter os dados do último computador
+    onde o usuário esteve logado, retornando um dicionário {"ip": "...", "hostname": "..."}.
+    Utiliza um cache em memória para evitar consultas duplicadas na mesma execução.
     """
     if not username:
-        return ""
+        return {"ip": "", "hostname": ""}
+        
+    username_lower = username.lower().strip()
+    if username_lower in _sccm_cache:
+        return _sccm_cache[username_lower]
         
     import subprocess
     import logging
+    import json
     import re
     import keyring
     
@@ -306,30 +314,31 @@ def fetch_ip_from_sccm(username: str) -> str:
     admin_user = "paulo_admin"
     admin_password = keyring.get_password("sccm_admin", admin_user)
     
-    # 2. Monta a consulta WMI
-    query = f"SELECT * FROM SMS_R_System WHERE LastLogonUserName LIKE '%{username}%'"
+    # 2. Monta a consulta WMI com correspondência EXATA no LastLogonUserName
+    query = f"SELECT * FROM SMS_R_System WHERE LastLogonUserName = '{username}'"
     
     # 3. Constrói o comando do PowerShell dependendo de termos ou não a senha do admin
+    # Selecionamos IPAddresses e Name (que é o Hostname/NetbiosName no SCCM)
     if admin_password:
         logger.info(f"Consultando SCCM para o usuário: {username} (Usando credenciais de {admin_user})")
-        # Garante o formato DOMINIO\usuario usando o domínio correto carregado do .env
         domain_user = admin_user
         if "\\" not in domain_user and "@" not in domain_user:
             short_domain = DOMINIO_CURTO or "MPE"
             domain_user = f"{short_domain}\\{admin_user}"
             
-        # Escapa caracteres especiais na senha para o PowerShell
         escaped_password = admin_password.replace('"', '`"').replace('$', '`$')
         
         ps_command = (
             f'$secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force; '
             f'$mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd); '
             f'Get-WmiObject -ComputerName {site_server} -Namespace \'root\\sms\\site_{site_code}\' '
-            f'-Query "{query}" -Credential $mycreds -Authentication PacketPrivacy | Select-Object IPAddresses | ConvertTo-Json'
+            f'-Query "{query}" -Credential $mycreds -Authentication PacketPrivacy | Select-Object IPAddresses, Name | ConvertTo-Json'
         )
     else:
         logger.info(f"Consultando SCCM para o usuário: {username} (Sem credenciais adicionais)")
-        ps_command = f"Get-CimInstance -ComputerName {site_server} -Namespace 'root\\sms\\site_{site_code}' -Query \"{query}\" | Select-Object IPAddresses | ConvertTo-Json"
+        ps_command = f"Get-CimInstance -ComputerName {site_server} -Namespace 'root\\sms\\site_{site_code}' -Query \"{query}\" | Select-Object IPAddresses, Name | ConvertTo-Json"
+    
+    res_data = {"ip": "", "hostname": ""}
     
     try:
         result = subprocess.run(
@@ -345,36 +354,117 @@ def fetch_ip_from_sccm(username: str) -> str:
             error_output = result.stderr.strip()
             if "Acesso negado" in error_output or "Access denied" in error_output or "Acesso Negado" in error_output:
                 logger.warning(f"Acesso negado ao consultar SCCM para {username}. Requer privilégios elevados de rede.")
-                return "Acesso Negado"
+                res_data = {"ip": "Acesso Negado", "hostname": "Acesso Negado"}
+                _sccm_cache[username_lower] = res_data
+                return res_data
             logger.error(f"Erro ao consultar SCCM para {username}: {error_output}")
-            return ""
+            _sccm_cache[username_lower] = res_data
+            return res_data
             
         output = result.stdout.strip()
         if not output:
             logger.info(f"Nenhum registro encontrado no SCCM para {username}.")
-            return ""
+            _sccm_cache[username_lower] = res_data
+            return res_data
             
-        # Procura por IPs que começam com 10.
-        ips = re.findall(r'10\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
-        if ips:
-            logger.info(f"IP encontrado no SCCM para {username}: {ips[0]}")
-            return ips[0]
+        # Tenta decodificar o JSON
+        parsed = None
+        try:
+            parsed = json.loads(output)
+        except Exception as je:
+            logger.debug(f"Erro ao decodificar JSON do SCCM: {je}")
             
-        # Tenta pegar qualquer IPv4
-        ipv4s = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
-        if ipv4s:
-            logger.info(f"IP (não-10) encontrado no SCCM para {username}: {ipv4s[0]}")
-            return ipv4s[0]
+        if parsed:
+            # Pode ser um dicionário ou uma lista de dicionários
+            items = parsed if isinstance(parsed, list) else [parsed]
             
-        logger.info(f"Nenhum IP válido encontrado no retorno do SCCM para {username}.")
-        return ""
+            # Vamos procurar um item com IP válido
+            best_ip = ""
+            best_hostname = ""
+            
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("Name", "")).strip()
+                ips = item.get("IPAddresses", [])
+                if isinstance(ips, str):
+                    ips = [ips]
+                elif not isinstance(ips, list):
+                    ips = []
+                    
+                # Procura IP que começa com 10.
+                ip_10 = next((ip for ip in ips if str(ip).startswith("10.")), None)
+                if ip_10:
+                    best_ip = str(ip_10)
+                    best_hostname = name
+                    break
+                
+                # Se não achou 10., mas achou qualquer IPv4
+                if not best_ip:
+                    ipv4_regex = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+                    any_ipv4 = next((ip for ip in ips if ipv4_regex.match(str(ip))), None)
+                    if any_ipv4:
+                        best_ip = str(any_ipv4)
+                        best_hostname = name
+            
+            if best_ip:
+                res_data = {"ip": best_ip, "hostname": best_hostname}
+            else:
+                # Se não achou IP pelas regras normais, pega o primeiro Name/IP
+                first_item = items[0] if items else {}
+                name = str(first_item.get("Name", "")).strip()
+                ips = first_item.get("IPAddresses", [])
+                if isinstance(ips, str):
+                    first_ip = ips
+                elif isinstance(ips, list) and ips:
+                    first_ip = str(ips[0])
+                else:
+                    first_ip = ""
+                res_data = {"ip": first_ip, "hostname": name}
+        else:
+            # Fallback robusto por regex se o JSON falhar
+            # Procura por IPs que começam com 10.
+            ips = re.findall(r'10\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
+            ip_val = ""
+            if ips:
+                ip_val = ips[0]
+            else:
+                ipv4s = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
+                if ipv4s:
+                    ip_val = ipv4s[0]
+            # Procura pelo Name com ou sem aspas de forma robusta e flexível
+            name_match = re.search(r'"?Name"?\s*:\s*"?([^"\r\n\s]+)"?', output, re.IGNORECASE)
+            name_val = name_match.group(1).strip() if name_match else ""
+            res_data = {"ip": ip_val, "hostname": name_val}
+
+            
+        logger.info(f"Dados do SCCM para {username}: {res_data}")
         
     except subprocess.TimeoutExpired:
         logger.error(f"Timeout ao consultar SCCM para {username}.")
-        return "Timeout"
+        res_data = {"ip": "Timeout", "hostname": "Timeout"}
     except Exception as e:
         logger.error(f"Exceção ao consultar SCCM para {username}: {e}")
-        return "Erro"
+        res_data = {"ip": "Erro", "hostname": "Erro"}
+        
+    _sccm_cache[username_lower] = res_data
+    return res_data
+
+
+def fetch_ip_from_sccm(username: str) -> str:
+    """
+    Consulta o SCCM para obter o IP do último computador
+    onde o usuário esteve logado.
+    """
+    return fetch_sccm_data(username)["ip"]
+
+
+def fetch_hostname_from_sccm(username: str) -> str:
+    """
+    Consulta o SCCM para obter o Hostname do último computador
+    onde o usuário esteve logado.
+    """
+    return fetch_sccm_data(username)["hostname"]
 
 
 def get_chrome_driver(
@@ -431,3 +521,111 @@ def get_chrome_driver(
         
     driver = webdriver.Chrome(options=opts)
     return driver
+
+
+def clean_otrs_description(desc: str) -> str:
+    """
+    Limpa de forma centralizada e altamente robusta a estrutura de formulários e campos do OTRS.
+    Extrai apenas o conteúdo real escrito pelo usuário após campos como 'Descrição do Pedido:' ou 'Descrição:'.
+    Remove saudações, termos de cortesia e assinaturas de e-mail.
+    """
+    import re
+    import pandas as pd
+    
+    if pd.isna(desc):
+        return ""
+    text = str(desc).strip()
+    
+    # 1. Extração do conteúdo real após o cabeçalho estruturado do OTRS
+    # Procura padrões comuns como "Descrição do Pedido:", "Descrição do pedido:", "Descrição:" (com ou sem acentos)
+    match_desc = re.search(
+        r'(?si)(?:descrição\s+(?:do\s+pedido|do\s+chamado)?|descricao\s+(?:do\s+pedido|do\s+chamado)?):\s*(.*)$',
+        text
+    )
+    if match_desc:
+        text = match_desc.group(1).strip()
+        
+    # 2. Remoção de rodapés específicos do OTRS
+    text = re.sub(r'(?si)[\r\n]+(?:Para acompanhamento.*|É possível acompanhar.*)$', '', text)
+    text = re.sub(r'(?m)^\.\.\.\s*$', '', text)
+    text = re.sub(r'(?m)^Prazo:.*$', '', text)
+
+    # 3. Remoção de saudações no início do texto
+    text = re.sub(r'(?si)^(?:bom\s+dia|boa\s+tarde|boa\s+noite|prezados?|prezadas?|caros?|caras?|olá|ola)[,\-\s]*[\r\n]*', '', text)
+
+    # 4. Remoção de despedidas e assinaturas
+    padrao_despedida = r"(?si)\b(atenciosamente|att\.?|at\.te|grato|grata|obrigada?|obrigados|cordialmente|respeitosamente|saudações)\b[\s\S]*"
+    text = re.sub(padrao_despedida, '', text)
+    
+    # Fallback para assinaturas no estilo e-mail ("--")
+    text = re.sub(r"(?si)[\r\n]+--[\s\S]*", "", text)
+    
+    # 5. Descarta histórico de réplicas se houver
+    parts = re.split(r'(?m)^#2\b', text, maxsplit=1)
+    block1 = parts[0]
+    
+    # 6. Limpeza linha a linha de lixo residual do OTRS
+    cleaned = []
+    for line in block1.splitlines():
+        l = line.strip()
+        if not l:
+            continue
+        if re.fullmatch(r'[A-Z]{1,2}', l):
+            continue
+        if l.lower().startswith('responder a nota') or l.lower() in ('imprimir', 'dividir'):
+            continue
+        cleaned.append(l)
+        
+    return '\n'.join(cleaned).strip()
+
+
+def clean_otrs_comments(comments_val) -> list:
+    """
+    Filtra e limpa a lista de comentários do OTRS.
+    Ignora completamente comentários gerados automaticamente pela central de atendimento do suporte técnico
+    (cujo autor contenha 'suporte@mpms.mp.br' ou 'Central de Atendimento').
+    Retorna uma lista limpa de dicionários de comentários.
+    """
+    import json
+    import pandas as pd
+    
+    if comments_val is None:
+        return []
+        
+    if not isinstance(comments_val, (list, str)):
+        try:
+            if pd.isna(comments_val):
+                return []
+        except ValueError:
+            pass
+        
+    if isinstance(comments_val, list):
+        comments_list = comments_val
+    elif isinstance(comments_val, str):
+        val_stripped = comments_val.strip()
+        if not val_stripped or val_stripped == '[]':
+            return []
+        try:
+            comments_list = json.loads(val_stripped)
+        except Exception:
+            return []
+    else:
+        return []
+        
+    if not isinstance(comments_list, list):
+        return []
+        
+    cleaned_comments = []
+    for c in comments_list:
+        if not isinstance(c, dict):
+            continue
+            
+        autor = str(c.get('autor', '')).strip()
+        
+        # Ignora comentários gerados pela Central de Atendimento ao Usuário de TI
+        if "suporte@mpms.mp.br" in autor or "Central de Atendimento ao Usuário" in autor:
+            continue
+            
+        cleaned_comments.append(c)
+        
+    return cleaned_comments

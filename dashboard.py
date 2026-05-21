@@ -1,5 +1,10 @@
 import sys
 import asyncio
+import os
+from dotenv import load_dotenv
+
+# Carrega variáveis do arquivo .env
+load_dotenv()
 
 # Silencia o aviso WinError 10054 (Connection Reset) comum no Windows asyncio
 if sys.platform == 'win32':
@@ -79,6 +84,213 @@ TAG_COLORS = {
     "VISTORIA CPDS": "#b2740e",
 }
 
+@st.cache_resource
+def load_spacy_model():
+    """Carrega o modelo spaCy local em português, com fallback caso falhe."""
+    import spacy
+    try:
+        return spacy.load("pt_core_news_sm")
+    except Exception:
+        return None
+
+@st.cache_data(show_spinner=False)
+def summarize_ticket_locally(description: str, comments: str, max_sentences: int = 2) -> str:
+    """
+    Resume o chamado técnico localmente usando Processamento de Linguagem Natural (spaCy).
+    Remove saudações, cortesia, jargões de encaminhamento e administrative boilerplate antes de pontuar.
+    Usa um sistema de frequência com boost para termos técnicos e penalidades por tamanho de sentença.
+    """
+    import re
+    from collections import Counter
+    from config import clean_otrs_description
+    
+    # Pré-processa e limpa metadados e formulários estruturados (especialmente OTRS)
+    description = clean_otrs_description(description)
+    
+    # 1. Função para limpar saudações e formalidades administrativas
+    def clean_text(t: str) -> str:
+        if not t:
+            return ""
+        # Remove saudações no início do texto ou de sentenças (ex: "prezados, solicito...")
+        t = re.sub(
+            r'^\s*(?:prezados?|prezadas?|caros?|caras?|olá|ola|bom\s+dia|boa\s+tarde|boa\s+noite|prezada\s+equipe|prezada\s+sti)\b(?:[^\n\.\?]*[\n\.,\?])?',
+            '', t, flags=re.IGNORECASE
+        )
+        t = re.sub(
+            r'^\s*(?:tudo\s+bem\??|espero\s+que\s+esteja\s+tudo\s+bem\??|espero\s+que\s+sim\??)',
+            '', t, flags=re.IGNORECASE
+        )
+        
+        # Remove verbos formais de pedido/encaminhamento
+        t = re.sub(
+            r'\b(?:gostaria\s+de\s+|venho\s+(?:por\s+meio\s+deste\s+)?|favor\s+|por\s+gentileza\s+|gentileza\s+)\b',
+            '', t, flags=re.IGNORECASE
+        )
+        t = re.sub(
+            r'\b(?:solicito\s+providências\s+para\s+|solicito\s+(?:a|o|que|os|as)?\s+|encaminho\s+para\s+providências\s*(?:[ao]s?|para|de)?\s+|encaminho\s+para\s+|segue\s+para\s+|segue\s+o\s+chamado\s+(?:para\s+)?)\b',
+            '', t, flags=re.IGNORECASE
+        )
+        
+        # Remove referências a anexos
+        t = re.sub(
+            r'\b(?:conforme|como|conforme\s+mostra\s+a|ver|veja)\s+(?:imagem\s+)?(?:em\s+)?anexo\b',
+            '', t, flags=re.IGNORECASE
+        )
+        t = re.sub(
+            r'\b(?:segue[m]?\s+)?(?:em\s+)?anexo\b',
+            '', t, flags=re.IGNORECASE
+        )
+        
+        # Remove jargões de encerramento
+        t = re.sub(
+            r'\b(?:fico|ficamos)\s+(?:à|a)\s+disposição\s+para\s+(?:eventuais|quaisquer)\s+(?:esclarecimentos|dúvidas)\b\.?',
+            '', t, flags=re.IGNORECASE
+        )
+        t = re.sub(
+            r'\b(?:desde\s+já\s+)?agradeço[s]?\b\.?',
+            '', t, flags=re.IGNORECASE
+        )
+        t = re.sub(
+            r'\b(?:atenciosamente|grato|obrigado|fico\s+no\s+aguardo|aguardo\s+retorno|sem\s+mais)\b\.?',
+            '', t, flags=re.IGNORECASE
+        )
+        
+        # Limpezas adicionais de espaçamento e pontuação órfã
+        t = re.sub(r'\s+', ' ', t)
+        t = re.sub(r'^\s*[,\.\-\:\/]+\s*', '', t)
+        return t.strip()
+
+    # Limpa a descrição principal
+    desc_clean = clean_text(str(description))
+    
+    # Limpa e processa os comentários históricos
+    comments_clean_list = []
+    if comments:
+        for line in str(comments).split('\n'):
+            # Remove marcadores de metadados do comentário (autor, data): e.g. "- 13/05/2026 Celso: texto"
+            line_payload = re.sub(r'^[-\s]*[\d/:\s\[\]\-\#\.]+(?:[\w\s\(\)]+)?:\s*', '', line).strip()
+            line_clean = clean_text(line_payload)
+            if line_clean and len(line_clean) > 8:
+                comments_clean_list.append(line_clean)
+                
+    # Consolida os textos limpos para análise
+    text_parts = []
+    if desc_clean:
+        text_parts.append(desc_clean)
+    if comments_clean_list:
+        text_parts.append(" ".join(comments_clean_list))
+        
+    combined_text = " ".join(text_parts).strip()
+    
+    if not combined_text:
+        return "Sem descrição detalhada."
+        
+    nlp = load_spacy_model()
+    
+    # Fallback simples caso o modelo spaCy falhe em carregar
+    if nlp is None:
+        sentences = [s.strip() for s in combined_text.split('.') if len(s.strip()) > 8]
+        if sentences:
+            res = ". ".join(sentences[:max_sentences])
+            if not res.endswith('.'):
+                res += '.'
+            return res
+        return combined_text[:140] + "..." if len(combined_text) > 140 else combined_text
+
+    doc = nlp(combined_text)
+    
+    # Termos de suporte técnico STI comuns para receberem "boost" de relevância
+    TECHNICAL_BOOST = {
+        "ssd", "hd", "windows", "formatação", "formatar", "lentidão", "travamento", "travando",
+        "impressora", "imprimir", "rede", "conexão", "erro", "falha", "sistema", "configurar",
+        "configuração", "instalação", "instalar", "senha", "usuário", "computador", "máquina",
+        "notebook", "monitor", "teclado", "mouse", "backup", "servidor", "internet", "cabo",
+        "wi-fi", "wifi", "login", "acesso", "workstation", "driver", "inicialização", "boot",
+        "perfil", "outlook", "email", "e-mail", "toner", "cartucho", "suporte", "atualizar",
+        "atualização", "office", "word", "excel", "pasta", "rede", "compartilhamento"
+    }
+    
+    # 1. Filtra stopwords/pontuação e calcula a frequência das palavras-chave relevantes
+    keywords = []
+    for token in doc:
+        if token.is_stop or token.is_punct or token.is_space:
+            continue
+        if token.pos_ in ["NOUN", "VERB", "ADJ", "PROPN"]:
+            keywords.append(token.text.lower())
+            
+    if not keywords:
+        sentences = list(doc.sents)
+        return " ".join([s.text.strip() for s in sentences[:max_sentences]])
+        
+    # Calcula frequência normalizada
+    word_freq = Counter(keywords)
+    max_freq = max(word_freq.values())
+    for word in word_freq:
+        word_freq[word] = word_freq[word] / max_freq
+        
+    # 2. Pontua as sentenças reais com base nas palavras-chave, boost técnico e tamanho
+    sent_scores = {}
+    sentences = list(doc.sents)
+    
+    for idx, sent in enumerate(sentences):
+        words = [t for t in sent if not t.is_punct and not t.is_space]
+        if len(words) < 3:
+            continue
+            
+        score = 0
+        for token in sent:
+            word_lower = token.text.lower()
+            if word_lower in word_freq:
+                score += word_freq[word_lower]
+            # Boost extra para termos de tecnologia cruciais na triagem
+            if word_lower in TECHNICAL_BOOST:
+                score += 3.0
+                
+        # Penaliza sentenças longas demais e privilegia tamanhos fáceis de ler no WhatsApp
+        word_count = len(words)
+        if 8 <= word_count <= 25:
+            score *= 1.3
+        elif word_count > 30:
+            score *= 0.6
+        elif word_count < 6:
+            score *= 0.7
+            
+        # A primeira frase geralmente traz o assunto principal
+        if idx == 0:
+            score += 2.0
+            
+        # O último comentário costuma trazer as ações mais recentes realizadas
+        if idx == len(sentences) - 1 and len(sentences) > 1:
+            score += 1.0
+            
+        sent_scores[sent] = score
+        
+    if not sent_scores:
+        res = " ".join([s.text.strip() for s in sentences[:max_sentences]])
+        return res
+        
+    # 3. Seleciona as frases de maior pontuação e as ordena conforme a aparição no chamado
+    sorted_sents = sorted(sent_scores.keys(), key=lambda x: sent_scores[x], reverse=True)
+    top_sents = sorted_sents[:max_sentences]
+    top_sents = sorted(top_sents, key=lambda x: x.start)
+    
+    # 4. Formata o retorno garantindo capitalização correta
+    formatted_sentences = []
+    for s in top_sents:
+        sent_text = s.text.strip()
+        if not sent_text:
+            continue
+        # Garante letra maiúscula no início de cada sentença
+        sent_text = sent_text[0].upper() + sent_text[1:]
+        # Remove eventuais resíduos de pontuação no início
+        sent_text = re.sub(r'^[\s,\.\-\:\/]+', '', sent_text)
+        if not sent_text.endswith(('.', '!', '?')):
+            sent_text += '.'
+        formatted_sentences.append(sent_text)
+        
+    summary = " ".join(formatted_sentences)
+    return summary
+
 def load_data():
     if not DB_PATH.exists():
         return pd.DataFrame()
@@ -104,57 +316,183 @@ else:
     df['Data Formatada'] = df['datetime_obj'].dt.strftime('%d/%m/%Y %H:%M:%S')
     df['Data Formatada'] = df['Data Formatada'].fillna(df['data_criacao'])
 
-    # Barra lateral de filtros
-    st.sidebar.header("Filtros")
-    
-    # Filtro de Datas (Calendário)
+    # Barra lateral de filtros com botão de limpar global
     min_date = df['datetime_obj'].dropna().min().date() if not df['datetime_obj'].dropna().empty else datetime.now().date()
     max_date = df['datetime_obj'].dropna().max().date() if not df['datetime_obj'].dropna().empty else datetime.now().date()
     
+    # Inicializa os estados no st.session_state para os filtros se não existirem
+    if "f_date_range" not in st.session_state:
+        st.session_state["f_date_range"] = (min_date, max_date)
+    if "f_status" not in st.session_state:
+        st.session_state["f_status"] = []
+    if "f_tags" not in st.session_state:
+        st.session_state["f_tags"] = []
+    if "custom_loc_selection" not in st.session_state:
+        st.session_state["custom_loc_selection"] = []
+    if "f_cities" not in st.session_state:
+        st.session_state["f_cities"] = []
+    if "f_units" not in st.session_state:
+        st.session_state["f_units"] = []
+    if "f_bases" not in st.session_state:
+        st.session_state["f_bases"] = []
+    if "f_user" not in st.session_state:
+        st.session_state["f_user"] = ""
+
+    def get_filtered_options(col_name: str) -> list:
+        """
+        Calcula as opções únicas disponíveis para uma coluna específica,
+        aplicando todos os filtros ativos, exceto o filtro da própria coluna.
+        """
+        temp_df = df.copy()
+        
+        # 1. Filtro de data
+        dr = st.session_state.get("f_date_range", (min_date, max_date))
+        if isinstance(dr, tuple) and len(dr) == 2:
+            start_date, end_date = dr
+            temp_df = temp_df[
+                (temp_df['datetime_obj'].dt.date >= start_date) & 
+                (temp_df['datetime_obj'].dt.date <= end_date)
+            ]
+            
+        # 2. Aplica demais filtros (exceto o próprio)
+        if col_name != 'status' and st.session_state.get("f_status"):
+            temp_df = temp_df[temp_df['status'].isin(st.session_state["f_status"])]
+            
+        if col_name != 'tag' and st.session_state.get("f_tags"):
+            temp_df = temp_df[temp_df['tag'].isin(st.session_state["f_tags"])]
+            
+        if col_name != 'localidade_fisica' and st.session_state.get("custom_loc_selection"):
+            temp_df = temp_df[temp_df['localidade_fisica'].isin(st.session_state["custom_loc_selection"])]
+            
+        if col_name != 'cidade_predio' and st.session_state.get("f_cities"):
+            temp_df = temp_df[temp_df['cidade_predio'].isin(st.session_state["f_cities"])]
+            
+        if col_name != 'unidade' and st.session_state.get("f_units"):
+            temp_df = temp_df[temp_df['unidade'].isin(st.session_state["f_units"])]
+            
+        if col_name != 'base' and st.session_state.get("f_bases"):
+            temp_df = temp_df[temp_df['base'].isin(st.session_state["f_bases"])]
+            
+        if col_name != 'usuario' and st.session_state.get("f_user"):
+            temp_df = temp_df[temp_df['usuario'].str.contains(st.session_state["f_user"], case=False, na=False)]
+            
+        options = sorted(list(temp_df[col_name].dropna().unique()))
+        
+        # Garante que qualquer opção selecionada no widget atual permaneça na lista de opções para evitar erros do Streamlit
+        key_map = {
+            'status': 'f_status',
+            'tag': 'f_tags',
+            'localidade_fisica': 'custom_loc_selection',
+            'cidade_predio': 'f_cities',
+            'unidade': 'f_units',
+            'base': 'f_bases',
+            'usuario': 'f_user'
+        }
+        session_key = key_map.get(col_name)
+        if session_key:
+            current_selection = st.session_state.get(session_key, [])
+            if current_selection:
+                if isinstance(current_selection, list):
+                    for val in current_selection:
+                        if val not in options:
+                            options.append(val)
+                elif current_selection not in options:
+                    options.append(current_selection)
+                    
+        return options
+
+    # Layout do título de Filtros e do Botão de Limpar
+    col_h, col_b = st.sidebar.columns([5, 4])
+    with col_h:
+        st.markdown("### Filtros")
+    with col_b:
+        # Botão menor e elegante alinhado horizontalmente
+        if st.button("🧹 Limpar", help="Limpa todos os filtros ativos de uma vez"):
+            st.session_state["f_date_range"] = (min_date, max_date)
+            st.session_state["f_status"] = []
+            st.session_state["f_tags"] = []
+            st.session_state["custom_loc_selection"] = []
+            st.session_state["f_cities"] = []
+            st.session_state["f_units"] = []
+            st.session_state["f_bases"] = []
+            st.session_state["f_user"] = ""
+            st.rerun()
+            
+    # Filtro de Datas (Calendário)
     date_range = st.sidebar.date_input(
         "Intervalo de Datas",
-        value=(min_date, max_date),
+        value=st.session_state["f_date_range"],
         min_value=min_date,
         max_value=max_date,
-        format="DD/MM/YYYY"
+        format="DD/MM/YYYY",
+        key="f_date_range"
     )
     
-    # Filtros Multi-seleção (Sem padrão selecionado para não poluir)
-    status_options = list(df['status'].unique())
-    selected_status = st.sidebar.multiselect("Status", status_options, placeholder="Escolha as opções...")
+    # Filtros Multi-seleção com opções dinâmicas dependentes
+    status_options = get_filtered_options('status')
+    selected_status = st.sidebar.multiselect(
+        "Status", 
+        options=status_options, 
+        key="f_status", 
+        placeholder="Escolha as opções..."
+    )
     
-    tag_options = list(df['tag'].dropna().unique())
-    selected_tags = st.sidebar.multiselect("TAG", tag_options, placeholder="Escolha as opções...")
+    tag_options = get_filtered_options('tag')
+    selected_tags = st.sidebar.multiselect(
+        "TAG", 
+        options=tag_options, 
+        key="f_tags", 
+        placeholder="Escolha as opções..."
+    )
     
-    # Componente Customizado Select Multiple nativo com suporte a clique e arraste (drag-to-select) e Shift+Click
-    loc_options = sorted(list(df['localidade_fisica'].dropna().unique()))
+    # Componente Customizado Select Multiple nativo para Localidades
+    loc_options = get_filtered_options('localidade_fisica')
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("📍 Seleção de Localidades")
     st.sidebar.write("Arraste o mouse sobre as opções ou segure **Shift** para selecionar múltiplas de uma vez:")
     
-    # Executa o componente customizado passando as opções e recuperando a lista selecionada
+    # Executa o componente customizado passando as opções dinâmicas
     with st.sidebar:
         selected_locs = custom_select(
             options=loc_options,
-            default=[],
+            default=st.session_state.get("custom_loc_selection", []),
             key="custom_loc_selection"
         )
     if selected_locs is None:
         selected_locs = []
     
-    city_options = list(df['cidade_predio'].dropna().unique())
-    selected_cities = st.sidebar.multiselect("Cidade - Prédio", city_options, placeholder="Escolha as opções...")
+    city_options = get_filtered_options('cidade_predio')
+    selected_cities = st.sidebar.multiselect(
+        "Cidade - Prédio", 
+        options=city_options, 
+        key="f_cities", 
+        placeholder="Escolha as opções..."
+    )
     
-    unit_options = list(df['unidade'].dropna().unique())
-    selected_units = st.sidebar.multiselect("Unidade", unit_options, placeholder="Escolha as opções...")
+    unit_options = get_filtered_options('unidade')
+    selected_units = st.sidebar.multiselect(
+        "Unidade", 
+        options=unit_options, 
+        key="f_units", 
+        placeholder="Escolha as opções..."
+    )
     
-    # NOVO: Filtro de Base (CitSmart/OTRS)
-    base_options = list(df['base'].dropna().unique())
-    selected_bases = st.sidebar.multiselect("Base de Origem", base_options, placeholder="Escolha as opções...")
+    # Filtro de Base (CitSmart/OTRS)
+    base_options = get_filtered_options('base')
+    selected_bases = st.sidebar.multiselect(
+        "Base de Origem", 
+        options=base_options, 
+        key="f_bases", 
+        placeholder="Escolha as opções..."
+    )
     
     # Filtro de Usuário (Busca por texto)
-    user_search = st.sidebar.text_input("Buscar por Usuário", placeholder="Digite o nome do usuário...")
+    user_search = st.sidebar.text_input(
+        "Buscar por Usuário", 
+        key="f_user", 
+        placeholder="Digite o nome do usuário..."
+    )
     
     st.sidebar.markdown("---")
     
@@ -218,6 +556,7 @@ else:
                 st.markdown(f"**Localidade:** {row['localidade_fisica']}")
                 st.markdown(f"**Base de Origem:** `{row['base']}`")
                 st.markdown(f"**IP de Origem:** `{row.get('ip_origem') or 'N/A'}`")
+                st.markdown(f"**Hostname:** `{row.get('hostname') or 'N/A'}`")
                 
             with col2:
                 st.markdown("### ⚙️ Classificação & Status")
@@ -380,6 +719,13 @@ else:
         if filtered_df.empty:
             st.info("Nenhum chamado na fila filtrada.")
         else:
+            # Opção de resumo com NLP Local
+            usar_resumo_ia = st.checkbox(
+                "✨ Usar Resumos Inteligentes (NLP Local)", 
+                value=True, 
+                help="Usa Processamento de Linguagem Natural (spaCy) rodando totalmente local para resumir o chamado em poucas palavras."
+            )
+            
             def get_ai_diagnostico(tag, desc):
                 tag = str(tag).upper().strip()
                 desc = str(desc).strip()
@@ -423,9 +769,9 @@ else:
                 
                 diag = diagnosticos.get(tag, "Análise e resolução de ticket técnico STI.")
                 return f"🧠 *Possível Problema:* {diag}\n🩺 *Sintoma:* _{first_sentence}_"
-
+ 
             from database import get_comments_by_ticket
-
+ 
             lines = []
             lines.append("📋 *LISTA DE CHAMADOS STI - MPMS* 📋\n")
             for _, row in filtered_df.iterrows():
@@ -445,8 +791,10 @@ else:
                 # Recupera os comentários históricos do banco para enviar junto
                 comments_list = get_comments_by_ticket(row['id'])
                 comments_text = ""
+                comments_summary_input = ""
                 if comments_list:
                     comments_text = "💬 *Histórico de Acompanhamento:*"
+                    comments_summary_input = "\n".join([f"- {c['data']} ({c['autor']}): {c['texto']}" for c in comments_list])
                     for i, c in enumerate(comments_list, start=1):
                         comments_text += f"\n  • #{i} [{c['data']}] – {c['autor']}: {c['texto']}"
                 
@@ -458,10 +806,16 @@ else:
                 lines.append(f"📍 *Local:* {loc}")
                 lines.append(f"🏷️ *TAG:* {tag}")
                 lines.append(f"{diagnostico_ia}")
-                lines.append(f"📝 *Problema Completo:*")
-                lines.append(f"{desc}")
-                if comments_text:
-                    lines.append(comments_text)
+                
+                if usar_resumo_ia:
+                    resumo_nlp = summarize_ticket_locally(desc, comments_summary_input)
+                    lines.append(f"📝 *Resumo Inteligente:* {resumo_nlp}")
+                else:
+                    lines.append(f"📝 *Problema Completo:*")
+                    lines.append(f"{desc}")
+                    if comments_text:
+                        lines.append(comments_text)
+                
                 lines.append(f"🔗 *Link Direto:* {link}")
                 lines.append("--------------------------------------------------")
             

@@ -1,0 +1,63 @@
+# Dependências e Ambientes Virtuais
+bower_components/
+.venv/
+venv/
+env/
+ENV/
+bin/
+obj/
+
+# Bloqueia node_modules na raiz e em QUALQUER subpasta dos workspaces
+**/node_modules/
+
+# Bloqueia pastas de build e caches em todos os pacotes
+**/dist/
+**/build/
+**/.next/
+**/.cache/
+**/.expo/
+
+# Banco de Dados Local e Docker
+.mongodb/
+data/
+db/
+*.db
+*.sqlite
+
+# Arquivos de Build e Outputs
+dist/
+build/
+.next/
+out/
+.nuxt/
+*.log
+*.tmp
+*.bak
+
+# Cache de Ferramentas e IDEs
+.idea/
+.vscode/
+.antigravity/
+.cache/
+.pytest_cache/
+.npm/
+
+# Arquivos Multimídia, Documentos e Logs de Análise
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.pdf
+*.csv
+*.xlsx
+*.zip
+*.tar.gz
+*.gz
+
+# Arquivos locais e logs
+*.log
+.antigravity/
+
+# Outros
+old_scripts/
