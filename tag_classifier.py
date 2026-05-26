@@ -375,13 +375,30 @@ def main():
 
     # --- Persistência no SQLite ---
     try:
-        from database import save_tickets_to_db, close_missing_tickets
+        from database import save_tickets_to_db, close_missing_tickets_by_base
         logger.info("Salvando dados no banco SQLite...")
         save_tickets_to_db(df_tagged)
         
-        # Pega a lista de IDs ativos para fechar os que sumiram
-        active_ids = df_tagged['Chamado#'].dropna().astype(str).tolist()
-        close_missing_tickets(active_ids)
+        # Pega a lista de IDs ativos dividida por base para fechar os que sumiram de forma segura
+        active_ids_otrs = df_tagged[df_tagged['Base'] == 'OTRS']['Chamado#'].dropna().astype(str).tolist()
+        active_ids_citsmart = df_tagged[df_tagged['Base'] == 'CitSmart']['Chamado#'].dropna().astype(str).tolist()
+        
+        # Só fecha chamados se o respectivo scraper tiver trazido um volume mínimo confiável (mínimo de 5 chamados)
+        # Isso protege contra "falhas silenciosas" que trazem apenas 1 ou 2 chamados por erro de paginação/rede
+        MIN_CONFIDENCE_THRESHOLD = 5
+        
+        if len(active_ids_otrs) >= MIN_CONFIDENCE_THRESHOLD:
+            close_missing_tickets_by_base(active_ids_otrs, 'OTRS')
+            logger.info(f"Chamados OTRS antigos fechados. Ativos nesta rodada: {len(active_ids_otrs)}")
+        else:
+            logger.warning(f"⚠️ Coleta OTRS abaixo do limite de segurança ({len(active_ids_otrs)} < {MIN_CONFIDENCE_THRESHOLD}). Nenhum chamado OTRS foi fechado para evitar falsos positivos.")
+            
+        if len(active_ids_citsmart) >= MIN_CONFIDENCE_THRESHOLD:
+            close_missing_tickets_by_base(active_ids_citsmart, 'CitSmart')
+            logger.info(f"Chamados CitSmart antigos fechados. Ativos nesta rodada: {len(active_ids_citsmart)}")
+        else:
+            logger.warning(f"⚠️ Coleta CitSmart abaixo do limite de segurança ({len(active_ids_citsmart)} < {MIN_CONFIDENCE_THRESHOLD}). Nenhum chamado CitSmart foi fechado para evitar falsos positivos.")
+            
         logger.info("Banco SQLite atualizado com sucesso.")
     except Exception as db_err:
         logger.error(f"Erro ao atualizar banco SQLite: {db_err}")

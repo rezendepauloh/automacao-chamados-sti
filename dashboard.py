@@ -58,8 +58,90 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Painel de Chamados Centralizado")
-st.write("Visualize e interaja com os chamados do OTRS e CitSmart.")
+
+
+def check_orquestrador_running() -> bool:
+    """Verifica se o orquestrador está rodando de forma ativa analisando o arquivo de lock no Windows."""
+    import tempfile
+    import ctypes
+    from pathlib import Path
+    
+    lock_file = Path(tempfile.gettempdir()) / "automated_otrs_citsmart.lock"
+    if not lock_file.exists():
+        return False
+        
+    try:
+        with open(lock_file, "r") as f:
+            pid = int(f.read().strip())
+        
+        # Verifica se o processo com esse PID está ativo
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if handle:
+            exit_code = ctypes.c_ulong()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                kernel32.CloseHandle(handle)
+                return exit_code.value == 259  # 259 significa STILL_ACTIVE
+            kernel32.CloseHandle(handle)
+    except:
+        pass
+    return False
+
+def read_last_log_lines(n: int = 15) -> str:
+    """Lê as últimas N linhas do arquivo de log do orquestrador."""
+    log_path = Path("debug_logs") / "orquestrador" / "orquestrador.log"
+    if not log_path.exists():
+        return "Nenhum log gerado ainda. Aguardando início..."
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+            return "".join(lines[-n:])
+    except Exception as e:
+        return f"Erro ao ler arquivo de log: {e}"
+
+# Cabeçalho com Título e Botão de Sincronização
+col_title, col_btn = st.columns([3, 1])
+with col_title:
+    st.title("📊 Painel de Chamados Centralizado")
+    st.write("Visualize e interaja com os chamados do OTRS e CitSmart.")
+
+# Verifica estado de execução global do robô
+robo_ativo = check_orquestrador_running()
+
+with col_btn:
+    st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
+    if robo_ativo:
+        # Se o robô estiver rodando, desativa o botão e exibe um sinal visual ativo
+        st.button("🤖 Robô em Execução...", use_container_width=True, disabled=True)
+    else:
+        run_orquestrador = st.button(
+            "🔄 Atualizar Chamados", 
+            use_container_width=True, 
+            help="Executa o orquestrador completo em segundo plano.",
+            type="primary"
+        )
+        if run_orquestrador:
+            import subprocess
+            import sys
+            # Dispara o orquestrador em segundo plano sem bloquear a aplicação Streamlit
+            subprocess.Popen([sys.executable, "orquestrador.py"])
+            st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
+            st.cache_data.clear() # Limpa caches para receber novos dados no término
+            st.rerun()
+
+# Se o robô estiver ativo, exibe uma seção bonita mostrando o progresso em tempo real (sem travar)
+if robo_ativo:
+    with st.expander("🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso", expanded=True):
+        st.info("O robô está coletando novos chamados e classificando com IA neste momento. Você pode continuar usando o painel normalmente!")
+        
+        # Lê e exibe os logs dinamicamente
+        logs = read_last_log_lines(15)
+        st.code(logs, language="text")
+        
+        # Botão rápido para atualizar o status dos logs manualmente
+        st.button("🔄 Atualizar Progresso", help="Recarrega as últimas linhas de log do robô")
+
 
 DB_PATH = Path("chamados.db")
 
@@ -577,24 +659,24 @@ else:
                 st.markdown(f"**TAG Inteligente:** {tag_html}", unsafe_allow_html=True)
                 
                 # Alteração de status
-                status_options = ["Aberto", "Fechado"]
-                current_idx = status_options.index(row['status']) if row['status'] in status_options else 0
-                new_status = st.selectbox("Status", status_options, index=current_idx, key="status_select_modal")
+                #status_options = ["Aberto", "Fechado"]
+                #current_idx = status_options.index(row['status']) if row['status'] in status_options else 0
+                #new_status = st.selectbox("Status", status_options, index=current_idx, key="status_select_modal")
                 
-                if new_status != row['status']:
-                    if st.button("💾 Salvar Alteração de Status", key="save_status_btn_modal"):
-                        conn = sqlite3.connect(DB_PATH)
-                        cursor = conn.cursor()
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        cursor.execute("""
-                        UPDATE chamados 
-                        SET status = ?, data_atualizacao = ?
-                        WHERE id = ?
-                        """, (new_status, now, row['id']))
-                        conn.commit()
-                        conn.close()
-                        st.success(f"Status atualizado para {new_status}!")
-                        st.rerun()
+                #if new_status != row['status']:
+                #    if st.button("💾 Salvar Alteração de Status", key="save_status_btn_modal"):
+                #        conn = sqlite3.connect(DB_PATH)
+                #        cursor = conn.cursor()
+                #        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                #        cursor.execute("""
+                #        UPDATE chamados 
+                #        SET status = ?, data_atualizacao = ?
+                #        WHERE id = ?
+                #        """, (new_status, now, row['id']))
+                #        conn.commit()
+                #        conn.close()
+                #        st.success(f"Status atualizado para {new_status}!")
+                #        st.rerun()
                         
                 # Botão para abrir o chamado original
                 link_url = row.get('link')

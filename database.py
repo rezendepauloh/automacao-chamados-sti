@@ -155,6 +155,31 @@ def close_missing_tickets(active_ids: list):
     conn.commit()
     conn.close()
 
+def close_missing_tickets_by_base(active_ids: list, base: str):
+    """
+    Marca como 'Fechado' os chamados de uma base específica (OTRS ou CitSmart) que estão 
+    no banco como 'Aberto' mas não estão na lista de IDs ativos da última coleta.
+    Garante que falhas de scrapers ou coletas vazias de uma base não fechem chamados da outra.
+    """
+    if not active_ids or not base:
+        return
+        
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    placeholders = ",".join("?" for _ in active_ids)
+    
+    cursor.execute(f"""
+    UPDATE chamados 
+    SET status = 'Fechado', data_atualizacao = ?
+    WHERE status = 'Aberto' AND base = ? AND id NOT IN ({placeholders})
+    """, [now, base] + [str(cid) for cid in active_ids])
+    
+    conn.commit()
+    conn.close()
+
 def update_ticket_status(cid: str, new_status: str):
     """Atualiza o status de um chamado específico (usado pelo Streamlit)."""
     conn = get_connection()
