@@ -656,7 +656,24 @@ else:
                     text_color = "#ffffff"
                     
                 tag_html = f'<span style="background-color: {bg_color}; color: {text_color}; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-family: inherit; font-size: 13px;">{row["tag"]}</span>'
-                st.markdown(f"**TAG Inteligente:** {tag_html}", unsafe_allow_html=True)
+                st.markdown(f"**TAG Atual:** {tag_html}", unsafe_allow_html=True)
+                
+                # Dropdown para alterar a TAG manualmente de forma rápida
+                tag_options = sorted(list(TAG_COLORS.keys()))
+                try:
+                    default_idx = tag_options.index(tag_name)
+                except ValueError:
+                    default_idx = 0
+                    
+                new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row['id']}")
+                if new_tag != tag_name:
+                    if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row['id']}"):
+                        from database import update_ticket_tag
+                        update_ticket_tag(row['id'], new_tag)
+                        st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
+                        st.cache_data.clear()
+
+
                 
                 # Alteração de status
                 #status_options = ["Aberto", "Fechado"]
@@ -684,6 +701,18 @@ else:
                     st.markdown("---")
                     st.link_button("🔗 Abrir Chamado Original", link_url, width="stretch")
         
+        # Accordion para Andamento / Notas Rápidas
+        with st.expander("📝 Andamento / Nota de Atendimento", expanded=True):
+            current_andamento = str(row.get('andamento', '')).strip()
+            if current_andamento.lower() in ["none", "nan", "null", ""]:
+                current_andamento = ""
+            new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
+            if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
+                from database import update_ticket_andamento
+                update_ticket_andamento(row['id'], new_andamento)
+                st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
+                st.cache_data.clear()
+        
         # Accordion para a Descrição
         with st.expander(f"📝 #1 - {row['Data Formatada']} (Descrição)", expanded=True):
             st.text(row['descricao'])
@@ -702,9 +731,9 @@ else:
         if st.button("Fechar", key="close_modal_btn"):
             st.rerun()
 
-    # Colunas para exibir por padrão (Ordem padrão)
+    # Colunas para exibir por padrão (Ordem padrão com Andamento inclusa)
     cols_to_show = [
-        'id', 'status', 'tag', 'localidade_fisica', 
+        'id', 'status', 'tag', 'andamento', 'localidade_fisica', 
         'cidade_predio', 'unidade', 'usuario', 'datetime_obj', 'base'
     ]
         
@@ -768,6 +797,7 @@ else:
             "id": st.column_config.LinkColumn("Chamado #", display_text=r".*#id:(.*)"),
             "status": st.column_config.TextColumn("Status"),
             "tag": st.column_config.TextColumn("TAG"),
+            "andamento": st.column_config.TextColumn("Andamento"),
             "localidade_fisica": st.column_config.TextColumn("Localidade Física"),
             "cidade_predio": st.column_config.TextColumn("Cidade - Prédio"),
             "unidade": st.column_config.TextColumn("Unidade"),
@@ -779,7 +809,8 @@ else:
         hide_index=True,
         width="stretch",
         on_select="rerun",
-        selection_mode="single-row"
+        selection_mode="single-row",
+        key="tabela_chamados_datagrid"
     )
     
     # Lógica para exibir o Modal baseado na seleção da linha

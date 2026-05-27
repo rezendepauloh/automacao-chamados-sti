@@ -375,7 +375,7 @@ def main():
 
     # --- Persistência no SQLite ---
     try:
-        from database import save_tickets_to_db, close_missing_tickets_by_base
+        from database import save_tickets_to_db, close_missing_tickets_by_base, sync_closed_tickets_to_train_dataset
         logger.info("Salvando dados no banco SQLite...")
         save_tickets_to_db(df_tagged)
         
@@ -399,9 +399,13 @@ def main():
         else:
             logger.warning(f"⚠️ Coleta CitSmart abaixo do limite de segurança ({len(active_ids_citsmart)} < {MIN_CONFIDENCE_THRESHOLD}). Nenhum chamado CitSmart foi fechado para evitar falsos positivos.")
             
-        logger.info("Banco SQLite atualizado com sucesso.")
+        # Sincroniza os chamados fechados no banco com o dataset de treino Excel para que o aprendizado continue
+        logger.info("Sincronizando chamados fechados com o dataset de treino (Chamados_Treino.xlsx)...")
+        sync_closed_tickets_to_train_dataset()
+        
+        logger.info("Banco SQLite e Dataset de Treino atualizados com sucesso.")
     except Exception as db_err:
-        logger.error(f"Erro ao atualizar banco SQLite: {db_err}")
+        logger.error(f"Erro ao atualizar banco SQLite/Treino: {db_err}")
 
     # 4. Salva a saída final do classificador (removendo a coluna Título para a planilha final do usuário)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

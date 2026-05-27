@@ -178,24 +178,29 @@ def get_ticket_details(driver):
             # 2. Extração do Conteúdo (Texto da nota via iframe)
             texto_nota = ""
             try:
-                # OTRS usa um iframe para isolar o HTML da nota
-                iframe = widget.find_element(By.TAG_NAME, "iframe")
-                driver.switch_to.frame(iframe)
-                
-                body = WebDriverWait(driver, EXPLICIT_WAIT).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-                texto_nota = body.text
-                driver.switch_to.default_content()
+                # OTRS usa um iframe para isolar o HTML da nota se ele existir
+                iframes = widget.find_elements(By.TAG_NAME, "iframe")
+                if iframes:
+                    driver.switch_to.frame(iframes[0])
+                    body = WebDriverWait(driver, EXPLICIT_WAIT).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                    texto_nota = body.text
+                    driver.switch_to.default_content()
+                else:
+                    # Se não tem iframe (ex: notas de sistema), pega diretamente pelo fallback
+                    content_div = widget.find_element(By.CSS_SELECTOR, "div.ArticleMailContent, div.Content")
+                    texto_nota = content_div.text
             except Exception as iframe_err:
                 driver.switch_to.default_content()
-                logger.warning(f"Erro ao acessar iframe do artigo {idx+1}: {iframe_err}")
-                # Fallback de leitura de texto direta se não achar iframe
+                logger.debug(f"Nota {idx+1} sem iframe padrão ou erro de extração direta: {iframe_err}")
+                # Tentativa de fallback final direta
                 try:
                     content_div = widget.find_element(By.CSS_SELECTOR, "div.ArticleMailContent, div.Content")
                     texto_nota = content_div.text
                 except:
                     pass
+
             
             # Limpa linhas vazias e faz strip
             clean_text = "\n".join(line.strip() for line in texto_nota.splitlines() if line.strip())

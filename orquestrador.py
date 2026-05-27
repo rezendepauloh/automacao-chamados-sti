@@ -84,9 +84,10 @@ def main():
         ("otrs_scraper.py", "Coleta OTRS"),
         ("citsmart_scraper.py", "Coleta CitSmart"),
         ("preprocess_chamados.py", "Pré-processamento"),
-        ("tag_classifier.py", "Classificação de TAGs por IA"),
-        ("sync_master.py", "Sincronização Planilha Master")
+        ("tag_classifier.py", "Classificação de TAGs por IA")
+        # ("sync_master.py", "Sincronização Planilha Master")  # Legado (Streamlit é o novo painel)
     ]
+
 
     reports = []
     total_start = time.time()

@@ -37,9 +37,18 @@ def salvar_screenshot(driver, nome_etapa):
     """Tira um print da tela para vermos exatamente o que o Selenium vê."""
     ts = datetime.now().strftime("%H-%M-%S")
     filename = f"debug_citsmart_{ts}_{nome_etapa}.png"
-    filepath = DEBUG_DIR_CITSMART / filename
+    
+    # Se o nome do print indicar erro, falha ou timeout, salva no subdiretório 'errors'
+    if any(k in nome_etapa.lower() for k in ["erro", "falha", "timeout"]):
+        error_dir = DEBUG_DIR_CITSMART / "errors"
+        error_dir.mkdir(parents=True, exist_ok=True)
+        filepath = error_dir / filename
+    else:
+        filepath = DEBUG_DIR_CITSMART / filename
+        
     driver.save_screenshot(str(filepath))
-    logger.debug(f"📸 Screenshot salvo: {filename}")
+    logger.debug(f"📸 Screenshot salvo: {filepath.name}")
+
 
 def inspecionar_elemento(driver, seletor, nome_elemento):
     """Extrai informações vitais do elemento antes de tentar clicar."""
@@ -142,7 +151,9 @@ def navigate_to_caixa_entrada(driver, wait):
         
     except Exception as e:
         logger.info(f"Não detectou o elemento interno: {e}")
-        driver.save_screenshot(f"{DEBUG_DIR_CITSMART}/erro_iframe_app_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png")
+        error_dir = DEBUG_DIR_CITSMART / "errors"
+        error_dir.mkdir(parents=True, exist_ok=True)
+        driver.save_screenshot(str(error_dir / f"erro_iframe_app_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"))
         raise
 
 # ---------------------------
@@ -724,11 +735,33 @@ def scrape_citsmart():
             
             # Limpeza de arquivos antigos (mantém no máximo os 10 últimos do CitSmart)
             cleanup_old_files(out_dir, "Chamados_CitSmart_*.xlsx", keep_count=10)
+            return True
         else:
             logger.info("Nenhum dado foi coletado.")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Erro crítico no Scraper CitSmart: {e}")
+        ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        error_dir = DEBUG_DIR_CITSMART / "errors"
+        error_dir.mkdir(parents=True, exist_ok=True)
+        if driver:
+            try:
+                driver.save_screenshot(str(error_dir / f"erro_final_{ts}.png"))
+            except:
+                pass
+        return False
 
     finally:
-        driver.quit()
+        if driver:
+            try:
+                driver.quit()
+            except Exception as quit_error:
+                logger.warning(f"Aviso ao fechar driver: {quit_error}")
 
 if __name__ == "__main__":
-    scrape_citsmart()
+    import sys
+    if scrape_citsmart():
+        sys.exit(0)
+    else:
+        sys.exit(1)

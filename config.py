@@ -307,12 +307,23 @@ def fetch_sccm_data(username: str) -> dict:
     
     logger = logging.getLogger(__name__)
     
-    site_server = "srv-1046.in.mpe.ms.gov.br"
-    site_code = "PGJ"
+    site_server = os.getenv("SCCM_SERVER")
+    site_code = os.getenv("SCCM_SITE_CODE")
+    
+    if not site_server or not site_code:
+        logger.warning("⚠️ Variáveis 'SCCM_SERVER' ou 'SCCM_SITE_CODE' não configuradas no .env. A consulta no SCCM será ignorada.")
+        return res_data
+
     
     # 1. Recupera as credenciais do administrador do SCCM no cofre de senhas do Windows
-    admin_user = "paulo_admin"
-    admin_password = keyring.get_password("sccm_admin", admin_user)
+    admin_user = os.getenv("SCCM_ADMIN_USER")
+    admin_password = None
+    if admin_user:
+        admin_password = keyring.get_password("sccm_admin", admin_user)
+    else:
+        logger.warning("⚠️ Variável 'SCCM_ADMIN_USER' não configurada no .env. A consulta no SCCM prosseguirá sem credenciais administrativas dedicadas.")
+
+
     
     # 2. Monta a consulta WMI com correspondência EXATA no LastLogonUserName
     query = f"SELECT * FROM SMS_R_System WHERE LastLogonUserName = '{username}'"

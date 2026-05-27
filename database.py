@@ -46,16 +46,48 @@ def setup_database():
     )
     """)
     
-    # Verifica se a coluna 'base' existe (Migração automática)
+    # -------------------------------------------------------------
+    # MIGRAÇÃO E LIMPEZA DE IDs DUPLICADOS COM SUFIXO DECIMAL (.0)
+    # -------------------------------------------------------------
+    # 1. Remove duplicatas terminadas em .0 no banco caso a versão inteira correspondente já exista
+    cursor.execute("""
+    DELETE FROM chamados 
+    WHERE id LIKE '%.0' 
+      AND substr(id, 1, length(id) - 2) IN (SELECT id FROM chamados)
+    """)
+    cursor.execute("""
+    DELETE FROM comentarios 
+    WHERE chamado_id LIKE '%.0' 
+      AND substr(chamado_id, 1, length(chamado_id) - 2) IN (SELECT chamado_id FROM chamados)
+    """)
+    
+    # 2. Converte os restantes que restaram com .0 para inteiro
+    cursor.execute("""
+    UPDATE chamados 
+    SET id = substr(id, 1, length(id) - 2) 
+    WHERE id LIKE '%.0'
+    """)
+    cursor.execute("""
+    UPDATE comentarios 
+    SET chamado_id = substr(chamado_id, 1, length(chamado_id) - 2) 
+    WHERE chamado_id LIKE '%.0'
+    """)
+    # -------------------------------------------------------------
+
+    # Garante as colunas no banco de dados (Migração automática)
     cursor.execute("PRAGMA table_info(chamados)")
     columns = [col[1] for col in cursor.fetchall()]
+    if 'andamento' not in columns:
+        cursor.execute("ALTER TABLE chamados ADD COLUMN andamento TEXT")
     if 'base' not in columns:
         cursor.execute("ALTER TABLE chamados ADD COLUMN base TEXT")
     if 'link' not in columns:
         cursor.execute("ALTER TABLE chamados ADD COLUMN link TEXT")
     if 'hostname' not in columns:
         cursor.execute("ALTER TABLE chamados ADD COLUMN hostname TEXT")
-        
+    if 'tag_manual' not in columns:
+        cursor.execute("ALTER TABLE chamados ADD COLUMN tag_manual INTEGER DEFAULT 0")
+
     conn.commit()
     conn.close()
 
@@ -72,32 +104,54 @@ def save_tickets_to_db(df: pd.DataFrame):
     
     for _, row in df.iterrows():
         cid = str(row.get('Chamado#', '')).strip()
+        # Normaliza IDs removendo o .0 se for interpretado como float pelo Pandas
+        if cid.endswith('.0'):
+            cid = cid[:-2]
+            
         if not cid:
             continue
             
-        # Verifica se o chamado já existe e qual o status
-        cursor.execute("SELECT status FROM chamados WHERE id = ?", (cid,))
+        # Verifica se o chamado já existe, qual o status e se a tag foi alterada manualmente
+        cursor.execute("SELECT status, tag_manual FROM chamados WHERE id = ?", (cid,))
         result = cursor.fetchone()
         
         if result:
             current_status = result[0]
-            # Se já estiver fechado, não fazemos nada (respeita a decisão manual ou automática anterior)
+            tag_manual = result[1] if len(result) > 1 and result[1] is not None else 0
+            
+            # Se estava marcado como Fechado mas foi re-coletado como ativo pelo robô, reabre no banco!
             if current_status == 'Fechado':
-                continue
+                cursor.execute("UPDATE chamados SET status = 'Aberto' WHERE id = ?", (cid,))
                 
-            # Se existe e está aberto, atualizamos os dados (exceto status)
-            cursor.execute("""
-            UPDATE chamados SET
-                titulo = ?, cidade_predio = ?, unidade = ?, localidade_fisica = ?,
-                usuario = ?, id_cliente = ?, descricao = ?, tag = ?, ip_origem = ?,
-                data_atualizacao = ?, base = ?, link = ?, hostname = ?
-            WHERE id = ?
-            """, (
-                row.get('Título', ''), row.get('Cidade - Prédio', ''), row.get('Unidade', ''),
-                row.get('Localidade física', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''),
-                row.get('Descrição', ''), row.get('TAG', ''), row.get('IP_Origem', ''),
-                now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), cid
-            ))
+            # Se a tag for manual, atualiza tudo EXCETO a tag!
+            if tag_manual == 1:
+                cursor.execute("""
+                UPDATE chamados SET
+                    titulo = ?, cidade_predio = ?, unidade = ?, localidade_fisica = ?,
+                    usuario = ?, id_cliente = ?, descricao = ?, ip_origem = ?,
+                    data_atualizacao = ?, base = ?, link = ?, hostname = ?
+                WHERE id = ?
+                """, (
+                    row.get('Título', ''), row.get('Cidade - Prédio', ''), row.get('Unidade', ''),
+                    row.get('Localidade física', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''),
+                    row.get('Descrição', ''), row.get('IP_Origem', ''),
+                    now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), cid
+                ))
+            else:
+                # Atualiza os dados normalmente, inclusive a tag
+                cursor.execute("""
+                UPDATE chamados SET
+                    titulo = ?, cidade_predio = ?, unidade = ?, localidade_fisica = ?,
+                    usuario = ?, id_cliente = ?, descricao = ?, tag = ?, ip_origem = ?,
+                    data_atualizacao = ?, base = ?, link = ?, hostname = ?
+                WHERE id = ?
+                """, (
+                    row.get('Título', ''), row.get('Cidade - Prédio', ''), row.get('Unidade', ''),
+                    row.get('Localidade física', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''),
+                    row.get('Descrição', ''), row.get('TAG', ''), row.get('IP_Origem', ''),
+                    now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), cid
+                ))
+
         else:
             # Se não existe, insere como Aberto
             cursor.execute("""
@@ -139,18 +193,21 @@ def close_missing_tickets(active_ids: list):
     if not active_ids:
         return
         
+    # Normaliza IDs na entrada limpando .0
+    active_ids_clean = [str(cid)[:-2] if str(cid).endswith('.0') else str(cid) for cid in active_ids]
+        
     conn = get_connection()
     cursor = conn.cursor()
     
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    placeholders = ",".join("?" for _ in active_ids)
+    placeholders = ",".join("?" for _ in active_ids_clean)
     
     cursor.execute(f"""
     UPDATE chamados 
     SET status = 'Fechado', data_atualizacao = ?
     WHERE status = 'Aberto' AND id NOT IN ({placeholders})
-    """, [now] + [str(cid) for cid in active_ids])
+    """, [now] + [str(cid) for cid in active_ids_clean])
     
     conn.commit()
     conn.close()
@@ -164,18 +221,21 @@ def close_missing_tickets_by_base(active_ids: list, base: str):
     if not active_ids or not base:
         return
         
+    # Normaliza IDs na entrada limpando .0
+    active_ids_clean = [str(cid)[:-2] if str(cid).endswith('.0') else str(cid) for cid in active_ids]
+        
     conn = get_connection()
     cursor = conn.cursor()
     
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    placeholders = ",".join("?" for _ in active_ids)
+    placeholders = ",".join("?" for _ in active_ids_clean)
     
     cursor.execute(f"""
     UPDATE chamados 
     SET status = 'Fechado', data_atualizacao = ?
     WHERE status = 'Aberto' AND base = ? AND id NOT IN ({placeholders})
-    """, [now, base] + [str(cid) for cid in active_ids])
+    """, [now, base] + [str(cid) for cid in active_ids_clean])
     
     conn.commit()
     conn.close()
@@ -186,14 +246,55 @@ def update_ticket_status(cid: str, new_status: str):
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Normaliza o ID na entrada limpando .0
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+    
     cursor.execute("""
     UPDATE chamados 
     SET status = ?, data_atualizacao = ?
     WHERE id = ?
-    """, (new_status, now, cid))
+    """, (new_status, now, cid_clean))
     
     conn.commit()
     conn.close()
+
+def update_ticket_andamento(cid: str, text: str):
+    """Atualiza o andamento/notas rápidas de um chamado específico."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Normaliza o ID na entrada limpando .0
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+    
+    cursor.execute("""
+    UPDATE chamados 
+    SET andamento = ?, data_atualizacao = ?
+    WHERE id = ?
+    """, (text, now, cid_clean))
+    
+    conn.commit()
+    conn.close()
+
+def update_ticket_tag(cid: str, new_tag: str):
+    """Atualiza a TAG de um chamado específico e marca como manual (tag_manual = 1)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Normaliza o ID na entrada limpando .0
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+    
+    cursor.execute("""
+    UPDATE chamados 
+    SET tag = ?, tag_manual = 1, data_atualizacao = ?
+    WHERE id = ?
+    """, (new_tag, now, cid_clean))
+    
+    conn.commit()
+    conn.close()
+
+
 
 def save_comments_to_db(chamado_id: str, comments: list):
     """
@@ -235,3 +336,65 @@ def get_comments_by_ticket(chamado_id: str) -> list:
     raw_comments = [{'data': r[0], 'autor': r[1], 'texto': r[2]} for r in rows]
     from config import clean_otrs_comments
     return clean_otrs_comments(raw_comments)
+
+def sync_closed_tickets_to_train_dataset():
+    """
+    Coleta todos os chamados com status 'Fechado' do banco SQLite e os envia/sincroniza 
+    com o arquivo de dataset de treino (Chamados_Treino.xlsx) para que a IA aprenda 
+    com as tags corretas e manuais ajustadas pelo Streamlit.
+    """
+    from config import TREINO_PATH
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Seleciona as colunas correspondentes ao dataset de treino
+    cursor.execute("""
+    SELECT id, usuario, data_criacao, tag, cidade_predio, unidade, andamento, descricao, base
+    FROM chamados
+    WHERE status = 'Fechado'
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return
+        
+    # Transforma em DataFrame com os nomes de colunas originais do Excel de Treino
+    df_closed = pd.DataFrame(rows, columns=[
+        'Chamado#', 'Nome do Usuário', 'Data Criação', 'TAG', 
+        'Cidade - Prédio', 'Unidade', 'Andamento', 'Descrição', 'Base'
+    ])
+    
+    # Adiciona colunas extras que podem existir no dataset de treino original
+    df_closed['Ramal'] = ""
+    
+    try:
+        if TREINO_PATH.exists():
+            df_treino_atual = pd.read_excel(TREINO_PATH)
+            # Garante que Chamado# é string para bater certo e não duplicar
+            df_treino_atual['Chamado#'] = df_treino_atual['Chamado#'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+            df_closed['Chamado#'] = df_closed['Chamado#'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+            
+            df_treino_novo = pd.concat([df_treino_atual, df_closed], ignore_index=True)
+        else:
+            df_treino_novo = df_closed
+            
+        # Remove duplicatas mantendo a última versão (que contém a tag manual ou andamento atualizados)
+        df_treino_novo = df_treino_novo.drop_duplicates(subset=['Chamado#'], keep='last')
+        df_treino_novo = df_treino_novo.fillna("")
+        
+        # Garante a ordem correta das colunas
+        cols_order = ['Chamado#', 'Nome do Usuário', 'Data Criação', 'TAG', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base']
+        # Se alguma coluna não existir, adiciona
+        for col in cols_order:
+            if col not in df_treino_novo.columns:
+                df_treino_novo[col] = ""
+        df_treino_novo = df_treino_novo[cols_order]
+        
+        TREINO_PATH.parent.mkdir(parents=True, exist_ok=True)
+        df_treino_novo.to_excel(TREINO_PATH, index=False)
+        
+    except Exception as e:
+        print(f"Erro ao sincronizar chamados fechados com o dataset de treino: {e}")
+
