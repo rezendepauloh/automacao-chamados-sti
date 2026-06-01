@@ -38,3 +38,6 @@ chromedriver.exe
 
 # Entradas manuais
 manual_entries.py
+
+# Uploads
+uploads/

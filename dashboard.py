@@ -55,6 +55,54 @@ st.markdown("""
         box-shadow: 0 0 15px rgba(255, 75, 75, 0.3) !important;
         border-radius: 8px !important;
     }
+    /* Reduz drasticamente o padding superior e ancora o posicionamento absoluto */
+    .block-container, div[data-testid="stMainBlockContainer"] {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+        position: relative !important;
+    }
+    /* Reposiciona as abas de forma absoluta ao invés de fixas, alinhando nativamente com o menu lateral */
+    div[data-testid="stRadio"] {
+        position: absolute;
+        top: -35px;
+        left: 0px;
+        z-index: 999999;
+        background-color: transparent;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: max-content !important; /* Impede o colapso de largura na posição absoluta */
+    }
+    /* Alinha opções do radio em linha horizontal compacta */
+    div[data-testid="stRadio"] [role="radiogroup"] {
+        flex-direction: row !important;
+        gap: 8px !important;
+    }
+    /* Oculta a bolinha padrão do radio button de forma precisa (apenas o filho direto contendo o círculo) */
+    div[data-testid="stRadio"] label > div:first-child {
+        display: none !important;
+    }
+    /* Estiliza as abas de forma premium e elegante no cabeçalho */
+    div[data-testid="stRadio"] label {
+        background-color: #1e1f25 !important;
+        border: 1px solid #343541 !important;
+        padding: 4px 16px !important;
+        border-radius: 6px !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease-in-out !important;
+        margin: 0 !important;
+        white-space: nowrap !important; /* Impede a quebra de linhas do texto */
+    }
+    div[data-testid="stRadio"] label:hover {
+        border-color: #ff4b4b !important;
+        background-color: #2a2b36 !important;
+    }
+    /* Destaca a aba ativa com a cor vermelha tema do painel */
+    div[data-testid="stRadio"] label:has(input:checked) {
+        background-color: #ff4b4b !important;
+        color: white !important;
+        border-color: #ff4b4b !important;
+        font-weight: bold !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -100,6 +148,409 @@ def read_last_log_lines(n: int = 15) -> str:
     except Exception as e:
         return f"Erro ao ler arquivo de log: {e}"
 
+def get_image_dimensions(image_path: Path):
+    """Retorna largura e altura da imagem, ou fallback caso falhe."""
+    try:
+        from PIL import Image
+        with Image.open(image_path) as img:
+            return img.width, img.height
+    except Exception:
+        return 1000, 1000
+
+
+def get_image_base64(image_path: Path) -> str:
+    """Carrega a imagem física e retorna como Data URI base64."""
+    import base64
+    try:
+        if not image_path.exists():
+            return ""
+        with open(image_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+            ext = image_path.suffix.lower()
+            mimetype = "image/png"
+            if ext in [".jpg", ".jpeg"]:
+                mimetype = "image/jpeg"
+            elif ext == ".gif":
+                mimetype = "image/gif"
+            return f"data:{mimetype};base64,{encoded}"
+    except Exception:
+        return ""
+
+import heapq
+import math
+
+def calculate_dijkstra_route(caminhos: dict, start_pin: dict, end_pin: dict) -> list:
+    """
+    Calcula a rota mais curta entre o pin de origem e o pin de destino
+    usando a malha de caminhos (nós e arestas) com o algoritmo de Dijkstra.
+    """
+    nos = caminhos.get("nós", [])
+    if not nos:
+        return []
+        
+    # 1. Encontra o nó de navegação mais próximo para o pin de origem (mesmo pavimento)
+    start_no = None
+    min_start_dist = float("inf")
+    for no in nos:
+        if no["pavimento_id"] == start_pin["pavimento_id"]:
+            dist = math.sqrt((no["x"] - start_pin["x"])**2 + (no["y"] - start_pin["y"])**2)
+            if dist < min_start_dist:
+                min_start_dist = dist
+                start_no = no
+                
+    # 2. Encontra o nó de navegação mais próximo para o pin de destino (mesmo pavimento)
+    end_no = None
+    min_end_dist = float("inf")
+    for no in nos:
+        if no["pavimento_id"] == end_pin["pavimento_id"]:
+            dist = math.sqrt((no["x"] - end_pin["x"])**2 + (no["y"] - end_pin["y"])**2)
+            if dist < min_end_dist:
+                min_end_dist = dist
+                end_no = no
+                
+    if not start_no or not end_no:
+        return []
+        
+    # 3. Constrói adjacências do Grafo
+    nodes_map = {n["id"]: n for n in nos}
+    adj = {nid: [] for nid in nodes_map}
+    
+    for edge in caminhos.get("arestas", []):
+        u = edge.get("de")
+        v = edge.get("para")
+        if u in nodes_map and v in nodes_map:
+            n1 = nodes_map[u]
+            n2 = nodes_map[v]
+            
+            # Custo: distância euclidiana física (ou penalidade se mudar de andar)
+            if n1["pavimento_id"] != n2["pavimento_id"]:
+                weight = 300.0  # Custo fixo para mudar de pavimento
+            else:
+                weight = math.sqrt((n1["x"] - n2["x"])**2 + (n1["y"] - n2["y"])**2)
+                
+            adj[u].append((v, weight))
+            adj[v].append((u, weight))
+            
+    # Dijkstra
+    queue = [(0.0, start_no["id"], [start_no["id"]])]
+    visited = set()
+    
+    while queue:
+        dist, curr, path = heapq.heappop(queue)
+        if curr in visited:
+            continue
+        visited.add(curr)
+        
+        if curr == end_no["id"]:
+            # Reconstrói a rota final em formato de lista de dicionários contendo os nós
+            return [nodes_map[nid] for nid in path]
+            
+        for neighbor, weight in adj[curr]:
+            if neighbor not in visited:
+                heapq.heappush(queue, (dist + weight, neighbor, path + [neighbor]))
+                
+    return []
+
+
+def render_mapa_page():
+    """Renderiza a página/aba de Mapa & Localização."""
+    from database import get_map_config, get_map_pins, save_map_config
+    import json
+    
+    st.title("📍 Mapa & Localização de Chamados")
+    st.write("Visualize no mapa/planta baixa a localização exata das salas de atendimento.")
+    
+    # 1. Seção de Importação de JSON
+    with st.sidebar.expander("📥 Configurações & Upload JSON", expanded=False):
+        st.write("Atualize a planta e os locais enviando um JSON formatado:")
+        uploaded_file = st.file_uploader("Escolher arquivo JSON", type=["json"])
+        if uploaded_file is not None:
+            try:
+                config_data = json.load(uploaded_file)
+                if "predios" in config_data:
+                    save_map_config(config_data)
+                    st.success("Configurações do mapa e pins importadas com sucesso!")
+                    st.cache_resource.clear()
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("JSON inválido! Deve conter a chave 'predios'.")
+            except Exception as e:
+                st.error(f"Erro ao processar arquivo: {e}")
+                
+    # 2. Carrega as configurações do banco
+    config = get_map_config()
+    predios = config.get("predios", [])
+    
+    if not predios:
+        st.info("Nenhum prédio cadastrado no banco de dados. Faça o upload de um JSON de configurações na barra lateral.")
+        return
+        
+    # Adiciona os seletores e busca diretamente na barra lateral, liberando espaço total para a imagem
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📍 Seleção do Local")
+    
+    # Seleção de prédio
+    predio_nomes = [p.get("nome") for p in predios]
+    selected_predio_nome = st.sidebar.selectbox("Selecione o Prédio", predio_nomes)
+    selected_predio = next(p for p in predios if p.get("nome") == selected_predio_nome)
+    predio_id = selected_predio.get("id")
+    
+    # Seleção de pavimento
+    pavimentos = selected_predio.get("pavimentos", [])
+    if not pavimentos:
+        st.sidebar.warning("Sem pavimentos.")
+        return
+        
+    pavimento_nomes = [pav.get("nome") for pav in pavimentos]
+    selected_pav_nome = st.sidebar.selectbox("Selecione o Pavimento", pavimento_nomes)
+    selected_pav = next(pav for pav in pavimentos if pav.get("nome") == selected_pav_nome)
+    pavimento_id = selected_pav.get("id")
+    
+    # Obter caminho físico da imagem
+    img_path_str = selected_pav.get("imagem")
+    img_path = Path(img_path_str)
+    
+    if not img_path.exists():
+        st.error(f"Imagem da planta baixa não encontrada no caminho: `{img_path_str}`")
+        return
+        
+    # Carregar dimensões e base64
+    w, h = get_image_dimensions(img_path)
+    b64_image = get_image_base64(img_path)
+    
+    if not b64_image:
+        st.error("Erro ao processar a imagem da planta baixa.")
+        return
+        
+    # Carrega os pins do banco para esse pavimento
+    pins = get_map_pins(predio_id, pavimento_id)
+    
+    # 3. Caixa de seleção de pins e busca
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🎯 Localização de Salas")
+    
+    # Seletor de Sala
+    pin_nomes = ["-- Selecione uma Sala --"] + [p["sala"] for p in pins]
+    selected_pin_nome = st.sidebar.selectbox("Ir para a Sala", pin_nomes)
+    active_pin_id = ""
+    
+    if selected_pin_nome != "-- Selecione uma Sala --":
+        active_pin = next(p for p in pins if p["sala"] == selected_pin_nome)
+        active_pin_id = active_pin["id"]
+        
+    # Busca de sala (mantém como alternativa útil)
+    search_query = st.sidebar.text_input("🔍 Buscar Sala ou Local (ex: TI, Protocolo)", "").strip()
+    if search_query:
+        matching_pins = [
+            p for p in pins 
+            if search_query.lower() in p.get("sala", "").lower() or search_query.lower() in p.get("descricao", "").lower()
+        ]
+        if matching_pins:
+            st.sidebar.success(f"✨ Encontrado: {len(matching_pins)} correspondência(s)")
+            active_pin_id = matching_pins[0].get("id")
+        else:
+            st.sidebar.warning("⚠️ Nenhum local encontrado.")
+            
+    # 4. Traçado de Rotas (Pathfinding)
+    caminhos = selected_predio.get("caminhos", {})
+    route_coords = []
+    
+    if caminhos and caminhos.get("nós") and caminhos.get("arestas"):
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🚶 Traçar Rota Interna")
+        
+        # Pega pins de todos os andares para origem/destino
+        todos_pins = get_map_pins(predio_id)
+        pin_origem_nomes = [f"{p['sala']} ({p['pavimento_id']}º Andar)" if p['pavimento_id'] > 0 else f"{p['sala']} (Térreo)" for p in todos_pins]
+        
+        selected_origem_display = st.sidebar.selectbox("Ponto de Origem", ["-- Selecione a Origem --"] + pin_origem_nomes)
+        selected_destino_display = st.sidebar.selectbox("Ponto de Destino", ["-- Selecione o Destino --"] + pin_origem_nomes)
+        
+        if selected_origem_display != "-- Selecione a Origem --" and selected_destino_display != "-- Selecione o Destino --":
+            orig_idx = pin_origem_nomes.index(selected_origem_display)
+            dest_idx = pin_origem_nomes.index(selected_destino_display)
+            
+            orig_pin = todos_pins[orig_idx]
+            dest_pin = todos_pins[dest_idx]
+            
+            if orig_pin["id"] == dest_pin["id"]:
+                st.sidebar.info("Origem e Destino são idênticos.")
+            else:
+                route_nodes = calculate_dijkstra_route(caminhos, orig_pin, dest_pin)
+                if route_nodes:
+                    st.sidebar.success("🎉 Rota calculada com sucesso!")
+                    
+                    # Filtra nós da rota para o pavimento ativo
+                    active_floor_nodes = [n for n in route_nodes if n["pavimento_id"] == pavimento_id]
+                    
+                    coords_to_draw = []
+                    # Se o pin de origem estiver no andar ativo, adiciona-o no início
+                    if orig_pin["pavimento_id"] == pavimento_id:
+                        coords_to_draw.append([orig_pin["y"], orig_pin["x"]])
+                        
+                    for n in active_floor_nodes:
+                        coords_to_draw.append([n["y"], n["x"]])
+                        
+                    # Se o pin de destino estiver no andar ativo, adiciona-o no fim
+                    if dest_pin["pavimento_id"] == pavimento_id:
+                        coords_to_draw.append([dest_pin["y"], dest_pin["x"]])
+                        
+                    route_coords = coords_to_draw
+                    
+                    # Se a rota passa por outros andares, sinaliza
+                    outros_andares = [n for n in route_nodes if n["pavimento_id"] != pavimento_id]
+                    if outros_andares:
+                        st.sidebar.warning("⚠️ Rota exige mudança de pavimento! Siga até a escada/elevador e alterne para o pavimento destino para ver a continuação.")
+                else:
+                    st.sidebar.error("Não foi possível calcular uma rota válida.")
+
+    # 5. Leaflet HTML/JS
+    pins_json_str = json.dumps(pins)
+    route_coords_json_str = json.dumps(route_coords)
+    
+    leaflet_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Planta Baixa</title>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <!-- Leaflet CSS e JS -->
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      
+      <!-- Fullscreen Plugin CSS e JS -->
+      <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
+      <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
+      
+      <style>
+        html, body {{
+          margin: 0;
+          padding: 0;
+          height: 100%;
+          width: 100%;
+          overflow: hidden;
+          background-color: transparent;
+        }}
+        #map {{
+          height: 100%;
+          width: 100%;
+          margin: 0;
+          padding: 0;
+          background: #0e1117;
+          border: 1px solid #464855;
+          border-radius: 8px;
+          box-sizing: border-box;
+        }}
+      </style>
+    </head>
+    <body>
+      <div id="map" style="height: 650px; width: 100%;"></div>
+      <script>
+        var w = {w};
+        var h = {h};
+        var bounds = [[0, 0], [h, w]];
+
+        // Configura o mapa simples limitando arrasto (maxBounds) somente dentro da planta
+        var map = L.map('map', {{
+          crs: L.CRS.Simple,
+          minZoom: -2,
+          maxZoom: 3,
+          attributionControl: false,
+          maxBounds: bounds,
+          maxBoundsViscosity: 1.0
+        }});
+        
+        // Carrega a imagem da planta
+        var image = L.imageOverlay('{b64_image}', bounds).addTo(map);
+        map.fitBounds(bounds);
+
+        // Adiciona controle de Fullscreen no canto superior direito
+        map.addControl(new L.Control.Fullscreen({{
+          position: 'topright',
+          title: {{
+            'false': 'Ver em Tela Cheia',
+            'true': 'Sair da Tela Cheia'
+          }}
+        }}));
+
+        // Pins
+        var pins = {pins_json_str};
+        var activePinId = "{active_pin_id}";
+
+        pins.forEach(function(pin) {{
+          var isActive = (pin.id === activePinId);
+          
+          // Estilo de marcador customizado usando HTML DivIcon do Leaflet para ficar bem premium
+          var color = isActive ? "#ff4b4b" : "#4b9cff";
+          var size = isActive ? "24px" : "16px";
+          var border = isActive ? "3px solid white" : "2px solid white";
+          
+          var customIcon = L.divIcon({{
+            className: 'custom-pin',
+            html: '<div style="background-color: ' + color + '; width: ' + size + '; height: ' + size + '; border-radius: 50%; border: ' + border + '; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>',
+            iconSize: isActive ? [24, 24] : [16, 16],
+            iconAnchor: isActive ? [12, 12] : [8, 8]
+          }});
+
+          var marker = L.marker([pin.y, pin.x], {{icon: customIcon}}).addTo(map);
+          marker.bindPopup("<b>📌 " + pin.sala + "</b><br>" + pin.descricao);
+
+          if (isActive) {{
+            marker.openPopup();
+            map.setView([pin.y, pin.x], 1);
+          }}
+        }});
+
+        // Desenha a rota de pathfinding se houver coordenadas válidas
+        var routeCoords = {route_coords_json_str};
+        if (routeCoords.length > 1) {{
+          var polyline = L.polyline(routeCoords, {{
+            color: '#ff4b4b',
+            weight: 6,
+            opacity: 0.8,
+            dashArray: '10, 10',
+            lineJoin: 'round'
+          }}).addTo(map);
+          
+          // Enquadra a visão do mapa para englobar toda a rota percorrida
+          map.fitBounds(polyline.getBounds());
+        }}
+
+        // Envia coordenadas de clique silenciosamente para o console.log (F12) se estiver dentro da planta
+        map.on('click', function(e) {{
+          var coord = e.latlng;
+          var x = Math.round(coord.lng);
+          var y = Math.round(coord.lat);
+          
+          // Filtra coordenadas válidas dentro das dimensões da foto
+          if (x >= 0 && x <= w && y >= 0 && y <= h) {{
+            console.log("📍 Coordenada Clicada -> x:", x, "y:", y);
+          }}
+        }});
+      </script>
+    </body>
+    </html>
+    """
+    
+    st.iframe(leaflet_html, height=670)
+
+
+# Navegação por abas/páginas no Topo (Flutua no Header via CSS Fixed)
+page = st.radio(
+    "Navegação",
+    ["📋 Painel de Chamados", "📍 Mapa & Localização"],
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+if page == "📍 Mapa & Localização":
+    render_mapa_page()
+    st.stop()  # Interrompe a execução para não carregar a página padrão de chamados
+
+
 # Cabeçalho com Título e Botão de Sincronização
 col_title, col_btn = st.columns([3, 1])
 with col_title:
@@ -132,7 +583,7 @@ with col_btn:
 
 # Se o robô estiver ativo, exibe uma seção bonita mostrando o progresso em tempo real (sem travar)
 if robo_ativo:
-    with st.expander("🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso", expanded=True):
+    with st.expander("🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso", expanded=False):
         st.info("O robô está coletando novos chamados e classificando com IA neste momento. Você pode continuar usando o painel normalmente!")
         
         # Lê e exibe os logs dinamicamente
