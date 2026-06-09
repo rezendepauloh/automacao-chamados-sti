@@ -1,15 +1,23 @@
 # -*- coding: utf-8 -*-
 # test_app.py
+import sys
+from pathlib import Path
+
+# Adiciona a raiz do projeto e a pasta src ao sys.path
+root_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(root_dir))
+sys.path.insert(0, str(root_dir / "src"))
+
 import unittest
 import pandas as pd
 from unittest.mock import MagicMock
 
 # Importação dos módulos do projeto
-from preprocess_chamados import clean_otrs_description, normalize_text
-from tag_classifier import clean_text, normalize_for_extraction, detect_and_update_remote_locations
-from unidades_scraper import make_sigla
-from manual_entries import set_city_into_unidade
-from config import save_df_to_excel_formatted, cleanup_old_files
+from src.preprocess_chamados import clean_otrs_description, normalize_text
+from src.tag_classifier import clean_text, normalize_for_extraction, detect_and_update_remote_locations
+from src.unidades_scraper import make_sigla
+from src.manual_entries import set_city_into_unidade
+from src.config import save_df_to_excel_formatted, cleanup_old_files
 
 
 class TestPreprocessChamados(unittest.TestCase):
@@ -211,14 +219,14 @@ class TestRequestsBasedUnidadesScraper(unittest.TestCase):
     """Testes para o unidades_scraper utilizando mocks de requisições HTTP."""
 
     def test_clean_url_prepends_domain(self):
-        from unidades_scraper import clean_url
+        from src.unidades_scraper import clean_url
         self.assertEqual(clean_url("/promotorias/agua-clara"), "https://www.mpms.mp.br/promotorias/agua-clara")
         self.assertEqual(clean_url("https://www.mpms.mp.br/outro"), "https://www.mpms.mp.br/outro")
         self.assertEqual(clean_url(""), "")
 
     def test_get_cities_parses_html_correctly(self):
         from unittest.mock import patch
-        from unidades_scraper import get_cities
+        from src.unidades_scraper import get_cities
 
         fake_html = """
         <div class="innerpage">
@@ -240,7 +248,7 @@ class TestRequestsBasedUnidadesScraper(unittest.TestCase):
 
     def test_scrape_promotoria_parses_html_correctly(self):
         from unittest.mock import patch
-        from unidades_scraper import scrape_promotoria
+        from src.unidades_scraper import scrape_promotoria
 
         fake_html = """
         <div id="promotorias">
@@ -354,7 +362,7 @@ class TestOtrsCommentsCleaning(unittest.TestCase):
     """Testes unitários para a limpeza de comentários do OTRS."""
 
     def test_clean_otrs_comments_filtering(self):
-        from config import clean_otrs_comments
+        from src.config import clean_otrs_comments
         comments = [
             {'data': '2026-05-21 10:00:00', 'autor': 'suporte@mpms.mp.br', 'texto': 'Comentário automático que deve ser ignorado'},
             {'data': '2026-05-21 10:05:00', 'autor': 'Central de Atendimento ao Usuário', 'texto': 'Outro comentário automático a ser ignorado'},
@@ -365,7 +373,7 @@ class TestOtrsCommentsCleaning(unittest.TestCase):
         self.assertEqual(cleaned[0]['autor'], 'paulo.goncalves')
 
     def test_clean_otrs_comments_invalid_inputs(self):
-        from config import clean_otrs_comments
+        from src.config import clean_otrs_comments
         self.assertEqual(clean_otrs_comments(None), [])
         self.assertEqual(clean_otrs_comments('[]'), [])
         self.assertEqual(clean_otrs_comments('invalid json'), [])
@@ -377,7 +385,7 @@ class TestSccmAndHostnameParsing(unittest.TestCase):
 
     @unittest.mock.patch('subprocess.run')
     def test_fetch_sccm_data_success_json(self, mock_run):
-        from config import fetch_sccm_data, _sccm_cache
+        from src.config import fetch_sccm_data, _sccm_cache
         _sccm_cache.clear()
         
         fake_stdout = """
@@ -394,7 +402,7 @@ class TestSccmAndHostnameParsing(unittest.TestCase):
 
     @unittest.mock.patch('subprocess.run')
     def test_fetch_sccm_data_access_denied(self, mock_run):
-        from config import fetch_sccm_data, _sccm_cache
+        from src.config import fetch_sccm_data, _sccm_cache
         _sccm_cache.clear()
         
         mock_run.return_value = MagicMock(returncode=1, stdout='', stderr='Get-WmiObject : Acesso negado')
@@ -405,7 +413,7 @@ class TestSccmAndHostnameParsing(unittest.TestCase):
 
     @unittest.mock.patch('subprocess.run')
     def test_fetch_sccm_data_regex_fallback(self, mock_run):
-        from config import fetch_sccm_data, _sccm_cache
+        from src.config import fetch_sccm_data, _sccm_cache
         _sccm_cache.clear()
         
         fake_stdout = 'Name : DESKTOP-ABC123\nIPAddresses : {192.168.0.10, 10.50.60.70}'
@@ -420,7 +428,7 @@ class TestAdLookupRobustness(unittest.TestCase):
     """Testes unitários para a busca de departamento/unidade no AD de forma exata e robusta."""
 
     def test_fetch_ad_department_username_exact_filter(self):
-        from config import fetch_ad_department
+        from src.config import fetch_ad_department
         mock_conn = MagicMock()
         
         mock_entry = {
@@ -436,7 +444,7 @@ class TestAdLookupRobustness(unittest.TestCase):
         self.assertIn('(sAMAccountName=larasantos)', kwargs.get('search_filter', ''))
 
     def test_fetch_ad_department_fallback_to_office(self):
-        from config import fetch_ad_department
+        from src.config import fetch_ad_department
         mock_conn = MagicMock()
         
         mock_entry = {

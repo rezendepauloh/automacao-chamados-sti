@@ -1,12 +1,18 @@
+import sys
+from pathlib import Path
+
+# Adiciona a raiz do projeto e a pasta src ao sys.path para importações de módulos
+root_dir = Path(__file__).parent
+sys.path.insert(0, str(root_dir))
+sys.path.insert(0, str(root_dir / "src"))
+
 import subprocess
 import os
-import sys
 import time
 import tempfile
 import ctypes
-from pathlib import Path
 from datetime import datetime
-from config import setup_logging, LOG_FILE_ORQUESTRADOR
+from src.config import setup_logging, LOG_FILE_ORQUESTRADOR
 
 # CREATE_NO_WINDOW = 0x08000000 é um comando da API do Windows que proíbe a criação de janelas de terminal para subprocessos
 CREATE_NO_WINDOW = 0x08000000
@@ -81,11 +87,11 @@ def main():
         sys.exit(1)
 
     scripts = [
-        ("otrs_scraper.py", "Coleta OTRS"),
-        ("citsmart_scraper.py", "Coleta CitSmart"),
-        ("preprocess_chamados.py", "Pré-processamento"),
-        ("tag_classifier.py", "Classificação de TAGs por IA")
-        # ("sync_master.py", "Sincronização Planilha Master")  # Legado (Streamlit é o novo painel)
+        ("src/otrs_scraper.py", "Coleta OTRS"),
+        ("src/citsmart_scraper.py", "Coleta CitSmart"),
+        ("src/preprocess_chamados.py", "Pré-processamento"),
+        ("src/tag_classifier.py", "Classificação de TAGs por IA")
+        # ("src/sync_master.py", "Sincronização Planilha Master")  # Legado (Streamlit é o novo painel)
     ]
 
 

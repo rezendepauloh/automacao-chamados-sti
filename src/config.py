@@ -48,7 +48,7 @@ MAX_RETRIES = 5     # Número de tentativas por página
 # Pega automaticamente a pasta do usuário atual
 USER_HOME = Path.home()
 
-BASE_DIR              = Path(__file__).parent
+BASE_DIR              = Path(__file__).parent.parent
 INPUT_DIR_BRUTOS      = BASE_DIR / "01 - Dados Brutos"
 INPUT_DIR_BRUTOS.mkdir(exist_ok=True)
 OUTPUT_DIR_TRATADOS   = BASE_DIR / "02 - Dados tratados"

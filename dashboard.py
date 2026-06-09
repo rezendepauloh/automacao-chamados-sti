@@ -1,4 +1,11 @@
 import sys
+from pathlib import Path
+
+# Adiciona a raiz do projeto e a pasta src ao sys.path para importações de módulos
+root_dir = Path(__file__).parent
+sys.path.insert(0, str(root_dir))
+sys.path.insert(0, str(root_dir / "src"))
+
 import asyncio
 import os
 from dotenv import load_dotenv
@@ -254,7 +261,7 @@ def calculate_dijkstra_route(caminhos: dict, start_pin: dict, end_pin: dict) -> 
 
 def render_mapa_page():
     """Renderiza a página/aba de Mapa & Localização."""
-    from database import get_map_config, get_map_pins, save_map_config
+    from src.database import get_map_config, get_map_pins, save_map_config
     import json
     
     st.title("📍 Mapa & Localização de Chamados")
@@ -355,6 +362,7 @@ def render_mapa_page():
     # 4. Traçado de Rotas (Pathfinding)
     caminhos = selected_predio.get("caminhos", {})
     route_coords = []
+    route_distance_meters = 0.0
     
     if caminhos and caminhos.get("nós") and caminhos.get("arestas"):
         st.sidebar.markdown("---")
@@ -379,7 +387,19 @@ def render_mapa_page():
             else:
                 route_nodes = calculate_dijkstra_route(caminhos, orig_pin, dest_pin)
                 if route_nodes:
-                    st.sidebar.success("🎉 Rota calculada com sucesso!")
+                    # Calcula a distância total percorrida
+                    total_dist_pixels = 0.0
+                    for idx_n in range(len(route_nodes) - 1):
+                        n1 = route_nodes[idx_n]
+                        n2 = route_nodes[idx_n+1]
+                        if n1["pavimento_id"] != n2["pavimento_id"]:
+                            total_dist_pixels += 100.0  # Custo aproximado para mudança de andar (ex: escada/elevador)
+                        else:
+                            total_dist_pixels += math.sqrt((n1["x"] - n2["x"])**2 + (n1["y"] - n2["y"])**2)
+                    
+                    # Fator de escala padrão aproximado: 1 pixel = 0.05 metros
+                    route_distance_meters = total_dist_pixels * 0.05
+                    st.sidebar.success(f"🎉 Rota calculada com sucesso! ({route_distance_meters:.1f} m)")
                     
                     # Filtra nós da rota para o pavimento ativo
                     active_floor_nodes = [n for n in route_nodes if n["pavimento_id"] == pavimento_id]
@@ -404,6 +424,32 @@ def render_mapa_page():
                         st.sidebar.warning("⚠️ Rota exige mudança de pavimento! Siga até a escada/elevador e alterne para o pavimento destino para ver a continuação.")
                 else:
                     st.sidebar.error("Não foi possível calcular uma rota válida.")
+
+    # Filtra os nós do pavimento ativo para visualização em desenvolvimento
+    active_nodes = []
+    if caminhos and caminhos.get("nós"):
+        active_nodes = [n for n in caminhos.get("nós", []) if n.get("pavimento_id") == pavimento_id]
+    active_nodes_json_str = json.dumps(active_nodes)
+
+    # Filtra as arestas do pavimento ativo para visualização em desenvolvimento
+    active_arestas = []
+    if caminhos and caminhos.get("arestas") and caminhos.get("nós"):
+        nodes_dict = {n["id"]: n for n in caminhos.get("nós", [])}
+        for edge in caminhos.get("arestas", []):
+            u_id = edge.get("de")
+            v_id = edge.get("para")
+            if u_id in nodes_dict and v_id in nodes_dict:
+                u = nodes_dict[u_id]
+                y = nodes_dict[v_id]
+                if u.get("pavimento_id") == pavimento_id and y.get("pavimento_id") == pavimento_id:
+                    active_arestas.append({
+                        "de_id": u_id,
+                        "de_coords": [u["y"], u["x"]],
+                        "para_id": v_id,
+                        "para_coords": [y["y"], y["x"]],
+                        "tipo": edge.get("tipo", "caminho")
+                    })
+    active_arestas_json_str = json.dumps(active_arestas)
 
     # 5. Leaflet HTML/JS
     pins_json_str = json.dumps(pins)
@@ -504,6 +550,37 @@ def render_mapa_page():
           }}
         }});
 
+        // =====================================================================
+        // [DESENVOLVIMENTO] Renderização dos nós do pavimento ativo para apoio visual
+        // =====================================================================
+        var activeNodes = {active_nodes_json_str};
+        activeNodes.forEach(function(node) {{
+          var nodeIcon = L.divIcon({{
+            className: 'debug-node',
+            html: '<div style="background-color: #8a2be2; width: 8px; height: 8px; border-radius: 50%; opacity: 0.5; box-shadow: 0 0 3px rgba(0,0,0,0.5);"></div>',
+            iconSize: [8, 8],
+            iconAnchor: [4, 4]
+          }});
+          var marker = L.marker([node.y, node.x], {{icon: nodeIcon}}).addTo(map);
+          marker.bindTooltip("<b>Nó:</b> " + node.id + "<br>" + node.nome, {{sticky: true}});
+        }});
+        // =====================================================================
+
+        // =====================================================================
+        // [DESENVOLVIMENTO] Renderização das arestas (caminhos) do pavimento ativo para apoio visual
+        // =====================================================================
+        var activeArestas = {active_arestas_json_str};
+        activeArestas.forEach(function(edge) {{
+          var polyline = L.polyline([edge.de_coords, edge.para_coords], {{
+            color: '#2ecc71', // Verde
+            weight: 3,
+            opacity: 0.4,
+            dashArray: '5, 5'
+          }}).addTo(map);
+          polyline.bindTooltip("<b>Aresta:</b> " + edge.de_id + " ➔ " + edge.para_id + (edge.tipo !== 'caminho' ? " (" + edge.tipo + ")" : ""), {{sticky: true}});
+        }});
+        // =====================================================================
+
         // Desenha a rota de pathfinding se houver coordenadas válidas
         var routeCoords = {route_coords_json_str};
         if (routeCoords.length > 1) {{
@@ -514,6 +591,9 @@ def render_mapa_page():
             dashArray: '10, 10',
             lineJoin: 'round'
           }}).addTo(map);
+          
+          // Adiciona popup informativo de distância ao clicar na rota
+          polyline.bindPopup("<b>🚶 Rota Interna Calculada</b><br>Distância total estimada: <b>" + {route_distance_meters:.1f} + " m</b>");
           
           // Enquadra a visão do mapa para englobar toda a rota percorrida
           map.fitBounds(polyline.getBounds());
@@ -635,7 +715,7 @@ def summarize_ticket_locally(description: str, comments: str, max_sentences: int
     """
     import re
     from collections import Counter
-    from config import clean_otrs_description
+    from src.config import clean_otrs_description
     
     # Pré-processa e limpa metadados e formulários estruturados (especialmente OTRS)
     description = clean_otrs_description(description)
@@ -1119,7 +1199,7 @@ else:
                 new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row['id']}")
                 if new_tag != tag_name:
                     if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row['id']}"):
-                        from database import update_ticket_tag
+                        from src.database import update_ticket_tag
                         update_ticket_tag(row['id'], new_tag)
                         st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
                         st.cache_data.clear()
@@ -1159,7 +1239,7 @@ else:
                 current_andamento = ""
             new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
             if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
-                from database import update_ticket_andamento
+                from src.database import update_ticket_andamento
                 update_ticket_andamento(row['id'], new_andamento)
                 st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
                 st.cache_data.clear()
@@ -1169,7 +1249,7 @@ else:
             st.text(row['descricao'])
             
         # Comentários / Notas históricas
-        from database import get_comments_by_ticket
+        from src.database import get_comments_by_ticket
         comments = get_comments_by_ticket(row['id'])
         if comments:
             st.markdown("### 💬 Histórico de Notas e Acompanhamentos")
@@ -1334,7 +1414,7 @@ else:
                 diag = diagnosticos.get(tag, "Análise e resolução de ticket técnico STI.")
                 return f"🧠 *Possível Problema:* {diag}\n🩺 *Sintoma:* _{first_sentence}_"
  
-            from database import get_comments_by_ticket
+            from src.database import get_comments_by_ticket
  
             lines = []
             lines.append("📋 *LISTA DE CHAMADOS STI - MPMS* 📋\n")

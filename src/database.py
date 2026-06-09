@@ -435,17 +435,37 @@ def save_map_config(config_data: dict):
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Salva a estrutura de prédios e pavimentos
+    # Salva a estrutura de prédios e pavimentos (preservando pins aninhados se houver)
     predios = config_data.get("predios", [])
     config_json_str = json.dumps({"predios": predios})
     cursor.execute("INSERT OR REPLACE INTO mapa_config (id, config_json) VALUES ('config_atual', ?)", (config_json_str,))
     
     # Limpa pins antigos e insere os novos
     cursor.execute("DELETE FROM mapa_pins")
+    
+    # 1. Insere pins do novo formato aninhado dentro de cada prédio
+    for predio in predios:
+        p_id = predio.get("id")
+        p_pins = predio.get("pins", [])
+        for pin in p_pins:
+            cursor.execute("""
+            INSERT OR REPLACE INTO mapa_pins (id, predio_id, pavimento_id, sala, x, y, descricao)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(pin.get("id")),
+                str(pin.get("predio_id", p_id)),
+                int(pin.get("pavimento_id")),
+                str(pin.get("sala")),
+                int(pin.get("x")),
+                int(pin.get("y")),
+                str(pin.get("descricao", ""))
+            ))
+            
+    # 2. Insere pins do formato antigo plano (nível raiz) para retrocompatibilidade
     pins = config_data.get("pins", [])
     for pin in pins:
         cursor.execute("""
-        INSERT INTO mapa_pins (id, predio_id, pavimento_id, sala, x, y, descricao)
+        INSERT OR REPLACE INTO mapa_pins (id, predio_id, pavimento_id, sala, x, y, descricao)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             str(pin.get("id")),
@@ -456,6 +476,7 @@ def save_map_config(config_data: dict):
             int(pin.get("y")),
             str(pin.get("descricao", ""))
         ))
+        
     conn.commit()
     conn.close()
 
@@ -486,6 +507,18 @@ def get_map_pins(predio_id=None, pavimento_id=None) -> list:
         FROM mapa_pins 
         WHERE predio_id = ? AND pavimento_id = ?
         """, (predio_id, pavimento_id))
+    elif predio_id is not None:
+        cursor.execute("""
+        SELECT id, predio_id, pavimento_id, sala, x, y, descricao 
+        FROM mapa_pins 
+        WHERE predio_id = ?
+        """, (predio_id,))
+    elif pavimento_id is not None:
+        cursor.execute("""
+        SELECT id, predio_id, pavimento_id, sala, x, y, descricao 
+        FROM mapa_pins 
+        WHERE pavimento_id = ?
+        """, (pavimento_id,))
     else:
         cursor.execute("""
         SELECT id, predio_id, pavimento_id, sala, x, y, descricao 
