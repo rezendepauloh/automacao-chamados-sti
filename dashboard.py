@@ -551,8 +551,10 @@ def render_mapa_page():
         }});
 
         // =====================================================================
-        // [DESENVOLVIMENTO] Renderização dos nós do pavimento ativo para apoio visual
+        // [DESENVOLVIMENTO] Renderização dos nós e arestas do pavimento ativo para apoio visual
         // =====================================================================
+        var debugLayer = L.layerGroup().addTo(map);
+
         var activeNodes = {active_nodes_json_str};
         activeNodes.forEach(function(node) {{
           var nodeIcon = L.divIcon({{
@@ -561,14 +563,10 @@ def render_mapa_page():
             iconSize: [8, 8],
             iconAnchor: [4, 4]
           }});
-          var marker = L.marker([node.y, node.x], {{icon: nodeIcon}}).addTo(map);
+          var marker = L.marker([node.y, node.x], {{icon: nodeIcon}}).addTo(debugLayer);
           marker.bindTooltip("<b>Nó:</b> " + node.id + "<br>" + node.nome, {{sticky: true}});
         }});
-        // =====================================================================
 
-        // =====================================================================
-        // [DESENVOLVIMENTO] Renderização das arestas (caminhos) do pavimento ativo para apoio visual
-        // =====================================================================
         var activeArestas = {active_arestas_json_str};
         activeArestas.forEach(function(edge) {{
           var polyline = L.polyline([edge.de_coords, edge.para_coords], {{
@@ -576,9 +574,58 @@ def render_mapa_page():
             weight: 3,
             opacity: 0.4,
             dashArray: '5, 5'
-          }}).addTo(map);
+          }}).addTo(debugLayer);
           polyline.bindTooltip("<b>Aresta:</b> " + edge.de_id + " ➔ " + edge.para_id + (edge.tipo !== 'caminho' ? " (" + edge.tipo + ")" : ""), {{sticky: true}});
         }});
+
+        // Criação de botão customizado de controle de visibilidade da malha
+        var MeshToggleControl = L.Control.extend({{
+          options: {{
+            position: 'topright'
+          }},
+          onAdd: function (map) {{
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-custom-control');
+            container.style.backgroundColor = '#1e1f25';
+            container.style.width = '34px';
+            container.style.height = '34px';
+            container.style.cursor = 'pointer';
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.borderRadius = '4px';
+            container.style.border = '1px solid #464855';
+            container.style.transition = 'all 0.2s';
+            container.title = "Exibir Malha de Caminhos";
+
+            // Ícone do Olho para Visibilidade
+            container.innerHTML = '<span style="font-size: 16px; line-height: 1; filter: grayscale(100%);">👁️</span>';
+
+            var isVisible = true;
+            container.onclick = function(e) {{
+              L.DomEvent.stopPropagation(e); // Previne clique de propagar para o mapa
+              if (isVisible) {{
+                map.removeLayer(debugLayer);
+                container.style.opacity = '0.5';
+              }} else {{
+                map.addLayer(debugLayer);
+                container.style.opacity = '1.0';
+              }}
+              isVisible = !isVisible;
+            }};
+            
+            // Efeito hover
+            container.onmouseover = function() {{
+              container.style.backgroundColor = '#2a2b36';
+            }};
+            container.onmouseout = function() {{
+              container.style.backgroundColor = '#1e1f25';
+            }};
+
+            return container;
+          }}
+        }});
+
+        map.addControl(new MeshToggleControl());
         // =====================================================================
 
         // Desenha a rota de pathfinding se houver coordenadas válidas
@@ -607,7 +654,36 @@ def render_mapa_page():
           
           // Filtra coordenadas válidas dentro das dimensões da foto
           if (x >= 0 && x <= w && y >= 0 && y <= h) {{
-            console.log("📍 Coordenada Clicada -> x:", x, "y:", y);
+            var floor = {pavimento_id};
+            console.log("📍 Coordenada Clicada -> x: " + x + ", y: " + y);
+            
+            // Log individual do Nó
+            console.log("📦 [JSON NÓ]:", '{{\"id\": \"n_novo\", \"pavimento_id\": ' + floor + ', \"x\": ' + x + ', \"y\": ' + y + ', \"nome\": \"\"}}');
+            
+            // Log individual do Pin
+            console.log("📌 [JSON PIN]:", '{{\"id\": \"pin_novo\", \"pavimento_id\": ' + floor + ', \"sala\": \"\", \"x\": ' + x + ', \"y\": ' + y + ', \"descricao\": \"\"}}');
+            
+            // Encontra o nó mais próximo no pavimento ativo
+            var nearestNode = null;
+            var minDist = Infinity;
+            if (typeof activeNodes !== "undefined" && activeNodes.length > 0) {{
+              activeNodes.forEach(function(node) {{
+                var dx = node.x - x;
+                var dy = node.y - y;
+                var dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < minDist) {{
+                  minDist = dist;
+                  nearestNode = node;
+                }}
+              }});
+            }}
+            
+            // Log sugerido de Aresta conectando ao nó mais próximo
+            if (nearestNode) {{
+              var distRound = Math.round(minDist);
+              console.log("🔗 [JSON ARESTA] (Nó mais próximo: " + nearestNode.id + ", dist: " + distRound + "px):", 
+                          '{{\"de\": \"' + nearestNode.id + '\", \"para\": \"n_novo\"}}');
+            }}
           }}
         }});
       </script>
