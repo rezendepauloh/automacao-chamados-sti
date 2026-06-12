@@ -259,8 +259,60 @@ def calculate_dijkstra_route(caminhos: dict, start_pin: dict, end_pin: dict) -> 
     return []
 
 
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+
+class SaveConfigHandler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path == '/save_config':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            try:
+                config_data = json.loads(post_data.decode('utf-8'))
+                from src.database import save_map_config
+                save_map_config(config_data)
+                
+                # Salva também no arquivo físico uploads/map_config_TEMPLATE.json
+                template_path = Path("uploads/map_config_TEMPLATE.json")
+                with open(template_path, "w", encoding="utf-8") as f:
+                    json.dump(config_data, f, indent=2, ensure_ascii=False)
+                
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success"}).encode())
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(str(e).encode())
+                return
+        self.send_response(404)
+        self.end_headers()
+
+def start_backend_server():
+    if not hasattr(st, "_backend_server_running"):
+        st._backend_server_running = True
+        def run_server():
+            server = HTTPServer(('localhost', 8099), SaveConfigHandler)
+            server.serve_forever()
+        t = threading.Thread(target=run_server, daemon=True)
+        t.start()
+
+
 def render_mapa_page():
     """Renderiza a página/aba de Mapa & Localização."""
+    start_backend_server()
     from src.database import get_map_config, get_map_pins, save_map_config
     import json
     
@@ -268,22 +320,22 @@ def render_mapa_page():
     st.write("Visualize no mapa/planta baixa a localização exata das salas de atendimento.")
     
     # 1. Seção de Importação de JSON
-    with st.sidebar.expander("📥 Configurações & Upload JSON", expanded=False):
-        st.write("Atualize a planta e os locais enviando um JSON formatado:")
-        uploaded_file = st.file_uploader("Escolher arquivo JSON", type=["json"])
-        if uploaded_file is not None:
-            try:
-                config_data = json.load(uploaded_file)
-                if "predios" in config_data:
-                    save_map_config(config_data)
-                    st.success("Configurações do mapa e pins importadas com sucesso!")
-                    st.cache_resource.clear()
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.error("JSON inválido! Deve conter a chave 'predios'.")
-            except Exception as e:
-                st.error(f"Erro ao processar arquivo: {e}")
+    # with st.sidebar.expander("📥 Configurações & Upload JSON", expanded=False):
+    #    st.write("Atualize a planta e os locais enviando um JSON formatado:")
+    #    uploaded_file = st.file_uploader("Escolher arquivo JSON", type=["json"])
+    #    if uploaded_file is not None:
+    #        try:
+    #            config_data = json.load(uploaded_file)
+    #            if "predios" in config_data:
+    #                save_map_config(config_data)
+    #                st.success("Configurações do mapa e pins importadas com sucesso!")
+    #                st.cache_resource.clear()
+    #                st.cache_data.clear()
+    #                st.rerun()
+    #            else:
+    #                st.error("JSON inválido! Deve conter a chave 'predios'.")
+    #        except Exception as e:
+    #            st.error(f"Erro ao processar arquivo: {e}")
                 
     # 2. Carrega as configurações do banco
     config = get_map_config()
@@ -294,7 +346,7 @@ def render_mapa_page():
         return
         
     # Adiciona os seletores e busca diretamente na barra lateral, liberando espaço total para a imagem
-    st.sidebar.markdown("---")
+    # st.sidebar.markdown("---")
     st.sidebar.subheader("📍 Seleção do Local")
     
     # Seleção de prédio
@@ -310,9 +362,21 @@ def render_mapa_page():
         return
         
     pavimento_nomes = [pav.get("nome") for pav in pavimentos]
-    selected_pav_nome = st.sidebar.selectbox("Selecione o Pavimento", pavimento_nomes)
+    
+    # Gerencia estado do pavimento selecionado
+    if "prev_predio_id" not in st.session_state or st.session_state.prev_predio_id != predio_id:
+        st.session_state.prev_predio_id = predio_id
+        st.session_state.selected_pavimento_id = pavimentos[0].get("id")
+        
+    try:
+        default_index = next(idx for idx, pav in enumerate(pavimentos) if pav.get("id") == st.session_state.selected_pavimento_id)
+    except StopIteration:
+        default_index = 0
+
+    selected_pav_nome = st.sidebar.selectbox("Selecione o Pavimento", pavimento_nomes, index=default_index)
     selected_pav = next(pav for pav in pavimentos if pav.get("nome") == selected_pav_nome)
     pavimento_id = selected_pav.get("id")
+    st.session_state.selected_pavimento_id = pavimento_id
     
     # Obter caminho físico da imagem
     img_path_str = selected_pav.get("imagem")
@@ -346,16 +410,23 @@ def render_mapa_page():
         active_pin = next(p for p in pins if p["sala"] == selected_pin_nome)
         active_pin_id = active_pin["id"]
         
-    # Busca de sala (mantém como alternativa útil)
-    search_query = st.sidebar.text_input("🔍 Buscar Sala ou Local (ex: TI, Protocolo)", "").strip()
+    # Busca de sala global (busca em todos os andares do prédio)
+    search_query = st.sidebar.text_input("🔍 Buscar Sala ou Local (ex: TI, Dr. Fulano)", "").strip()
     if search_query:
+        all_pins = get_map_pins(predio_id)
         matching_pins = [
-            p for p in pins 
+            p for p in all_pins 
             if search_query.lower() in p.get("sala", "").lower() or search_query.lower() in p.get("descricao", "").lower()
         ]
         if matching_pins:
             st.sidebar.success(f"✨ Encontrado: {len(matching_pins)} correspondência(s)")
-            active_pin_id = matching_pins[0].get("id")
+            first_match = matching_pins[0]
+            active_pin_id = first_match.get("id")
+            
+            # Se o pin encontrado estiver em um pavimento diferente do atual, altera e recarrega
+            if first_match.get("pavimento_id") != pavimento_id:
+                st.session_state.selected_pavimento_id = first_match.get("pavimento_id")
+                st.rerun()
         else:
             st.sidebar.warning("⚠️ Nenhum local encontrado.")
             
@@ -454,6 +525,7 @@ def render_mapa_page():
     # 5. Leaflet HTML/JS
     pins_json_str = json.dumps(pins)
     route_coords_json_str = json.dumps(route_coords)
+    config_json_str = json.dumps(config)
     
     leaflet_html = f"""
     <!DOCTYPE html>
@@ -490,6 +562,77 @@ def render_mapa_page():
           border-radius: 8px;
           box-sizing: border-box;
         }}
+        /* Estilos premium para o pop-up e formulário do Modo Dev */
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {{
+          background: #1e1f25 !important;
+          color: #ffffff !important;
+          border: 1px solid #464855 !important;
+          border-radius: 8px !important;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+        }}
+        .dev-form {{
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          min-width: 210px;
+          font-family: 'Inter', sans-serif;
+          padding: 4px;
+        }}
+        .dev-form label {{
+          font-weight: bold;
+          font-size: 11px;
+          color: #a0a5b5;
+          margin-bottom: 2px;
+          display: block;
+        }}
+        .dev-form input[type="text"], .dev-form select {{
+          background: #2a2b36;
+          border: 1px solid #464855;
+          color: #fff;
+          padding: 5px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          outline: none;
+          width: 90%;
+        }}
+        .dev-form input[type="text"]:focus {{
+          border-color: #4b9cff;
+        }}
+        .dev-form-row {{
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+        }}
+        .dev-btn-group {{
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 8px;
+        }}
+        .dev-btn {{
+          padding: 6px 12px;
+          border-radius: 4px;
+          border: none;
+          cursor: pointer;
+          font-size: 11px;
+          font-weight: bold;
+          transition: background-color 0.2s;
+        }}
+        .dev-btn-save {{
+          background-color: #2ecc71;
+          color: #fff;
+        }}
+        .dev-btn-save:hover {{
+          background-color: #27ae60;
+        }}
+        .dev-btn-cancel {{
+          background-color: #e74c3c;
+          color: #fff;
+        }}
+        .dev-btn-cancel:hover {{
+          background-color: #c0392b;
+        }}
       </style>
     </head>
     <body>
@@ -522,61 +665,329 @@ def render_mapa_page():
           }}
         }}));
 
-        // Pins
-        var pins = {pins_json_str};
+        // Identificadores de controle do Streamlit passados ao JS
         var activePinId = "{active_pin_id}";
+        var activeBuildingId = "{predio_id}";
+        var floorId = {pavimento_id};
+        var fullConfig = {config_json_str};
 
-        pins.forEach(function(pin) {{
-          var isActive = (pin.id === activePinId);
-          
-          // Estilo de marcador customizado usando HTML DivIcon do Leaflet para ficar bem premium
-          var color = isActive ? "#ff4b4b" : "#4b9cff";
-          var size = isActive ? "24px" : "16px";
-          var border = isActive ? "3px solid white" : "2px solid white";
-          
-          var customIcon = L.divIcon({{
-            className: 'custom-pin',
-            html: '<div style="background-color: ' + color + '; width: ' + size + '; height: ' + size + '; border-radius: 50%; border: ' + border + '; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>',
-            iconSize: isActive ? [24, 24] : [16, 16],
-            iconAnchor: isActive ? [12, 12] : [8, 8]
+        // Layers para pins e malha (nós e arestas)
+        var pinsLayer = L.layerGroup().addTo(map);
+        var debugLayer = L.layerGroup(); // Começa oculto ou visível via controle do olho
+
+        // Função unificada para desenhar todos os elementos (existentes e novos)
+        window.redrawAllLayers = function() {{
+          pinsLayer.clearLayers();
+          debugLayer.clearLayers();
+
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (!predio) return;
+
+          // Garante a existência da estrutura no JSON
+          if (!predio.caminhos) predio.caminhos = {{ "nós": [], "arestas": [] }};
+          if (!predio.caminhos.nós) predio.caminhos.nós = [];
+          if (!predio.caminhos.arestas) predio.caminhos.arestas = [];
+          if (!predio.pins) predio.pins = [];
+
+          // 1. Desenha as Arestas
+          predio.caminhos.arestas.forEach(function(edge) {{
+            var deNode = predio.caminhos.nós.find(function(n) {{ return n.id === edge.de && n.pavimento_id === floorId; }});
+            var paraNode = predio.caminhos.nós.find(function(n) {{ return n.id === edge.para && n.pavimento_id === floorId; }});
+            if (deNode && paraNode) {{
+              var polyline = L.polyline([[deNode.y, deNode.x], [paraNode.y, paraNode.x]], {{
+                color: '#2ecc71',
+                weight: 3,
+                opacity: 0.5,
+                dashArray: '5, 5'
+              }}).addTo(debugLayer);
+
+              polyline.bindTooltip("<b>Aresta:</b> " + edge.de + " ➔ " + edge.para + (edge.tipo && edge.tipo !== 'caminho' ? " (" + edge.tipo + ")" : ""), {{sticky: true}});
+
+              // No modo desenvolvedor, permite excluir a aresta ao clicar nela
+              polyline.on('click', function(e) {{
+                if (devMode) {{
+                  L.DomEvent.stopPropagation(e);
+                  var popupContent = `
+                    <div style="color:#fff; font-size:12px; font-family:sans-serif; padding:4px;">
+                      <b>Aresta:</b> ${{edge.de}} ➔ ${{edge.para}}<br><br>
+                      <button class="dev-btn dev-btn-cancel" onclick="window.removeEdge('${{edge.de}}', '${{edge.para}}')">Excluir Aresta</button>
+                    </div>
+                  `;
+                  L.popup()
+                    .setLatLng(e.latlng)
+                    .setContent(popupContent)
+                    .openOn(map);
+                }}
+              }});
+            }}
           }});
 
-          var marker = L.marker([pin.y, pin.x], {{icon: customIcon}}).addTo(map);
-          marker.bindPopup("<b>📌 " + pin.sala + "</b><br>" + pin.descricao);
+          // 2. Desenha os Nós
+          predio.caminhos.nós.forEach(function(node) {{
+            if (node.pavimento_id !== floorId) return;
 
-          if (isActive) {{
-            marker.openPopup();
-            map.setView([pin.y, pin.x], 1);
+            var isNew = node.id.startsWith("no_17"); // Nós temporários criados por timestamp
+            var color = isNew ? "#ffd700" : "#8a2be2";
+
+            var nodeIcon = L.divIcon({{
+              className: 'debug-node',
+              html: '<div style="background-color: ' + color + '; width: 8px; height: 8px; border-radius: 50%; opacity: 0.8; box-shadow: 0 0 3px rgba(0,0,0,0.5);"></div>',
+              iconSize: [8, 8],
+              iconAnchor: [4, 4]
+            }});
+
+            var marker = L.marker([node.y, node.x], {{
+              icon: nodeIcon,
+              draggable: devMode
+            }}).addTo(debugLayer);
+
+            marker.bindTooltip("<b>Nó:</b> " + node.id + "<br>" + (node.nome || ''), {{sticky: true}});
+
+            // Atualiza coordenadas no JSON ao arrastar
+            marker.on('dragend', function(e) {{
+              var latlng = marker.getLatLng();
+              node.x = Math.round(latlng.lng);
+              node.y = Math.round(latlng.lat);
+              console.log("📍 Nó " + node.id + " movido para: x=" + node.x + ", y=" + node.y);
+              window.redrawAllLayers();
+            }});
+
+            // Clique no nó
+            marker.on('click', function(e) {{
+              L.DomEvent.stopPropagation(e);
+              if (devMode) {{
+                var connectBtnHtml = "";
+                if (devState.lastNodeId && devState.lastNodeId !== node.id) {{
+                  connectBtnHtml = '<button class="dev-btn" onclick="window.connectToLastNode(\\\'' + node.id + '\\\')" style="background-color:#2ecc71; color:#fff; font-size:10px;">Ligar a ' + devState.lastNodeId + '</button>';
+                }}
+                var editPopup = `
+                  <div class="dev-form">
+                    <div style="font-weight: bold; color: #ffd700; margin-bottom: 5px;">🛠️ Editar Nó</div>
+                    <label>ID do Nó</label>
+                    <input type="text" value="${{node.id}}" disabled style="background:#1e1f25; color:#888; border:1px solid #464855;">
+                    
+                    <label>Nome do Nó</label>
+                    <input type="text" id="edit_node_nome" value="${{node.nome || ''}}">
+                    
+                    <div class="dev-form-row">
+                      <label style="margin:0;">X:</label>
+                      <input type="text" id="edit_node_x" value="${{node.x}}" style="width:55px;">
+                      <label style="margin:0;">Y:</label>
+                      <input type="text" id="edit_node_y" value="${{node.y}}" style="width:55px;">
+                    </div>
+                    
+                    <div class="dev-btn-group">
+                      <button class="dev-btn dev-btn-cancel" onclick="window.removeNode('${{node.id}}')" style="background-color:#e74c3c;">Excluir</button>
+                      ${{connectBtnHtml}}
+                      <button class="dev-btn" onclick="window.setLastNode('${{node.id}}')" style="background-color:#3498db; color:#fff;">Partir</button>
+                      <button class="dev-btn dev-btn-save" onclick="window.updateNode('${{node.id}}')">Salvar</button>
+                    </div>
+                  </div>
+                `;
+                L.popup()
+                  .setLatLng([node.y, node.x])
+                  .setContent(editPopup)
+                  .openOn(map);
+              }}
+            }});
+          }});
+
+          // 3. Desenha os Pins (Marcadores de Sala)
+          predio.pins.forEach(function(pin) {{
+            if (pin.pavimento_id !== floorId) return;
+
+            var isActive = (pin.id === activePinId);
+            var isNew = pin.id.startsWith("pin_17"); // Pins criados nesta sessão
+            var color = isActive ? "#ff4b4b" : (isNew ? "#e67e22" : "#4b9cff");
+            var size = isActive ? "24px" : "16px";
+            var border = isActive ? "3px solid white" : "2px solid white";
+
+            var customIcon = L.divIcon({{
+              className: 'custom-pin',
+              html: '<div style="background-color: ' + color + '; width: ' + size + '; height: ' + size + '; border-radius: 50%; border: ' + border + '; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>',
+              iconSize: isActive ? [24, 24] : [16, 16],
+              iconAnchor: isActive ? [12, 12] : [8, 8]
+            }});
+
+            var marker = L.marker([pin.y, pin.x], {{
+              icon: customIcon,
+              draggable: devMode
+            }}).addTo(pinsLayer);
+
+            marker.bindPopup("<b>📌 " + pin.sala + "</b><br>" + pin.descricao);
+
+            if (isActive && !devMode) {{
+              marker.openPopup();
+              map.setView([pin.y, pin.x], 1);
+            }}
+
+            // Atualiza coordenadas no JSON ao arrastar
+            marker.on('dragend', function(e) {{
+              var latlng = marker.getLatLng();
+              pin.x = Math.round(latlng.lng);
+              pin.y = Math.round(latlng.lat);
+              console.log("📍 Pin " + pin.id + " movido para: x=" + pin.x + ", y=" + pin.y);
+              window.redrawAllLayers();
+            }});
+
+            // Clique no Pin no modo Dev
+            marker.on('click', function(e) {{
+              if (devMode) {{
+                L.DomEvent.stopPropagation(e);
+                var editPopup = `
+                  <div class="dev-form">
+                    <div style="font-weight: bold; color: #4b9cff; margin-bottom: 5px;">🛠️ Editar Pin</div>
+                    <label>ID do Pin</label>
+                    <input type="text" value="${{pin.id}}" disabled style="background:#1e1f25; color:#888; border:1px solid #464855;">
+                    
+                    <label>Nome da Sala</label>
+                    <input type="text" id="edit_pin_sala" value="${{pin.sala || ''}}">
+                    
+                    <label>Descrição</label>
+                    <input type="text" id="edit_pin_desc" value="${{pin.descricao || ''}}">
+                    
+                    <div class="dev-form-row">
+                      <label style="margin:0;">X:</label>
+                      <input type="text" id="edit_pin_x" value="${{pin.x}}" style="width:55px;">
+                      <label style="margin:0;">Y:</label>
+                      <input type="text" id="edit_pin_y" value="${{pin.y}}" style="width:55px;">
+                    </div>
+                    
+                    <div class="dev-btn-group">
+                      <button class="dev-btn dev-btn-cancel" onclick="window.removePin('${{pin.id}}')" style="background-color:#e74c3c;">Excluir</button>
+                      <button class="dev-btn dev-btn-cancel" onclick="map.closePopup();">Fechar</button>
+                      <button class="dev-btn dev-btn-save" onclick="window.updatePin('${{pin.id}}')">Salvar</button>
+                    </div>
+                  </div>
+                `;
+                L.popup()
+                  .setLatLng([pin.y, pin.x])
+                  .setContent(editPopup)
+                  .openOn(map);
+              }}
+            }});
+          }});
+        }};
+
+        // Inicializa o desenho do mapa
+        window.redrawAllLayers();
+
+        // Callbacks de manipulação do estado em tempo de execução
+        window.setLastNode = function(id) {{
+          devState.lastNodeId = id;
+          sessionStorage.setItem('dev_lastNodeId', id);
+          console.log("📌 Nó de partida definido como: " + id);
+          alert("Nó de partida definido como: " + id);
+          map.closePopup();
+        }};
+
+        window.connectToLastNode = function(id) {{
+          if (!devState.lastNodeId || devState.lastNodeId === id) return;
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio) {{
+            if (!predio.caminhos) predio.caminhos = {{ "nós": [], "arestas": [] }};
+            if (!predio.caminhos.arestas) predio.caminhos.arestas = [];
+            
+            // Verifica se a aresta já existe
+            var exists = predio.caminhos.arestas.some(function(edge) {{
+              return (edge.de === devState.lastNodeId && edge.para === id) || 
+                     (edge.de === id && edge.para === devState.lastNodeId);
+            }});
+            
+            if (!exists) {{
+              predio.caminhos.arestas.push({{
+                de: devState.lastNodeId,
+                para: id
+              }});
+              console.log("🔗 Aresta criada: " + devState.lastNodeId + " -> " + id);
+            }}
+            
+            // Define o nó recém conectado como o novo nó de partida para permitir encadeamento fácil
+            devState.lastNodeId = id;
+            sessionStorage.setItem('dev_lastNodeId', id);
+            window.redrawAllLayers();
           }}
-        }});
+          map.closePopup();
+        }};
 
-        // =====================================================================
-        // [DESENVOLVIMENTO] Renderização dos nós e arestas do pavimento ativo para apoio visual
-        // =====================================================================
-        var debugLayer = L.layerGroup().addTo(map);
+        window.removeNode = function(id) {{
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.caminhos && predio.caminhos.nós) {{
+            predio.caminhos.nós = predio.caminhos.nós.filter(function(n) {{ return n.id !== id; }});
+            if (predio.caminhos.arestas) {{
+              predio.caminhos.arestas = predio.caminhos.arestas.filter(function(a) {{ return a.de !== id && a.para !== id; }});
+            }}
+            if (devState.lastNodeId === id) {{
+              devState.lastNodeId = null;
+              sessionStorage.removeItem('dev_lastNodeId');
+            }}
+            window.redrawAllLayers();
+            console.log("❌ Nó removido: " + id);
+          }}
+          map.closePopup();
+        }};
 
-        var activeNodes = {active_nodes_json_str};
-        activeNodes.forEach(function(node) {{
-          var nodeIcon = L.divIcon({{
-            className: 'debug-node',
-            html: '<div style="background-color: #8a2be2; width: 8px; height: 8px; border-radius: 50%; opacity: 0.5; box-shadow: 0 0 3px rgba(0,0,0,0.5);"></div>',
-            iconSize: [8, 8],
-            iconAnchor: [4, 4]
-          }});
-          var marker = L.marker([node.y, node.x], {{icon: nodeIcon}}).addTo(debugLayer);
-          marker.bindTooltip("<b>Nó:</b> " + node.id + "<br>" + node.nome, {{sticky: true}});
-        }});
+        window.removePin = function(id) {{
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.pins) {{
+            predio.pins = predio.pins.filter(function(p) {{ return p.id !== id; }});
+            window.redrawAllLayers();
+            console.log("❌ Pin removido: " + id);
+          }}
+          map.closePopup();
+        }};
 
-        var activeArestas = {active_arestas_json_str};
-        activeArestas.forEach(function(edge) {{
-          var polyline = L.polyline([edge.de_coords, edge.para_coords], {{
-            color: '#2ecc71', // Verde
-            weight: 3,
-            opacity: 0.4,
-            dashArray: '5, 5'
-          }}).addTo(debugLayer);
-          polyline.bindTooltip("<b>Aresta:</b> " + edge.de_id + " ➔ " + edge.para_id + (edge.tipo !== 'caminho' ? " (" + edge.tipo + ")" : ""), {{sticky: true}});
-        }});
+        window.removeEdge = function(de, para) {{
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.caminhos && predio.caminhos.arestas) {{
+            predio.caminhos.arestas = predio.caminhos.arestas.filter(function(a) {{
+              return !(a.de === de && a.para === para);
+            }});
+            window.redrawAllLayers();
+            console.log("❌ Aresta removida: " + de + " -> " + para);
+          }}
+          map.closePopup();
+        }};
+
+        window.updateNode = function(id) {{
+          var nome = document.getElementById("edit_node_nome").value.trim();
+          var x = parseInt(document.getElementById("edit_node_x").value.trim());
+          var y = parseInt(document.getElementById("edit_node_y").value.trim());
+          
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.caminhos && predio.caminhos.nós) {{
+            var node = predio.caminhos.nós.find(function(n) {{ return n.id === id; }});
+            if (node) {{
+              node.nome = nome;
+              if (!isNaN(x)) node.x = x;
+              if (!isNaN(y)) node.y = y;
+              window.redrawAllLayers();
+              console.log("✔️ Nó atualizado:", node);
+            }}
+          }}
+          map.closePopup();
+        }};
+
+        window.updatePin = function(id) {{
+          var sala = document.getElementById("edit_pin_sala").value.trim();
+          var desc = document.getElementById("edit_pin_desc").value.trim();
+          var x = parseInt(document.getElementById("edit_pin_x").value.trim());
+          var y = parseInt(document.getElementById("edit_pin_y").value.trim());
+          
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.pins) {{
+            var pin = predio.pins.find(function(p) {{ return p.id === id; }});
+            if (pin) {{
+              pin.sala = sala;
+              pin.descricao = desc;
+              if (!isNaN(x)) pin.x = x;
+              if (!isNaN(y)) pin.y = y;
+              window.redrawAllLayers();
+              console.log("✔️ Pin atualizado:", pin);
+            }}
+          }}
+          map.closePopup();
+        }};
 
         // Criação de botão customizado de controle de visibilidade da malha
         var MeshToggleControl = L.Control.extend({{
@@ -595,14 +1006,15 @@ def render_mapa_page():
             container.style.borderRadius = '4px';
             container.style.border = '1px solid #464855';
             container.style.transition = 'all 0.2s';
+            container.style.opacity = '0.5';
             container.title = "Exibir Malha de Caminhos";
 
             // Ícone do Olho para Visibilidade
             container.innerHTML = '<span style="font-size: 16px; line-height: 1; filter: grayscale(100%);">👁️</span>';
 
-            var isVisible = true;
+            var isVisible = false;
             container.onclick = function(e) {{
-              L.DomEvent.stopPropagation(e); // Previne clique de propagar para o mapa
+              L.DomEvent.stopPropagation(e);
               if (isVisible) {{
                 map.removeLayer(debugLayer);
                 container.style.opacity = '0.5';
@@ -613,7 +1025,6 @@ def render_mapa_page():
               isVisible = !isVisible;
             }};
             
-            // Efeito hover
             container.onmouseover = function() {{
               container.style.backgroundColor = '#2a2b36';
             }};
@@ -626,7 +1037,204 @@ def render_mapa_page():
         }});
 
         map.addControl(new MeshToggleControl());
-        // =====================================================================
+
+        // Estados e controles do Modo Desenvolvedor
+        var devMode = false;
+        var devState = {{
+          lastNodeId: sessionStorage.getItem('dev_lastNodeId') || null
+        }};
+        var exportCtrlInstance = null;
+
+        var DevModeControl = L.Control.extend({{
+          options: {{
+            position: 'topright'
+          }},
+          onAdd: function (map) {{
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-custom-control');
+            container.style.backgroundColor = '#1e1f25';
+            container.style.width = '34px';
+            container.style.height = '34px';
+            container.style.cursor = 'pointer';
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.borderRadius = '4px';
+            container.style.border = '1px solid #464855';
+            container.style.transition = 'all 0.2s';
+            container.style.opacity = '0.5';
+            container.title = "Modo Desenvolvedor (Editar Mapa)";
+
+            container.innerHTML = '<span style="font-size: 16px; line-height: 1;">🛠️</span>';
+
+            container.onclick = function(e) {{
+              L.DomEvent.stopPropagation(e);
+              devMode = !devMode;
+              if (devMode) {{
+                container.style.opacity = '1.0';
+                container.style.borderColor = '#2ecc71';
+                container.style.boxShadow = '0 0 8px rgba(46, 204, 113, 0.6)';
+                map.getContainer().style.cursor = 'crosshair';
+                map.addLayer(debugLayer); // Habilita a visualização da malha para poder editá-la
+                window.redrawAllLayers();
+                if (exportCtrlInstance) {{
+                  exportCtrlInstance.show();
+                }}
+              }} else {{
+                container.style.opacity = '0.5';
+                container.style.borderColor = '#464855';
+                container.style.boxShadow = 'none';
+                map.getContainer().style.cursor = '';
+                window.redrawAllLayers();
+                if (exportCtrlInstance) {{
+                  exportCtrlInstance.hide();
+                }}
+              }}
+            }};
+
+            container.onmouseover = function() {{
+              container.style.backgroundColor = '#2a2b36';
+            }};
+            container.onmouseout = function() {{
+              container.style.backgroundColor = '#1e1f25';
+            }};
+
+            return container;
+          }}
+        }});
+
+        var SaveControl = L.Control.extend({{
+          options: {{
+            position: 'topright'
+          }},
+          onAdd: function (map) {{
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-custom-control');
+            container.style.backgroundColor = '#1e1f25';
+            container.style.width = '34px';
+            container.style.height = '34px';
+            container.style.cursor = 'pointer';
+            container.style.display = 'none';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.borderRadius = '4px';
+            container.style.border = '1px solid #464855';
+            container.style.transition = 'all 0.2s';
+            container.title = "Salvar alterações no Banco de Dados";
+
+            container.innerHTML = '<span style="font-size: 16px; line-height: 1;">💾</span>';
+
+            container.onclick = function(e) {{
+              L.DomEvent.stopPropagation(e);
+              window.saveConfigToDb();
+            }};
+
+            container.onmouseover = function() {{
+              container.style.backgroundColor = '#2a2b36';
+            }};
+            container.onmouseout = function() {{
+              container.style.backgroundColor = '#1e1f25';
+            }};
+
+            this._container = container;
+            return container;
+          }},
+          show: function() {{
+            if (this._container) this._container.style.display = 'flex';
+          }},
+          hide: function() {{
+            if (this._container) this._container.style.display = 'none';
+          }}
+        }});
+
+        var devModeCtrl = new DevModeControl();
+        var exportCtrl = new SaveControl();
+        map.addControl(devModeCtrl);
+        map.addControl(exportCtrl);
+        exportCtrlInstance = exportCtrl;
+
+        // Callback para salvar elementos temporários criados em tela
+        window.saveDevElement = function(x, y) {{
+          var elemType = document.querySelector('input[name="elem_type"]:checked').value;
+          var floor = {pavimento_id};
+          var predioId = "{predio_id}";
+          
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === predioId; }});
+          if (!predio) return;
+
+          if (!predio.caminhos) predio.caminhos = {{ "nós": [], "arestas": [] }};
+          if (!predio.caminhos.nós) predio.caminhos.nós = [];
+          if (!predio.caminhos.arestas) predio.caminhos.arestas = [];
+          if (!predio.pins) predio.pins = [];
+
+          if (elemType === "node") {{
+            var id = document.getElementById("dev_node_id").value.trim() || ("no_" + Date.now());
+            var nome = document.getElementById("dev_node_nome").value.trim();
+            var connect = document.getElementById("dev_node_connect") ? document.getElementById("dev_node_connect").checked : false;
+
+            var newNode = {{
+              id: id,
+              pavimento_id: floor,
+              x: x,
+              y: y,
+              nome: nome
+            }};
+
+            predio.caminhos.nós.push(newNode);
+
+            if (connect && devState.lastNodeId) {{
+              var newEdge = {{
+                de: devState.lastNodeId,
+                para: id
+              }};
+              predio.caminhos.arestas.push(newEdge);
+            }}
+
+            devState.lastNodeId = id;
+            sessionStorage.setItem('dev_lastNodeId', id);
+            console.log("✔️ Novo Nó adicionado diretamente ao fullConfig:", newNode);
+          }} else {{
+            var id = document.getElementById("dev_pin_id").value.trim() || ("pin_" + Date.now());
+            var sala = document.getElementById("dev_pin_sala").value.trim() || "Nova Sala";
+            var desc = document.getElementById("dev_pin_desc").value.trim();
+
+            var newPin = {{
+              id: id,
+              predio_id: predioId,
+              pavimento_id: floor,
+              sala: sala,
+              x: x,
+              y: y,
+              descricao: desc
+            }};
+
+            predio.pins.push(newPin);
+            console.log("✔️ Novo Pin adicionado diretamente ao fullConfig:", newPin);
+          }}
+
+          window.redrawAllLayers();
+          map.closePopup();
+        }};
+
+        // Salva as configurações atualizadas no banco e no JSON físico do projeto
+        window.saveConfigToDb = function() {{
+          fetch('http://localhost:8099/save_config', {{
+            method: 'POST',
+            headers: {{
+              'Content-Type': 'application/json'
+            }},
+            body: JSON.stringify(fullConfig)
+          }})
+          .then(function(response) {{
+            if (response.ok) {{
+              alert("💾 Configurações salvas com sucesso no Banco de Dados SQLite e no arquivo JSON uploads/map_config_TEMPLATE.json!");
+            }} else {{
+              alert("❌ Erro ao salvar configurações no servidor.");
+            }}
+          }})
+          .catch(function(error) {{
+            console.error(error);
+            alert("❌ Erro de rede ao tentar salvar no servidor backend.");
+          }});
+        }};
 
         // Desenha a rota de pathfinding se houver coordenadas válidas
         var routeCoords = {route_coords_json_str};
@@ -646,43 +1254,98 @@ def render_mapa_page():
           map.fitBounds(polyline.getBounds());
         }}
 
-        // Envia coordenadas de clique silenciosamente para o console.log (F12) se estiver dentro da planta
+        // Ações de clique no mapa
         map.on('click', function(e) {{
           var coord = e.latlng;
           var x = Math.round(coord.lng);
           var y = Math.round(coord.lat);
           
-          // Filtra coordenadas válidas dentro das dimensões da foto
           if (x >= 0 && x <= w && y >= 0 && y <= h) {{
             var floor = {pavimento_id};
-            console.log("📍 Coordenada Clicada -> x: " + x + ", y: " + y);
             
-            // Log individual do Nó
-            console.log("📦 [JSON NÓ]:", '{{\"id\": \"n_novo\", \"pavimento_id\": ' + floor + ', \"x\": ' + x + ', \"y\": ' + y + ', \"nome\": \"\"}}');
-            
-            // Log individual do Pin
-            console.log("📌 [JSON PIN]:", '{{\"id\": \"pin_novo\", \"pavimento_id\": ' + floor + ', \"sala\": \"\", \"x\": ' + x + ', \"y\": ' + y + ', \"descricao\": \"\"}}');
-            
-            // Encontra o nó mais próximo no pavimento ativo
-            var nearestNode = null;
-            var minDist = Infinity;
-            if (typeof activeNodes !== "undefined" && activeNodes.length > 0) {{
-              activeNodes.forEach(function(node) {{
-                var dx = node.x - x;
-                var dy = node.y - y;
-                var dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist < minDist) {{
-                  minDist = dist;
-                  nearestNode = node;
-                }}
-              }});
-            }}
-            
-            // Log sugerido de Aresta conectando ao nó mais próximo
-            if (nearestNode) {{
-              var distRound = Math.round(minDist);
-              console.log("🔗 [JSON ARESTA] (Nó mais próximo: " + nearestNode.id + ", dist: " + distRound + "px):", 
-                          '{{\"de\": \"' + nearestNode.id + '\", \"para\": \"n_novo\"}}');
+            if (devMode) {{
+              var tempIdNode = "no_" + Date.now();
+              var tempIdPin = "pin_" + Date.now();
+              
+              var popupContent = `
+                <div class="dev-form">
+                  <div style="font-weight: bold; margin-bottom: 5px; color: #4b9cff;">🛠️ Criar Elemento</div>
+                  
+                  <div class="dev-form-row" style="margin-bottom: 6px;">
+                    <input type="radio" id="type_node" name="elem_type" value="node" checked onchange="document.getElementById('node_fields').style.display='flex'; document.getElementById('pin_fields').style.display='none';">
+                    <label for="type_node" style="margin:0; cursor:pointer; color:#fff;">Nó</label>
+                    
+                    <input type="radio" id="type_pin" name="elem_type" value="pin" onchange="document.getElementById('node_fields').style.display='none'; document.getElementById('pin_fields').style.display='flex';">
+                    <label for="type_pin" style="margin:0; cursor:pointer; color:#fff;">Pin (Sala)</label>
+                  </div>
+                  
+                  <!-- Campos do Nó -->
+                  <div id="node_fields" style="display: flex; flex-direction: column; gap: 8px;">
+                    <label>ID do Nó</label>
+                    <input type="text" id="dev_node_id" value="${{tempIdNode}}">
+                    
+                    <label>Nome do Nó</label>
+                    <input type="text" id="dev_node_nome" placeholder="Ex: Corredor Ala A" value="">
+                    
+                    <div class="dev-form-row" style="margin-top: 4px;">
+                      <input type="checkbox" id="dev_node_connect" ${{devState.lastNodeId ? 'checked' : 'disabled'}}>
+                      <label for="dev_node_connect" style="margin:0; cursor:pointer; font-size:11px;">Conectar ao nó anterior (${{devState.lastNodeId || 'Nenhum'}})</label>
+                    </div>
+                  </div>
+                  
+                  <!-- Campos do Pin -->
+                  <div id="pin_fields" style="display: none; flex-direction: column; gap: 8px;">
+                    <label>ID do Pin</label>
+                    <input type="text" id="dev_pin_id" value="${{tempIdPin}}">
+                    
+                    <label>Nome da Sala / Local</label>
+                    <input type="text" id="dev_pin_sala" placeholder="Ex: Sala 102" value="">
+                    
+                    <label>Descrição</label>
+                    <input type="text" id="dev_pin_desc" placeholder="Ex: Suporte Técnico" value="">
+                  </div>
+                  
+                  <div class="dev-btn-group">
+                    <button class="dev-btn dev-btn-cancel" onclick="map.closePopup();">Cancelar</button>
+                    <button class="dev-btn dev-btn-save" onclick="window.saveDevElement(${{x}}, ${{y}})">Adicionar</button>
+                  </div>
+                </div>
+              `;
+              
+              L.popup()
+                .setLatLng(coord)
+                .setContent(popupContent)
+                .openOn(map);
+            }} else {{
+              console.log("📍 Coordenada Clicada -> x: " + x + ", y: " + y);
+              
+              // Log individual do Nó
+              console.log("📦 [JSON NÓ]:", '{{\"id\": \"n_novo\", \"pavimento_id\": ' + floor + ', \"x\": ' + x + ', \"y\": ' + y + ', \"nome\": \"\"}}');
+              
+              // Log individual do Pin
+              console.log("📌 [JSON PIN]:", '{{\"id\": \"pin_novo\", \"pavimento_id\": ' + floor + ', \"sala\": \"\", \"x\": ' + x + ', \"y\": ' + y + ', \"descricao\": \"\"}}');
+              
+              // Encontra o nó mais próximo no pavimento ativo
+              var nearestNode = null;
+              var minDist = Infinity;
+              if (typeof activeNodes !== "undefined" && activeNodes.length > 0) {{
+                activeNodes.forEach(function(node) {{
+                  var dx = node.x - x;
+                  var dy = node.y - y;
+                  var dist = Math.sqrt(dx*dx + dy*dy);
+                  if (dist < minDist) {{
+                    minDist = dist;
+                    nearestNode = node;
+                  }}
+                }});
+              }}
+              
+              // Log sugerido de Aresta conectando ao nó mais próximo
+              if (nearestNode) {{
+                var distRound = Math.round(minDist);
+                console.log("🔗 [JSON ARESTA] (Nó mais próximo: " + nearestNode.id + ", dist: " + distRound + "px):", 
+                            '{{\"de\": \"' + nearestNode.id + '\", \"para\": \"n_novo\"}}');
+              }}
             }}
           }}
         }});
