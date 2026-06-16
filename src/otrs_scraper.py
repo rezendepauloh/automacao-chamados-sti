@@ -393,6 +393,8 @@ def extract_row_data(driver, row, cache=None):
         
         return data
     
+    except StaleElementReferenceException as e:
+        raise e
     except Exception as e:
         logger.error(f"Erro geral linha: {e}")
         return data
@@ -420,7 +422,10 @@ def process_all_pages(driver, cache=None):
             
             except StaleElementReferenceException:
                 logger.error("Linha obsoleta, tentando novamente")
-                # Atualiza a lista de elementos da página
+                # Atualiza a tabela e a lista de elementos da página
+                table = WebDriverWait(driver, EXPLICIT_WAIT).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'table.TableSmall'))
+                )
                 rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
                 data = extract_row_data(driver, rows[idx], cache=cache)
                 all_data.append(data)
@@ -543,6 +548,10 @@ def data_extract(driver, has_pagination, cache=None):
                 
             except StaleElementReferenceException:
                 logger.error("Linha obsoleta, tentando novamente")
+                # Atualiza a tabela e a lista de elementos da página
+                table = WebDriverWait(driver, EXPLICIT_WAIT).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'table.TableSmall'))
+                )
                 rows = table.find_elements(By.CSS_SELECTOR, 'tr.MasterAction')
                 data = extract_row_data(driver, rows[idx], cache=cache)
                 all_data.append(data)

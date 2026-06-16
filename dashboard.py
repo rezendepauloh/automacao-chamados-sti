@@ -267,8 +267,40 @@ class SaveConfigHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def do_GET(self):
+        import streamlit as st
+        if not hasattr(st, "_global_route"):
+            st._global_route = {"origem": "", "destino": ""}
+            
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(self.path)
+        if parsed.path == '/set_route':
+            query = parse_qs(parsed.query)
+            if 'origem' in query:
+                st._global_route['origem'] = query['origem'][0]
+            if 'destino' in query:
+                st._global_route['destino'] = query['destino'][0]
+                
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success"}).encode())
+            
+            # Força o Streamlit a rodar novamente para atualizar os selectboxes
+            try:
+                from streamlit.runtime import get_instance
+                runtime = get_instance()
+                for session_info in runtime._session_mgr.list_active_sessions():
+                    session_info.session.request_rerun(None)
+            except Exception as e:
+                print(f"Erro ao forçar rerun: {e}")
+            return
+        self.send_response(404)
         self.end_headers()
 
     def do_POST(self):
@@ -316,11 +348,18 @@ def render_mapa_page():
     from src.database import get_map_config, get_map_pins, save_map_config
     import json
     
+    # Obtém a rota ativa via backend
+    if not hasattr(st, "_global_route"):
+        st._global_route = {"origem": "", "destino": ""}
+    url_origem = st._global_route.get("origem", "")
+    url_destino = st._global_route.get("destino", "")
+    print(f"DEBUG: st._global_route={st._global_route}, url_origem={url_origem}, url_destino={url_destino}")
+    
     st.title("📍 Mapa & Localização de Chamados")
     st.write("Visualize no mapa/planta baixa a localização exata das salas de atendimento.")
     
     # 1. Seção de Importação de JSON
-    # with st.sidebar.expander("📥 Configurações & Upload JSON", expanded=False):
+    #with st.sidebar.expander("📥 Configurações & Upload JSON", expanded=False):
     #    st.write("Atualize a planta e os locais enviando um JSON formatado:")
     #    uploaded_file = st.file_uploader("Escolher arquivo JSON", type=["json"])
     #    if uploaded_file is not None:
@@ -354,6 +393,29 @@ def render_mapa_page():
     selected_predio_nome = st.sidebar.selectbox("Selecione o Prédio", predio_nomes)
     selected_predio = next(p for p in predios if p.get("nome") == selected_predio_nome)
     predio_id = selected_predio.get("id")
+    
+    # Sincroniza a rota global com o Session State do Streamlit para evitar perdas de estado
+    todos_pins = get_map_pins(predio_id)
+    print(f"DEBUG: todos_pins count={len(todos_pins)}")
+    if url_origem:
+        orig_match = next((p for p in todos_pins if p["id"] == url_origem), None)
+        print(f"DEBUG: url_origem={url_origem}, orig_match={orig_match}")
+        if orig_match:
+            display_name = f"{orig_match['sala']} ({orig_match['pavimento_id']}º Andar)" if orig_match['pavimento_id'] > 0 else f"{orig_match['sala']} (Térreo)"
+            st.session_state.sb_origem = display_name
+            print(f"DEBUG: Set st.session_state.sb_origem={display_name}")
+    elif "sb_origem" not in st.session_state:
+        st.session_state.sb_origem = "-- Selecione a Origem --"
+        
+    if url_destino:
+        dest_match = next((p for p in todos_pins if p["id"] == url_destino), None)
+        print(f"DEBUG: url_destino={url_destino}, dest_match={dest_match}")
+        if dest_match:
+            display_name = f"{dest_match['sala']} ({dest_match['pavimento_id']}º Andar)" if dest_match['pavimento_id'] > 0 else f"{dest_match['sala']} (Térreo)"
+            st.session_state.sb_destino = display_name
+            print(f"DEBUG: Set st.session_state.sb_destino={display_name}")
+    elif "sb_destino" not in st.session_state:
+        st.session_state.sb_destino = "-- Selecione o Destino --"
     
     # Seleção de pavimento
     pavimentos = selected_predio.get("pavimentos", [])
@@ -397,21 +459,38 @@ def render_mapa_page():
     # Carrega os pins do banco para esse pavimento
     pins = get_map_pins(predio_id, pavimento_id)
     
-    # 3. Caixa de seleção de pins e busca
+    # 3. Caixa de seleção de pins e busca com botão de limpar
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🎯 Localização de Salas")
     
+    col_sub, col_clear = st.sidebar.columns([2, 1])
+    with col_sub:
+        st.subheader("🎯 Salas")
+    with col_clear:
+        st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+        if st.button("🧹 Limpar", use_container_width=True):
+            st._global_route["origem"] = ""
+            st._global_route["destino"] = ""
+            st.session_state.sb_sala = "-- Selecione uma Sala --"
+            st.session_state.txt_busca = ""
+            st.rerun()
+            
     # Seletor de Sala
     pin_nomes = ["-- Selecione uma Sala --"] + [p["sala"] for p in pins]
-    selected_pin_nome = st.sidebar.selectbox("Ir para a Sala", pin_nomes)
-    active_pin_id = ""
+    
+    default_sb_index = 0
+    if "sb_sala" in st.session_state and st.session_state.sb_sala in pin_nomes:
+        default_sb_index = pin_nomes.index(st.session_state.sb_sala)
+        
+    selected_pin_nome = st.sidebar.selectbox("Ir para a Sala", pin_nomes, index=default_sb_index, key="sb_sala")
+    active_pin_ids = []
     
     if selected_pin_nome != "-- Selecione uma Sala --":
         active_pin = next(p for p in pins if p["sala"] == selected_pin_nome)
-        active_pin_id = active_pin["id"]
+        active_pin_ids.append(active_pin["id"])
         
     # Busca de sala global (busca em todos os andares do prédio)
-    search_query = st.sidebar.text_input("🔍 Buscar Sala ou Local (ex: TI, Dr. Fulano)", "").strip()
+    default_search_val = st.session_state.get("txt_busca", "")
+    search_query = st.sidebar.text_input("🔍 Buscar Sala ou Local (ex: TI, Dr. Fulano)", value=default_search_val, key="txt_busca").strip()
     if search_query:
         all_pins = get_map_pins(predio_id)
         matching_pins = [
@@ -420,10 +499,12 @@ def render_mapa_page():
         ]
         if matching_pins:
             st.sidebar.success(f"✨ Encontrado: {len(matching_pins)} correspondência(s)")
-            first_match = matching_pins[0]
-            active_pin_id = first_match.get("id")
+            for p in matching_pins:
+                if p["id"] not in active_pin_ids:
+                    active_pin_ids.append(p["id"])
             
             # Se o pin encontrado estiver em um pavimento diferente do atual, altera e recarrega
+            first_match = matching_pins[0]
             if first_match.get("pavimento_id") != pavimento_id:
                 st.session_state.selected_pavimento_id = first_match.get("pavimento_id")
                 st.rerun()
@@ -437,22 +518,43 @@ def render_mapa_page():
     
     if caminhos and caminhos.get("nós") and caminhos.get("arestas"):
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🚶 Traçar Rota Interna")
+        col_route, col_clear_route = st.sidebar.columns([2, 1])
+        with col_route:
+            st.subheader("🚶 Rota Interna")
+        with col_clear_route:
+            st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+            if st.button("🧹 Limpar", key="btn_limpar_rota", use_container_width=True):
+                st._global_route["origem"] = ""
+                st._global_route["destino"] = ""
+                st.session_state.sb_origem = "-- Selecione a Origem --"
+                st.session_state.sb_destino = "-- Selecione o Destino --"
+                st.rerun()
         
         # Pega pins de todos os andares para origem/destino
         todos_pins = get_map_pins(predio_id)
         pin_origem_nomes = [f"{p['sala']} ({p['pavimento_id']}º Andar)" if p['pavimento_id'] > 0 else f"{p['sala']} (Térreo)" for p in todos_pins]
         
-        selected_origem_display = st.sidebar.selectbox("Ponto de Origem", ["-- Selecione a Origem --"] + pin_origem_nomes)
-        selected_destino_display = st.sidebar.selectbox("Ponto de Destino", ["-- Selecione o Destino --"] + pin_origem_nomes)
+        selected_origem_display = st.sidebar.selectbox("Ponto de Origem", ["-- Selecione a Origem --"] + pin_origem_nomes, key="sb_origem")
+        selected_destino_display = st.sidebar.selectbox("Ponto de Destino", ["-- Selecione o Destino --"] + pin_origem_nomes, key="sb_destino")
         
-        if selected_origem_display != "-- Selecione a Origem --" and selected_destino_display != "-- Selecione o Destino --":
+        orig_pin = None
+        dest_pin = None
+        
+        if selected_origem_display != "-- Selecione a Origem --":
             orig_idx = pin_origem_nomes.index(selected_origem_display)
-            dest_idx = pin_origem_nomes.index(selected_destino_display)
-            
             orig_pin = todos_pins[orig_idx]
-            dest_pin = todos_pins[dest_idx]
+            st._global_route["origem"] = orig_pin["id"]
+        else:
+            st._global_route["origem"] = ""
             
+        if selected_destino_display != "-- Selecione o Destino --":
+            dest_idx = pin_origem_nomes.index(selected_destino_display)
+            dest_pin = todos_pins[dest_idx]
+            st._global_route["destino"] = dest_pin["id"]
+        else:
+            st._global_route["destino"] = ""
+            
+        if orig_pin and dest_pin:
             if orig_pin["id"] == dest_pin["id"]:
                 st.sidebar.info("Origem e Destino são idênticos.")
             else:
@@ -526,6 +628,7 @@ def render_mapa_page():
     pins_json_str = json.dumps(pins)
     route_coords_json_str = json.dumps(route_coords)
     config_json_str = json.dumps(config)
+    active_pin_ids_json_str = json.dumps(active_pin_ids)
     
     leaflet_html = f"""
     <!DOCTYPE html>
@@ -638,6 +741,18 @@ def render_mapa_page():
     <body>
       <div id="map" style="height: 650px; width: 100%;"></div>
       <script>
+        // Estados e controles do Modo Desenvolvedor (declarados no topo para evitar hoisting/ReferenceError)
+        var devMode = false;
+        var devState = {{
+          lastNodeId: sessionStorage.getItem('dev_lastNodeId') || null,
+          unsavedElements: JSON.parse(sessionStorage.getItem('dev_unsavedElements') || '[]')
+        }};
+
+        var activeRoute = {{
+          origem: "{url_origem}",
+          destino: "{url_destino}"
+        }};
+
         var w = {w};
         var h = {h};
         var bounds = [[0, 0], [h, w]];
@@ -666,7 +781,7 @@ def render_mapa_page():
         }}));
 
         // Identificadores de controle do Streamlit passados ao JS
-        var activePinId = "{active_pin_id}";
+        var activePinIds = {active_pin_ids_json_str};
         var activeBuildingId = "{predio_id}";
         var floorId = {pavimento_id};
         var fullConfig = {config_json_str};
@@ -726,8 +841,8 @@ def render_mapa_page():
           predio.caminhos.nós.forEach(function(node) {{
             if (node.pavimento_id !== floorId) return;
 
-            var isNew = node.id.startsWith("no_17"); // Nós temporários criados por timestamp
-            var color = isNew ? "#ffd700" : "#8a2be2";
+            var isUnsaved = devState.unsavedElements.includes(node.id);
+            var color = isUnsaved ? "#ffd700" : "#8a2be2";
 
             var nodeIcon = L.divIcon({{
               className: 'debug-node',
@@ -749,6 +864,10 @@ def render_mapa_page():
               node.x = Math.round(latlng.lng);
               node.y = Math.round(latlng.lat);
               console.log("📍 Nó " + node.id + " movido para: x=" + node.x + ", y=" + node.y);
+              if (!devState.unsavedElements.includes(node.id)) {{
+                devState.unsavedElements.push(node.id);
+                sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
+              }}
               window.redrawAllLayers();
             }});
 
@@ -796,9 +915,9 @@ def render_mapa_page():
           predio.pins.forEach(function(pin) {{
             if (pin.pavimento_id !== floorId) return;
 
-            var isActive = (pin.id === activePinId);
-            var isNew = pin.id.startsWith("pin_17"); // Pins criados nesta sessão
-            var color = isActive ? "#ff4b4b" : (isNew ? "#e67e22" : "#4b9cff");
+            var isActive = activePinIds.includes(pin.id);
+            var isUnsaved = devState.unsavedElements.includes(pin.id);
+            var color = isActive ? "#ff4b4b" : (isUnsaved ? "#e67e22" : "#4b9cff");
             var size = isActive ? "24px" : "16px";
             var border = isActive ? "3px solid white" : "2px solid white";
 
@@ -814,11 +933,20 @@ def render_mapa_page():
               draggable: devMode
             }}).addTo(pinsLayer);
 
-            marker.bindPopup("<b>📌 " + pin.sala + "</b><br>" + pin.descricao);
+            var popupContent = "<b>📌 " + pin.sala + "</b><br>" + pin.descricao;
+            if (!devMode) {{
+              popupContent += "<br><br><div class='dev-btn-group' style='justify-content:center; gap:6px;'>" +
+                              "<button class='dev-btn' style='background-color:#3498db; color:#fff; font-size:10px; padding:4px 8px; margin:0;' onclick='window.setRouteOrigin(\\\"" + pin.id + "\\\")'>Definir Origem</button>" +
+                              "<button class='dev-btn' style='background-color:#2ecc71; color:#fff; font-size:10px; padding:4px 8px; margin:0;' onclick='window.setRouteDestination(\\\"" + pin.id + "\\\")'>Definir Destino</button>" +
+                              "</div>";
+            }}
+            marker.bindPopup(popupContent);
 
             if (isActive && !devMode) {{
-              marker.openPopup();
-              map.setView([pin.y, pin.x], 1);
+              if (activePinIds.indexOf(pin.id) === 0) {{
+                marker.openPopup();
+                map.setView([pin.y, pin.x], 1);
+              }}
             }}
 
             // Atualiza coordenadas no JSON ao arrastar
@@ -827,6 +955,10 @@ def render_mapa_page():
               pin.x = Math.round(latlng.lng);
               pin.y = Math.round(latlng.lat);
               console.log("📍 Pin " + pin.id + " movido para: x=" + pin.x + ", y=" + pin.y);
+              if (!devState.unsavedElements.includes(pin.id)) {{
+                devState.unsavedElements.push(pin.id);
+                sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
+              }}
               window.redrawAllLayers();
             }});
 
@@ -873,6 +1005,18 @@ def render_mapa_page():
         window.redrawAllLayers();
 
         // Callbacks de manipulação do estado em tempo de execução
+        window.setRouteOrigin = function(pinId) {{
+          activeRoute.origem = pinId;
+          fetch('http://localhost:8099/set_route?origem=' + pinId + '&destino=' + activeRoute.destino)
+            .catch(function(err) {{ console.error("Erro ao definir origem:", err); }});
+        }};
+
+        window.setRouteDestination = function(pinId) {{
+          activeRoute.destino = pinId;
+          fetch('http://localhost:8099/set_route?origem=' + activeRoute.origem + '&destino=' + pinId)
+            .catch(function(err) {{ console.error("Erro ao definir destino:", err); }});
+        }};
+
         window.setLastNode = function(id) {{
           devState.lastNodeId = id;
           sessionStorage.setItem('dev_lastNodeId', id);
@@ -921,6 +1065,8 @@ def render_mapa_page():
               devState.lastNodeId = null;
               sessionStorage.removeItem('dev_lastNodeId');
             }}
+            devState.unsavedElements = devState.unsavedElements.filter(function(x) {{ return x !== id; }});
+            sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
             window.redrawAllLayers();
             console.log("❌ Nó removido: " + id);
           }}
@@ -931,6 +1077,8 @@ def render_mapa_page():
           var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
           if (predio && predio.pins) {{
             predio.pins = predio.pins.filter(function(p) {{ return p.id !== id; }});
+            devState.unsavedElements = devState.unsavedElements.filter(function(x) {{ return x !== id; }});
+            sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
             window.redrawAllLayers();
             console.log("❌ Pin removido: " + id);
           }}
@@ -961,6 +1109,10 @@ def render_mapa_page():
               node.nome = nome;
               if (!isNaN(x)) node.x = x;
               if (!isNaN(y)) node.y = y;
+              if (!devState.unsavedElements.includes(id)) {{
+                devState.unsavedElements.push(id);
+                sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
+              }}
               window.redrawAllLayers();
               console.log("✔️ Nó atualizado:", node);
             }}
@@ -982,6 +1134,10 @@ def render_mapa_page():
               pin.descricao = desc;
               if (!isNaN(x)) pin.x = x;
               if (!isNaN(y)) pin.y = y;
+              if (!devState.unsavedElements.includes(id)) {{
+                devState.unsavedElements.push(id);
+                sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
+              }}
               window.redrawAllLayers();
               console.log("✔️ Pin atualizado:", pin);
             }}
@@ -1038,11 +1194,7 @@ def render_mapa_page():
 
         map.addControl(new MeshToggleControl());
 
-        // Estados e controles do Modo Desenvolvedor
-        var devMode = false;
-        var devState = {{
-          lastNodeId: sessionStorage.getItem('dev_lastNodeId') || null
-        }};
+
         var exportCtrlInstance = null;
 
         var DevModeControl = L.Control.extend({{
@@ -1190,6 +1342,10 @@ def render_mapa_page():
 
             devState.lastNodeId = id;
             sessionStorage.setItem('dev_lastNodeId', id);
+            if (!devState.unsavedElements.includes(id)) {{
+              devState.unsavedElements.push(id);
+              sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
+            }}
             console.log("✔️ Novo Nó adicionado diretamente ao fullConfig:", newNode);
           }} else {{
             var id = document.getElementById("dev_pin_id").value.trim() || ("pin_" + Date.now());
@@ -1207,6 +1363,10 @@ def render_mapa_page():
             }};
 
             predio.pins.push(newPin);
+            if (!devState.unsavedElements.includes(id)) {{
+              devState.unsavedElements.push(id);
+              sessionStorage.setItem('dev_unsavedElements', JSON.stringify(devState.unsavedElements));
+            }}
             console.log("✔️ Novo Pin adicionado diretamente ao fullConfig:", newPin);
           }}
 
@@ -1225,6 +1385,9 @@ def render_mapa_page():
           }})
           .then(function(response) {{
             if (response.ok) {{
+              devState.unsavedElements = [];
+              sessionStorage.removeItem('dev_unsavedElements');
+              window.redrawAllLayers();
               alert("💾 Configurações salvas com sucesso no Banco de Dados SQLite e no arquivo JSON uploads/map_config_TEMPLATE.json!");
             }} else {{
               alert("❌ Erro ao salvar configurações no servidor.");
@@ -1354,7 +1517,8 @@ def render_mapa_page():
     </html>
     """
     
-    st.iframe(leaflet_html, height=670)
+    leaflet_html += f"\n<!-- key: map_{url_origem}_{url_destino}_{pavimento_id} -->"
+    components.html(leaflet_html, height=670)
 
 
 # Navegação por abas/páginas no Topo (Flutua no Header via CSS Fixed)
@@ -1909,6 +2073,16 @@ else:
                 st.markdown(f"**Base de Origem:** `{row['base']}`")
                 st.markdown(f"**IP de Origem:** `{row.get('ip_origem') or 'N/A'}`")
                 st.markdown(f"**Hostname:** `{row.get('hostname') or 'N/A'}`")
+                
+                with st.expander("📍 Editar Localização Manual", expanded=False):
+                    new_cidade = st.text_input("Cidade - Prédio", value=str(row.get('cidade_predio', '')), key=f"edit_cidade_{row['id']}")
+                    new_unidade = st.text_input("Unidade", value=str(row.get('unidade', '')), key=f"edit_unidade_{row['id']}")
+                    new_localidade = st.text_input("Localidade Física", value=str(row.get('localidade_fisica', '')), key=f"edit_localidade_{row['id']}")
+                    if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row['id']}"):
+                        from src.database import update_ticket_location_details
+                        update_ticket_location_details(row['id'], new_localidade, new_cidade, new_unidade)
+                        st.success("Localização salva! (Fechar para atualizar a tabela)")
+                        st.cache_data.clear()
                 
             with col2:
                 st.markdown("### ⚙️ Classificação & Status")

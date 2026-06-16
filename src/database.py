@@ -87,6 +87,8 @@ def setup_database():
         cursor.execute("ALTER TABLE chamados ADD COLUMN hostname TEXT")
     if 'tag_manual' not in columns:
         cursor.execute("ALTER TABLE chamados ADD COLUMN tag_manual INTEGER DEFAULT 0")
+    if 'dados_manuais' not in columns:
+        cursor.execute("ALTER TABLE chamados ADD COLUMN dados_manuais INTEGER DEFAULT 0")
 
     conn.commit()
     conn.close()
@@ -112,45 +114,45 @@ def save_tickets_to_db(df: pd.DataFrame):
             continue
             
         # Verifica se o chamado já existe, qual o status e se a tag foi alterada manualmente
-        cursor.execute("SELECT status, tag_manual FROM chamados WHERE id = ?", (cid,))
+        cursor.execute("SELECT status, tag_manual, dados_manuais FROM chamados WHERE id = ?", (cid,))
         result = cursor.fetchone()
         
         if result:
             current_status = result[0]
             tag_manual = result[1] if len(result) > 1 and result[1] is not None else 0
+            dados_manuais = result[2] if len(result) > 2 and result[2] is not None else 0
             
             # Se estava marcado como Fechado mas foi re-coletado como ativo pelo robô, reabre no banco!
             if current_status == 'Fechado':
                 cursor.execute("UPDATE chamados SET status = 'Aberto' WHERE id = ?", (cid,))
                 
-            # Se a tag for manual, atualiza tudo EXCETO a tag!
-            if tag_manual == 1:
-                cursor.execute("""
-                UPDATE chamados SET
-                    titulo = ?, cidade_predio = ?, unidade = ?, localidade_fisica = ?,
-                    usuario = ?, id_cliente = ?, descricao = ?, ip_origem = ?,
-                    data_atualizacao = ?, base = ?, link = ?, hostname = ?
-                WHERE id = ?
-                """, (
-                    row.get('Título', ''), row.get('Cidade - Prédio', ''), row.get('Unidade', ''),
-                    row.get('Localidade física', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''),
-                    row.get('Descrição', ''), row.get('IP_Origem', ''),
-                    now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), cid
-                ))
-            else:
-                # Atualiza os dados normalmente, inclusive a tag
-                cursor.execute("""
-                UPDATE chamados SET
-                    titulo = ?, cidade_predio = ?, unidade = ?, localidade_fisica = ?,
-                    usuario = ?, id_cliente = ?, descricao = ?, tag = ?, ip_origem = ?,
-                    data_atualizacao = ?, base = ?, link = ?, hostname = ?
-                WHERE id = ?
-                """, (
-                    row.get('Título', ''), row.get('Cidade - Prédio', ''), row.get('Unidade', ''),
-                    row.get('Localidade física', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''),
-                    row.get('Descrição', ''), row.get('TAG', ''), row.get('IP_Origem', ''),
-                    now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), cid
-                ))
+            # Monta query dinâmica de update para evitar sobrescrever dados manuais
+            update_fields = []
+            update_params = []
+            
+            # Campos comuns
+            update_fields.extend([
+                "titulo = ?", "usuario = ?", "id_cliente = ?", "descricao = ?",
+                "ip_origem = ?", "data_atualizacao = ?", "base = ?", "link = ?", "hostname = ?"
+            ])
+            update_params.extend([
+                row.get('Título', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''), row.get('Descrição', ''),
+                row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', '')
+            ])
+            
+            # Se a tag NÃO for manual, atualiza
+            if tag_manual != 1:
+                update_fields.append("tag = ?")
+                update_params.append(row.get('TAG', ''))
+                
+            # Se a localidade/prédio/unidade NÃO for manual, atualiza
+            if dados_manuais != 1:
+                update_fields.extend(["cidade_predio = ?", "unidade = ?", "localidade_fisica = ?"])
+                update_params.extend([row.get('Cidade - Prédio', ''), row.get('Unidade', ''), row.get('Localidade física', '')])
+                
+            query = f"UPDATE chamados SET {', '.join(update_fields)} WHERE id = ?"
+            update_params.append(cid)
+            cursor.execute(query, tuple(update_params))
 
         else:
             # Se não existe, insere como Aberto
@@ -294,7 +296,23 @@ def update_ticket_tag(cid: str, new_tag: str):
     conn.commit()
     conn.close()
 
-
+def update_ticket_location_details(cid: str, localidade: str, cidade_predio: str, unidade: str):
+    """Atualiza localidade_fisica, cidade_predio, unidade de um chamado e marca dados_manuais = 1."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Normaliza o ID na entrada limpando .0
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+    
+    cursor.execute("""
+    UPDATE chamados 
+    SET localidade_fisica = ?, cidade_predio = ?, unidade = ?, dados_manuais = 1, data_atualizacao = ?
+    WHERE id = ?
+    """, (localidade, cidade_predio, unidade, now, cid_clean))
+    
+    conn.commit()
+    conn.close()
 
 def save_comments_to_db(chamado_id: str, comments: list):
     """
