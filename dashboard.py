@@ -1553,6 +1553,10 @@ def render_donations_page():
         st.warning("⚠️ Nenhum dado encontrado no cache local. Por favor, clique em 'Sincronizar Planilha' para carregar os registros.")
         return
         
+    # Extrai o Ano da data de movimentação para fins de filtros e gráficos
+    df['Ano'] = pd.to_datetime(df['data_movimentacao'], errors='coerce').dt.year
+    df['Ano'] = df['Ano'].fillna("Sem Data").astype(str).str.replace(".0", "", regex=False)
+        
     # Barra lateral de filtros e ferramentas
     st.sidebar.title("🖥️ Painel de Controle")
     st.sidebar.subheader("🔍 Filtros de Equipamentos")
@@ -1568,6 +1572,11 @@ def render_donations_page():
     # Filtro de Modelo
     model_options = ["Todos"] + sorted(list(df['modelo'].unique()))
     selected_model = st.sidebar.selectbox("Modelo", model_options, key="donations_model")
+    
+    # Filtro de Ano
+    year_options = ["Todos"] + sorted(list(df['Ano'].unique()), reverse=True)
+    selected_year = st.sidebar.selectbox("Ano da Movimentação", year_options, key="donations_year")
+
     
     # Filtro de SSD
     ssd_options = ["Todos"] + sorted(list(df['ssd'].unique()))
@@ -1716,8 +1725,11 @@ def render_donations_page():
         df_filtered = df_filtered[df_filtered['equipamento'] == selected_equip]
     if selected_model != "Todos":
         df_filtered = df_filtered[df_filtered['modelo'] == selected_model]
+    if selected_year != "Todos":
+        df_filtered = df_filtered[df_filtered['Ano'] == selected_year]
     if selected_ssd != "Todos":
         df_filtered = df_filtered[df_filtered['ssd'] == selected_ssd]
+
 
     if search_query:
         query_lower = search_query.lower()
