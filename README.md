@@ -34,6 +34,13 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 - **Gestão de Visibilidade Dinâmica:** Controle avançado via UI (ex: toggle elegante na barra lateral para mostrar ou ocultar o IP de rede dos usuários sob demanda).
 - **Persistência Inteligente (SQLite):** Todo o tráfego de dados gerado é consolidado num banco de dados local leve e ultra-rápido (`chamados.db`), que monitora e gerencia os estados lógicos de "Aberto" e "Fechado" autonomamente conforme chamados novos chegam ou desaparecem da fila de triagem.
 
+### 6. Módulo de Doação & Redistribuição de Máquinas
+- **Inventário de Movimentações:** Aba dedicada no painel para visualização e análise de equipamentos destinados a doação, redistribuição, garantia ou baixados.
+- **Gráficos Temporais e KPIs:** Métricas de acompanhamento de estoque e gráficos dinâmicos de distribuição por tipo e histórico por ano.
+- **Gerador de Relatórios para Chamados (Rich Text HTML):** Ferramenta integrada na barra lateral que gera automaticamente textos formatados com tabelas estilizadas em HTML (Zebra Striping) a partir das movimentações de uma data específica. O conteúdo gerado pode ser colado diretamente em editores ricos (Rich Text/Código-Fonte) de chamados (como OTRS) sem perda de formatação e bordas.
+- **Sincronização Segura e Criptografada:** Importação sob demanda da planilha oficial no OneDrive/SharePoint diretamente para uma tabela dedicada no banco de dados SQLite (`equipamentos_doados`), utilizando caminhos protegidos via variáveis de ambiente (`.env`).
+
+
 
 ---
 

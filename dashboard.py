@@ -1521,10 +1521,287 @@ def render_mapa_page():
     components.html(leaflet_html, height=670)
 
 
+def render_donations_page():
+    """Renderiza a página de Doação & Redistribuição de Máquinas."""
+    from src.database import get_donations_data, sync_donations_from_excel
+    
+    st.title("🖥️ Sistema de Doação & Redistribuição de Máquinas")
+    st.write("Acompanhe o inventário de equipamentos destinados a doação, redistribuição, garantia ou baixados.")
+    
+    from src.config import DONATIONS_FILE_PATH
+    EXCEL_PATH = str(DONATIONS_FILE_PATH)
+
+    
+    # Cabeçalho com botão de sincronização
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.info("Os dados exibidos abaixo são sincronizados a partir da planilha oficial no SharePoint.")
+    with col2:
+        if st.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True):
+            with st.spinner("Lendo dados da planilha Excel..."):
+                try:
+                    sync_donations_from_excel(EXCEL_PATH)
+                    st.toast("✅ Dados sincronizados com sucesso!", icon="💾")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao sincronizar planilha: {e}")
+                    
+    # Carrega dados do SQLite
+    df = get_donations_data()
+    
+    if df.empty:
+        st.warning("⚠️ Nenhum dado encontrado no cache local. Por favor, clique em 'Sincronizar Planilha' para carregar os registros.")
+        return
+        
+    # Barra lateral de filtros e ferramentas
+    st.sidebar.title("🖥️ Painel de Controle")
+    st.sidebar.subheader("🔍 Filtros de Equipamentos")
+    
+    # Filtro de Movimentação
+    mov_options = ["Todos"] + sorted(list(df['tipo_movimentacao'].unique()))
+    selected_mov = st.sidebar.selectbox("Tipo de Movimentação", mov_options, key="donations_mov")
+    
+    # Filtro de Equipamento
+    equip_options = ["Todos"] + sorted(list(df['equipamento'].unique()))
+    selected_equip = st.sidebar.selectbox("Tipo de Equipamento", equip_options, key="donations_equip")
+    
+    # Filtro de Modelo
+    model_options = ["Todos"] + sorted(list(df['modelo'].unique()))
+    selected_model = st.sidebar.selectbox("Modelo", model_options, key="donations_model")
+    
+    # Filtro de SSD
+    ssd_options = ["Todos"] + sorted(list(df['ssd'].unique()))
+    selected_ssd = st.sidebar.selectbox("SSD", ssd_options, key="donations_ssd")
+    
+    # Filtro por Busca Geral (Patrimônio, Modelo ou Chamado)
+    search_query = st.sidebar.text_input("🔎 Buscar (Patrimônio, Modelo, Chamado)", "", key="donations_search").strip()
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📋 Gerador de Texto (Preparo)")
+    
+    # Filtra as datas disponíveis no banco (limpando vazias)
+    valid_dates = df[df['data_movimentacao'] != '']['data_movimentacao'].unique()
+    valid_dates = sorted(list(valid_dates), reverse=True)
+    
+    # Função para formatar a data de YYYY-MM-DD para DD/MM/YYYY no selectbox
+    def format_date_br(date_str):
+        from datetime import datetime
+        try:
+            return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except:
+            return date_str
+            
+    selected_date_str = st.sidebar.selectbox("Selecione a Data de Preparo", valid_dates, format_func=format_date_br)
+    generate_btn = st.sidebar.button("📝 Gerar Texto do Chamado", use_container_width=True)
+
+    @st.dialog("📋 Texto de Preparo de Chamado", width="large")
+    def show_preparo_text(date_str, df_all):
+        # Filtra os dados daquela data
+        df_date = df_all[df_all['data_movimentacao'] == date_str]
+        
+        if df_date.empty:
+            st.warning("Nenhum equipamento encontrado nesta data.")
+            return
+            
+        from datetime import datetime
+        try:
+            # Tenta formatar a data de YYYY-MM-DD para DD/MM/YYYY
+            dt_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            formatted_date = dt_obj.strftime("%d/%m/%Y")
+        except:
+            formatted_date = date_str
+            
+        # Constrói o assunto do chamado dinamicamente com base nas movimentações do dia
+        movs = sorted(list(df_date['tipo_movimentacao'].unique()))
+        movs_clean = [m.strip().capitalize() for m in movs if m.strip()]
+        if len(movs_clean) == 1:
+            movs_str = movs_clean[0]
+        elif len(movs_clean) > 1:
+            movs_str = ", ".join(movs_clean[:-1]) + " e " + movs_clean[-1]
+        else:
+            movs_str = "Movimentação"
+            
+        subject = f"[DOAÇÃO] - Preparação de {movs_str} de equipamentos do dia {formatted_date}"
+        
+        st.write("📋 **Assunto do Chamado:**")
+        st.code(subject, language="text")
+        st.markdown("---")
+            
+        html_parts = []
+        html_parts.append("<div style='font-family: Arial, Helvetica, sans-serif; color: #000000; line-height: 1.5;'>")
+        html_parts.append("<p>Prezados, boa tarde.</p>")
+        html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos os seguintes equipamentos, sendo eles:</p>")
+        
+        # Agrupa os equipamentos por tipo de movimentação
+        for mov_type, grp in df_date.groupby('tipo_movimentacao'):
+            html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()}:</strong></p>")
+            
+            # Verifica se há valores reais nas colunas opcionais para este grupo específico
+            has_ssd = grp['ssd'].astype(str).str.strip().any()
+            has_obs = grp['motivo_baixa'].astype(str).str.strip().any()
+            
+            # Tabela HTML com bordas explícitas para garantir que copie e cole com formatação no OTRS/Outlook
+            table_html = [
+                "<table border='2' cellpadding='6' cellspacing='0' style='border-collapse: collapse; width: 100%; border: 2px solid #cccccc; font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #000000;'>"
+            ]
+            # Cabeçalho da tabela - cores azul corporativo com texto branco, aplicados direto no th
+            th_style = "background-color: #2f5597; border: 2px solid #cccccc; padding: 6px 10px; text-align: left;"
+            
+            headers_html = [
+                f"<tr>",
+                f"<th style='{th_style}'><span style=\"color:#ffffff\">Patrimônio</span></th>",
+                f"<th style='{th_style}'><span style=\"color:#ffffff\">Modelo</span></th>",
+                f"<th style='{th_style}'><span style=\"color:#ffffff\">Serial Number PC</span></th>",
+                f"<th style='{th_style}'><span style=\"color:#ffffff\">Equipamento</span></th>"
+            ]
+            if has_ssd:
+                headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">SSD</span></th>")
+            if has_obs:
+                headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">Motivo/Obs</span></th>")
+            headers_html.append("</tr>")
+            
+            table_html.append("".join(headers_html))
+            
+            # Linhas da tabela
+            for idx, (_, row) in enumerate(grp.iterrows()):
+                pat = str(row.get('patrimonio', '')).strip()
+                mod = str(row.get('modelo', '')).strip()
+                ser = str(row.get('serial_number', '')).strip()
+                eqp = str(row.get('equipamento', '')).strip()
+                ssd = str(row.get('ssd', '')).strip()
+                obs = str(row.get('motivo_baixa', '')).strip()
+                
+                # Zebra striping (linhas alternadas com azul claro do Excel)
+                bg_style = "background-color: #d9e1f2;" if idx % 2 == 1 else ""
+                
+                row_html = [
+                    f"<tr>",
+                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{pat}</td>",
+                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{mod}</td>",
+                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ser}</td>",
+                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{eqp}</td>"
+                ]
+                if has_ssd:
+                    row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ssd}</td>")
+                if has_obs:
+                    row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{obs}</td>")
+                row_html.append("</tr>")
+                
+                table_html.append("".join(row_html))
+ 
+            table_html.append("</table>")
+            html_parts.append("".join(table_html))
+            
+        html_parts.append("</div>")
+        full_html = "\n".join(html_parts)
+        
+        st.write("💡 Selecione o texto abaixo com o mouse, copie (Ctrl+C) e cole diretamente no chamado do OTRS:")
+        st.markdown(
+            f'<div style="background-color: #ffffff; padding: 20px; border-radius: 6px; border: 1px solid #dddddd; max-height: 400px; overflow-y: auto;">{full_html}</div>', 
+            unsafe_allow_html=True
+        )
+        
+        st.markdown("---")
+        st.write("💻 Ou copie o código-fonte HTML abaixo (clique no botão **'Código-Fonte'** no OTRS e cole):")
+        st.code(full_html, language="html")
+
+    if generate_btn:
+        show_preparo_text(selected_date_str, df)
+
+    # Aplicação dos filtros
+    df_filtered = df.copy()
+    if selected_mov != "Todos":
+        df_filtered = df_filtered[df_filtered['tipo_movimentacao'] == selected_mov]
+    if selected_equip != "Todos":
+        df_filtered = df_filtered[df_filtered['equipamento'] == selected_equip]
+    if selected_model != "Todos":
+        df_filtered = df_filtered[df_filtered['modelo'] == selected_model]
+    if selected_ssd != "Todos":
+        df_filtered = df_filtered[df_filtered['ssd'] == selected_ssd]
+
+    if search_query:
+        query_lower = search_query.lower()
+        df_filtered = df_filtered[
+            df_filtered['patrimonio'].str.lower().str.contains(query_lower) |
+            df_filtered['modelo'].str.lower().str.contains(query_lower) |
+            df_filtered['chamado'].str.lower().str.contains(query_lower)
+        ]
+
+
+        
+    # KPIs rápidos
+    st.markdown("---")
+    kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
+    
+    total_equip = len(df_filtered)
+    # Conta doações (case-insensitive)
+    doados = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'doação'])
+    # Conta redistribuições (case-insensitive)
+    redistribuicoes = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'redistribuição'])
+    # Conta baixas (case-insensitive)
+    baixas = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'baixa'])
+    # Conta garantias (case-insensitive)
+    garantias = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'garantia'])
+    
+    kpi_col1.metric("Todos os Equipamentos", total_equip)
+    kpi_col2.metric("Doações", doados)
+    kpi_col3.metric("Redistribuições", redistribuicoes)
+    kpi_col4.metric("Baixas", baixas)
+    kpi_col5.metric("Garantias", garantias)
+
+    
+    st.markdown("---")
+    
+    # Gráficos
+    g_col1, g_col2 = st.columns(2)
+    
+    with g_col1:
+        st.subheader("📊 Distribuição por Movimentação")
+        if not df_filtered.empty:
+            mov_counts = df_filtered['tipo_movimentacao'].value_counts().reset_index()
+            mov_counts.columns = ['Movimentação', 'Quantidade']
+            st.bar_chart(data=mov_counts, x='Movimentação', y='Quantidade', use_container_width=True)
+        else:
+            st.info("Sem dados para exibir o gráfico.")
+            
+    with g_col2:
+        st.subheader("📅 Histórico de Movimentações por Ano")
+        if not df_filtered.empty:
+            # Converte a data_movimentacao para obter o ano
+            df_filtered['Ano'] = pd.to_datetime(df_filtered['data_movimentacao'], errors='coerce').dt.year
+            df_filtered['Ano'] = df_filtered['Ano'].fillna("Sem Data").astype(str).str.replace(".0", "", regex=False)
+            
+            ano_counts = df_filtered.groupby(['Ano', 'tipo_movimentacao']).size().unstack(fill_value=0)
+            st.bar_chart(ano_counts, use_container_width=True)
+        else:
+            st.info("Sem dados para exibir o gráfico.")
+            
+    # Tabela principal
+    st.markdown("---")
+    st.subheader("📋 Detalhamento dos Equipamentos")
+    
+    st.dataframe(
+        df_filtered,
+        column_config={
+            "patrimonio": st.column_config.TextColumn("Patrimônio"),
+            "modelo": st.column_config.TextColumn("Modelo"),
+            "serial_number": st.column_config.TextColumn("Número de Série"),
+            "equipamento": st.column_config.TextColumn("Equipamento"),
+            "tipo_movimentacao": st.column_config.TextColumn("Movimentação"),
+            "data_movimentacao": st.column_config.DateColumn("Data da Movimentação", format="DD/MM/YYYY"),
+            "chamado": st.column_config.TextColumn("Chamado relacionado"),
+            "ssd": st.column_config.TextColumn("SSD"),
+            "motivo_baixa": st.column_config.TextColumn("Motivo da Baixa"),
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+
+
 # Navegação por abas/páginas no Topo (Flutua no Header via CSS Fixed)
 page = st.radio(
     "Navegação",
-    ["📋 Painel de Chamados", "📍 Mapa & Localização"],
+    ["📋 Painel de Chamados", "📍 Mapa & Localização", "🖥️ Doação & Redistribuição"],
     horizontal=True,
     label_visibility="collapsed"
 )
@@ -1532,6 +1809,11 @@ page = st.radio(
 if page == "📍 Mapa & Localização":
     render_mapa_page()
     st.stop()  # Interrompe a execução para não carregar a página padrão de chamados
+
+if page == "🖥️ Doação & Redistribuição":
+    render_donations_page()
+    st.stop()  # Interrompe a execução para não carregar a página padrão de chamados
+
 
 
 # Cabeçalho com Título e Botão de Sincronização
@@ -2252,10 +2534,12 @@ else:
         },
         hide_index=True,
         width="stretch",
+        height=600,
         on_select="rerun",
         selection_mode="single-row",
         key="tabela_chamados_datagrid"
     )
+
     
     # Lógica para exibir o Modal baseado na seleção da linha
     selected_rows = selection_event.selection.rows if hasattr(selection_event, "selection") else []

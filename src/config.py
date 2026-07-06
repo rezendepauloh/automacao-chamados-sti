@@ -58,6 +58,8 @@ OUTPUT_DIR_PRONTO.mkdir(exist_ok=True)
 MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
 MASTER_FILE_PATH = USER_HOME / os.getenv("SHAREPOINT_RELATIVE_PATH", "")
+DONATIONS_FILE_PATH = USER_HOME / os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
+
 
 # OTRS
 DEBUG_DIR_OTRS = BASE_DIR / "debug_logs" / "otrs"
@@ -87,6 +89,11 @@ MODEL_PATH  = MODEL_DIR / "tag_classifier.joblib"
 # Sync Master
 DEBUG_DIR_SYNC = BASE_DIR / "debug_logs" / "sync"
 DEBUG_DIR_SYNC.mkdir(parents=True, exist_ok=True)
+
+# Donations
+DEBUG_DIR_DONATIONS = BASE_DIR / "debug_logs" / "donations"
+DEBUG_DIR_DONATIONS.mkdir(parents=True, exist_ok=True)
+
 
 # Orquestrador
 DEBUG_DIR_ORQUESTRADOR = BASE_DIR / "debug_logs" / "orquestrador"
