@@ -27,6 +27,9 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 import locale
+from src.config import DEBUG_DIR_LEAFLET, setup_logging
+logger = setup_logging(DEBUG_DIR_LEAFLET / "leaflet.log", "leaflet")
+
 
 # Declara o componente customizado do Select Multiple nativo com clique-e-arraste
 custom_select_dir = Path(__file__).parent / "custom_select_component"
@@ -103,7 +106,6 @@ st.markdown("""
         border-color: #ff4b4b !important;
         background-color: #2a2b36 !important;
     }
-    /* Destaca a aba ativa com a cor vermelha tema do painel */
     div[data-testid="stRadio"] label:has(input:checked) {
         background-color: #ff4b4b !important;
         color: white !important;
@@ -278,12 +280,18 @@ class SaveConfigHandler(BaseHTTPRequestHandler):
             
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)
+        logger.debug(f"🌐 GET request recebida no servidor Leaflet backend: {parsed.path}")
         if parsed.path == '/set_route':
             query = parse_qs(parsed.query)
+            logger.debug(f"📍 Parâmetros query recebidos: {query}")
+            
+            # Atualiza st._global_route
             if 'origem' in query:
                 st._global_route['origem'] = query['origem'][0]
+                logger.debug(f"👉 Origem atualizada no global_route para: {query['origem'][0]}")
             if 'destino' in query:
                 st._global_route['destino'] = query['destino'][0]
+                logger.debug(f"👉 Destino atualizado no global_route para: {query['destino'][0]}")
                 
             self.send_response(200)
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -291,19 +299,60 @@ class SaveConfigHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success"}).encode())
             
-            # Força o Streamlit a rodar novamente para atualizar os selectboxes
+            # Atualiza também o st.session_state da aplicação ativa de forma segura
             try:
                 from streamlit.runtime import get_instance
                 runtime = get_instance()
-                for session_info in runtime._session_mgr.list_active_sessions():
-                    session_info.session.request_rerun(None)
+                active_sessions = runtime._session_mgr.list_active_sessions()
+                logger.debug(f"👥 Total de sessões Streamlit ativas encontradas: {len(active_sessions)}")
+                for session_info in active_sessions:
+                    session_state = session_info.session.session_state
+                    
+                    # Carrega pins para saber os nomes de exibição correspondentes
+                    from src.database import get_map_config
+                    config = get_map_config()
+                    todos_pins = []
+                    for pr in config.get("predios", []):
+                        for p in pr.get("pins", []):
+                            todos_pins.append(p)
+                            
+                    if 'origem' in query:
+                        orig_id = query['origem'][0]
+                        orig_match = next((p for p in todos_pins if p["id"] == orig_id), None)
+                        if orig_match:
+                            display_name = f"{orig_match['sala']} ({orig_match['pavimento_id']}º Andar)" if orig_match['pavimento_id'] > 0 else f"{orig_match['sala']} (Térreo)"
+                            session_state["sb_origem"] = display_name
+                            logger.debug(f" Sincronizado sb_origem na sessão {session_info.session.id}: {display_name}")
+                    
+                    if 'destino' in query:
+                        dest_id = query['destino'][0]
+                        dest_match = next((p for p in todos_pins if p["id"] == dest_id), None)
+                        if dest_match:
+                            display_name = f"{dest_match['sala']} ({dest_match['pavimento_id']}º Andar)" if dest_match['pavimento_id'] > 0 else f"{dest_match['sala']} (Térreo)"
+                            session_state["sb_destino"] = display_name
+                            logger.debug(f" Sincronizado sb_destino na sessão {session_info.session.id}: {display_name}")
+                            
+                # Dispara o rerun de forma assíncrona com delay de 250ms usando uma thread leve
+                # Isso dá tempo para o Leaflet fechar a requisição pendente e evita descartar cliques do usuário na UI.
+                def delayed_rerun():
+                    import time
+                    time.sleep(0.25)
+                    logger.debug("⏰ Rerunning active sessions pós-delay...")
+                    try:
+                        for s_info in active_sessions:
+                            s_info.session.request_rerun(None)
+                    except Exception as ex:
+                        logger.error(f"Erro no delayed rerun: {ex}")
+                        
+                threading.Thread(target=delayed_rerun, daemon=True).start()
             except Exception as e:
-                print(f"Erro ao forçar rerun: {e}")
+                logger.error(f"❌ Erro ao atualizar session_state na rota set_route: {e}", exc_info=True)
             return
         self.send_response(404)
         self.end_headers()
 
     def do_POST(self):
+        logger.debug(f"🌐 POST request recebida no servidor Leaflet backend: {self.path}")
         if self.path == '/save_config':
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -311,11 +360,13 @@ class SaveConfigHandler(BaseHTTPRequestHandler):
                 config_data = json.loads(post_data.decode('utf-8'))
                 from src.database import save_map_config
                 save_map_config(config_data)
+                logger.debug("💾 Configurações do mapa salvas com sucesso no banco SQLite.")
                 
                 # Salva também no arquivo físico uploads/map_config_TEMPLATE.json
                 template_path = Path("uploads/map_config_TEMPLATE.json")
                 with open(template_path, "w", encoding="utf-8") as f:
                     json.dump(config_data, f, indent=2, ensure_ascii=False)
+                logger.debug(f"💾 Cópia física de backup salva em: {template_path}")
                 
                 self.send_response(200)
                 self.send_header('Access-Control-Allow-Origin', '*')
@@ -324,6 +375,7 @@ class SaveConfigHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"status": "success"}).encode())
                 return
             except Exception as e:
+                logger.error(f"❌ Erro ao salvar configurações no POST do backend: {e}", exc_info=True)
                 self.send_response(500)
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
@@ -386,13 +438,14 @@ def render_mapa_page():
         
     # Adiciona os seletores e busca diretamente na barra lateral, liberando espaço total para a imagem
     # st.sidebar.markdown("---")
-    st.sidebar.subheader("📍 Seleção do Local")
+    # st.sidebar.subheader("📍 Seleção do Local")
     
     # Seleção de prédio
     predio_nomes = [p.get("nome") for p in predios]
     selected_predio_nome = st.sidebar.selectbox("Selecione o Prédio", predio_nomes)
     selected_predio = next(p for p in predios if p.get("nome") == selected_predio_nome)
     predio_id = selected_predio.get("id")
+    logger.debug(f"🏢 Prédio selecionado na UI: {selected_predio_nome} (ID: {predio_id})")
     
     # Sincroniza a rota global com o Session State do Streamlit para evitar perdas de estado
     todos_pins = get_map_pins(predio_id)
@@ -434,11 +487,12 @@ def render_mapa_page():
         default_index = next(idx for idx, pav in enumerate(pavimentos) if pav.get("id") == st.session_state.selected_pavimento_id)
     except StopIteration:
         default_index = 0
-
-    selected_pav_nome = st.sidebar.selectbox("Selecione o Pavimento", pavimento_nomes, index=default_index)
+ 
+    selected_pav_nome = st.sidebar.selectbox("Selecione o Pavimento", pavimento_nomes, index=default_index, key="sb_pavimento")
     selected_pav = next(pav for pav in pavimentos if pav.get("nome") == selected_pav_nome)
     pavimento_id = selected_pav.get("id")
     st.session_state.selected_pavimento_id = pavimento_id
+    logger.debug(f"📐 Pavimento selecionado na UI: {selected_pav_nome} (ID: {pavimento_id})")
     
     # Obter caminho físico da imagem
     img_path_str = selected_pav.get("imagem")
@@ -505,7 +559,7 @@ def render_mapa_page():
             
             # Se o pin encontrado estiver em um pavimento diferente do atual, altera e recarrega
             first_match = matching_pins[0]
-            if first_match.get("pavimento_id") != pavimento_id:
+            if first_match.get("pavimento_id") != pavimento_id and search_query != "":
                 st.session_state.selected_pavimento_id = first_match.get("pavimento_id")
                 st.rerun()
         else:
@@ -515,6 +569,7 @@ def render_mapa_page():
     caminhos = selected_predio.get("caminhos", {})
     route_coords = []
     route_distance_meters = 0.0
+
     
     if caminhos and caminhos.get("nós") and caminhos.get("arestas"):
         st.sidebar.markdown("---")
@@ -1007,13 +1062,26 @@ def render_mapa_page():
         // Callbacks de manipulação do estado em tempo de execução
         window.setRouteOrigin = function(pinId) {{
           activeRoute.origem = pinId;
+          map.closePopup();
           fetch('http://localhost:8099/set_route?origem=' + pinId + '&destino=' + activeRoute.destino)
+            .then(function() {{
+                // Envia uma mensagem ou recarrega a página pai do Streamlit para aplicar as rotas e seletores instantaneamente
+                if (window.parent) {{
+                    window.parent.postMessage({{type: 'streamlit:render'}}, '*');
+                }}
+            }})
             .catch(function(err) {{ console.error("Erro ao definir origem:", err); }});
         }};
 
         window.setRouteDestination = function(pinId) {{
           activeRoute.destino = pinId;
+          map.closePopup();
           fetch('http://localhost:8099/set_route?origem=' + activeRoute.origem + '&destino=' + pinId)
+            .then(function() {{
+                if (window.parent) {{
+                    window.parent.postMessage({{type: 'streamlit:render'}}, '*');
+                }}
+            }})
             .catch(function(err) {{ console.error("Erro ao definir destino:", err); }});
         }};
 
@@ -1411,7 +1479,7 @@ def render_mapa_page():
           }}).addTo(map);
           
           // Adiciona popup informativo de distância ao clicar na rota
-          polyline.bindPopup("<b>🚶 Rota Interna Calculada</b><br>Distância total estimada: <b>" + {route_distance_meters:.1f} + " m</b>");
+          polyline.bindPopup("<b>🚶 Rota Interna Calculada</b><br>Distância total estimada: <b>" + "{route_distance_meters:.1f}" + " m</b>");
           
           // Enquadra a visão do mapa para englobar toda a rota percorrida
           map.fitBounds(polyline.getBounds());
@@ -2552,7 +2620,6 @@ else:
         key="tabela_chamados_datagrid"
     )
 
-    
     # Lógica para exibir o Modal baseado na seleção da linha
     selected_rows = selection_event.selection.rows if hasattr(selection_event, "selection") else []
     

@@ -98,6 +98,11 @@ DEBUG_DIR_DONATIONS.mkdir(parents=True, exist_ok=True)
 # Orquestrador
 DEBUG_DIR_ORQUESTRADOR = BASE_DIR / "debug_logs" / "orquestrador"
 DEBUG_DIR_ORQUESTRADOR.mkdir(parents=True, exist_ok=True)
+
+# Leaflet Map Logs
+DEBUG_DIR_LEAFLET = BASE_DIR / "debug_logs" / "leaflet"
+DEBUG_DIR_LEAFLET.mkdir(parents=True, exist_ok=True)
+
 LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"
 
 # -----------------------------------------------------------------------------
