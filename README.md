@@ -42,6 +42,10 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 
 
 
+### 7. Base de Conhecimento & FAQs do SharePoint
+- **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot automatizado com navegação em modo headless via `Playwright` que varre as páginas institucionais de tutoriais do SharePoint DIT-Manutenção, extrai a árvore de conteúdo em HTML limpo (preservando imagens, tabelas e estilizações) e armazena na tabela relacional `faqs` do SQLite.
+- **Leitor Interativo e Modal no Dashboard (`st.dialog`):** Aba dedicada de FAQs e Tutoriais no dashboard com barra de busca inteligente por palavra-chave e filtro de categorias na sidebar. Permite a leitura completa do tutorial formatado em modal popup direto no sistema, com opção de link para abertura na aba original (`target="_blank"`).
+
 ---
 
 ## 🛠️ Tecnologias Utilizadas
@@ -49,13 +53,14 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 - **Linguagem:** Python 3.11+
 - **Bibliotecas Principais:**
   - `selenium`: Navegação web automatizada para logins e sistemas dinâmicos.
-  - `requests` & `beautifulsoup4`: Varredura estática ultra-veloz de portais institucionais públicos.
+  - `playwright`: Raspagem em lote em alta performance de tutoriais e artigos do SharePoint em headless mode.
+  - `requests` & `beautifulsoup4`: Varredura estática ultra-veloz de portais institucionais públicos e sanitização de HTML.
   - `pandas`: Análise, manipulação e alinhamento inteligente de DataFrames.
   - `scikit-learn`: Treinamento pesado, tuning de hiperparâmetros e classificação.
   - `spacy`: Processamento de linguagem natural (NLP) e lematização.
   - `pywin32` e `WMI`: Automação nativa do Microsoft Excel e consultas profundas ao servidor SCCM para extração de IPs na rede.
   - `streamlit`: Construção do dashboard web moderno, rápido e interativo.
-  - `sqlite3`: Banco de dados relacional embutido de altíssimo desempenho para retenção do ciclo de vida dos chamados.
+  - `sqlite3`: Banco de dados relacional embutido de altíssimo desempenho para retenção do ciclo de vida dos chamados e tutoriais da equipe.
 
 ---
 
@@ -65,11 +70,12 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 - `citsmart_scraper.py`: Bot para extração do sistema LowCode/CitSmart.
 - `otrs_scraper.py`: Bot para extração do sistema legado OTRS.
 - `unidades_scraper.py`: Scraper que atualiza a lista de unidades/promotorias do site oficial do MPMS em tempo real com `BeautifulSoup`.
+- `faq_scraper.py`: Bot automatizado com Playwright para captura e atualização dos tutoriais e FAQs do SharePoint no SQLite.
 - `preprocess_chamados.py`: Limpeza, padronização, remoção de assinaturas/saudações e unificação das bases brutas.
 - `tag_classifier.py`: O "cérebro" da IA. Limpa o texto com NLP, treina os modelos, avalia métricas e classifica os novos chamados.
 - `sync_master.py`: Compara os chamados novos com a base de produção, sincroniza os estados "Aberto/Fechado" com o banco de dados SQLite e realiza a inserção *Append-Only* com formatações Win32 na Planilha Master.
 - `database.py`: Interface dedicada de controle (DAO) do banco de dados relacional SQLite, responsável por Inserções (UPSERT) dinâmicas e transições de status do ciclo de vida dos chamados.
-- `dashboard.py`: Aplicação Web (Frontend em Streamlit) para que os usuários e gestores leiam o banco de dados, apliquem filtros em tempo real e visualizem chamados de forma responsiva.
+- `dashboard.py`: Aplicação Web (Frontend em Streamlit) para que os usuários e gestores leiam o banco de dados, apliquem filtros em tempo real e visualizem chamados e tutoriais de forma responsiva.
 - `manual_entries.py`: Hub central de regras estáticas (ranges de IP CIDR para rastreamento de prédios geográficos, Regex de NLP e mapeamentos institucionais).
 - `config.py`: Central de configurações unificadas, conexões seguras ao AD (LDAP), queries WMI de rede ao SCCM para resolução de IPs e utilitários globais do sistema.
 - `orquestrador.py`: Script mestre do fluxo, executado 100% em background pelo Agendador de Tarefas do Windows.
@@ -87,6 +93,7 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
    python -m venv venv
    venv\Scripts\activate
    pip install -r requirements.txt
+   playwright install chromium
    python -m spacy download pt_core_news_sm
    ```
 
@@ -96,9 +103,15 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
    venv\Scripts\python.exe salvar_senha.py
    ```
 
+4. **(Opcional) Sincronizar tutoriais do SharePoint para a base local:**
+   ```bash
+   python src/faq_scraper.py
+   ```
+
 ## 🧪 Executando Testes Unitários
 
 Para garantir que as modificações de fluxo ou de dados não introduziram regressões no pipeline, execute os testes unitários integrados:
 ```bash
 venv\Scripts\python.exe -m unittest test_app.py
 ```
+

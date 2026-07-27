@@ -41,3 +41,6 @@ manual_entries.py
 
 # Uploads
 uploads/
+
+# Pastas temporárias
+temp/

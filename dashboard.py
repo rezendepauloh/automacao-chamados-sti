@@ -71,46 +71,49 @@ st.markdown("""
         padding-bottom: 1rem !important;
         position: relative !important;
     }
-    /* Reposiciona as abas de forma absoluta ao invés de fixas, alinhando nativamente com o menu lateral */
-    div[data-testid="stRadio"] {
-        position: absolute;
-        top: -35px;
-        left: 0px;
-        z-index: 999999;
-        background-color: transparent;
-        margin: 0 !important;
-        padding: 0 !important;
-        width: max-content !important; /* Impede o colapso de largura na posição absoluta */
+    /* Posiciona o botão Popover de navegação no header nativo do Streamlit, compacto no canto superior direito */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        pointer-events: none !important;
     }
-    /* Alinha opções do radio em linha horizontal compacta */
-    div[data-testid="stRadio"] [role="radiogroup"] {
-        flex-direction: row !important;
-        gap: 8px !important;
+    header[data-testid="stHeader"] * {
+        pointer-events: auto !important;
     }
-    /* Oculta a bolinha padrão do radio button de forma precisa (apenas o filho direto contendo o círculo) */
-    div[data-testid="stRadio"] label > div:first-child {
-        display: none !important;
+    div[data-testid="stMainBlockContainer"] > div:first-child > div[data-testid="stPopover"],
+    .main div[data-testid="stPopover"] {
+        position: fixed !important;
+        top: 0.4rem !important;
+        right: 4.5rem !important;
+        width: auto !important;
+        z-index: 999999 !important;
     }
-    /* Estiliza as abas de forma premium e elegante no cabeçalho */
-    div[data-testid="stRadio"] label {
+    div[data-testid="stMainBlockContainer"] > div:first-child > div[data-testid="stPopover"] > button,
+    .main div[data-testid="stPopover"] > button {
         background-color: #1e1f25 !important;
         border: 1px solid #343541 !important;
-        padding: 4px 16px !important;
+        padding: 4px 12px !important;
+        height: auto !important;
+        min-height: 0px !important;
+        width: auto !important;
+        font-size: 0.85rem !important;
+        color: #ffffff !important;
         border-radius: 6px !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease-in-out !important;
-        margin: 0 !important;
-        white-space: nowrap !important; /* Impede a quebra de linhas do texto */
     }
-    div[data-testid="stRadio"] label:hover {
+    div[data-testid="stPopover"] > button:hover {
         border-color: #ff4b4b !important;
-        background-color: #2a2b36 !important;
+        color: #ff4b4b !important;
     }
-    div[data-testid="stRadio"] label:has(input:checked) {
-        background-color: #ff4b4b !important;
-        color: white !important;
-        border-color: #ff4b4b !important;
-        font-weight: bold !important;
+    /* Garante que o dataframe ocupe 100% da tela quando entrar no modo Tela Cheia (Fullscreen) */
+    div[data-testid="stDataFrame"][data-st-mode="fullscreen"],
+    div[data-testid="stElementContainer"]:aria-modal,
+    :fullscreen div[data-testid="stDataFrame"],
+    :fullscreen div[data-testid="stDataFrame"] > div,
+    [data-testid="stDataFrame"]:fullscreen,
+    [data-testid="stDataFrame"]:fullscreen iframe {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -1878,21 +1881,467 @@ def render_donations_page():
     )
 
 
-# Navegação por abas/páginas no Topo (Flutua no Header via CSS Fixed)
-page = st.radio(
-    "Navegação",
-    ["📋 Painel de Chamados", "📍 Mapa & Localização", "🖥️ Doação & Redistribuição"],
-    horizontal=True,
-    label_visibility="collapsed"
-)
+
+def render_faq_page():
+    """Renderiza a página de FAQs e Tutoriais do SharePoint com modal leitor interativo."""
+    st.title("📚 FAQ & Tutoriais da Bancada / MPMS")
+    st.write("Base de conhecimento centralizada com os guias, manutenções e procedimentos da equipe.")
+    st.markdown("---")
+
+    db_path = root_dir / "chamados.db"
+    json_path = root_dir / "temp" / "faqs_template.json"
+    
+    # Sincroniza/Cria a tabela faqs no SQLite a partir do JSON se necessário
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS faqs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titulo TEXT NOT NULL,
+                tipo_faq TEXT NOT NULL,
+                url TEXT NOT NULL UNIQUE,
+                conteudo TEXT,
+                data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Garante a existência da coluna conteudo
+        cursor.execute("PRAGMA table_info(faqs)")
+        cols_db = [col[1] for col in cursor.fetchall()]
+        if "conteudo" not in cols_db:
+            cursor.execute("ALTER TABLE faqs ADD COLUMN conteudo TEXT")
+            conn.commit()
+
+        # Importa registros do JSON caso o banco esteja vazio
+        cursor.execute("SELECT COUNT(*) FROM faqs")
+        count = cursor.fetchone()[0]
+
+        if count == 0 and json_path.exists():
+            import json
+            with open(json_path, "r", encoding="utf-8") as f:
+                faqs_json = json.load(f)
+            
+            for item in faqs_json:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO faqs (titulo, tipo_faq, url, conteudo)
+                    VALUES (?, ?, ?, ?)
+                """, (item.get("titulo"), item.get("tipo_faq", "Geral"), item.get("url"), item.get("conteudo")))
+            conn.commit()
+
+        df_faqs = pd.read_sql_query("SELECT id, titulo, tipo_faq, url, conteudo FROM faqs", conn)
+        conn.close()
+    except Exception as e:
+        st.error(f"Erro ao carregar banco de dados de FAQs: {e}")
+        df_faqs = pd.DataFrame()
+
+    if df_faqs.empty:
+        st.info("Nenhum FAQ cadastrado no momento.")
+        return
+
+    # Modal para Leitura do Conteúdo do FAQ
+    @st.dialog("📖 Leitor de FAQ", width="large")
+    def open_faq_modal(faq_id):
+        faq_item = df_faqs[df_faqs['id'] == faq_id].iloc[0]
+        
+        # CSS de estilização refinada para a leitura dos tutoriais no modal
+        st.markdown("""
+        <style>
+        .faq-container {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .faq-container h1, .faq-container h2, .faq-container h3, .faq-container h4 {
+            color: #ffffff !important;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+        }
+        .faq-container p {
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+        }
+        .faq-container img {
+            max-width: 100% !important;
+            height: auto !important;
+            border-radius: 8px !important;
+            margin: 16px 0 !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+            border: 1px solid #343541 !important;
+        }
+        .faq-container ol, .faq-container ul {
+            padding-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .faq-container li {
+            margin-bottom: 0.4rem;
+        }
+        .faq-container code {
+            background-color: #2a2b36;
+            color: #ff4b4b;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.subheader(faq_item['titulo'])
+        st.caption(f"Categoria: **{faq_item['tipo_faq']}**")
+        st.markdown("---")
+        
+        if faq_item['conteudo'] and str(faq_item['conteudo']).strip():
+            st.markdown(f'<div class="faq-container">{faq_item["conteudo"]}</div>', unsafe_allow_html=True)
+        else:
+            st.info("O conteúdo detalhado deste FAQ ainda não foi sincronizado localmente.")
+            st.write("Você pode visualizar o tutorial completo diretamente no SharePoint pelo botão abaixo.")
+            
+        st.markdown("---")
+        st.markdown(f'<a href="{faq_item["url"]}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 6px;">🔗 Abrir no SharePoint (Nova Aba) ↗</a>', unsafe_allow_html=True)
+
+    # Filtros e Busca na Sidebar Lateral Esquerda
+    st.sidebar.markdown("## 🔍 Filtros do FAQ")
+    search_query = st.sidebar.text_input("Buscar por palavra-chave:", "")
+    
+    tipos_disponiveis = ["Todos"] + sorted(df_faqs['tipo_faq'].dropna().unique().tolist())
+    selected_tipo = st.sidebar.selectbox("📂 Categoria:", tipos_disponiveis)
+
+    # Aplicação dos Filtros
+    filtered_df = df_faqs.copy()
+    if search_query:
+        filtered_df = filtered_df[filtered_df['titulo'].str.contains(search_query, case=False, na=False)]
+    if selected_tipo != "Todos":
+        filtered_df = filtered_df[filtered_df['tipo_faq'] == selected_tipo]
+
+    st.markdown(f"**Exibindo {len(filtered_df)} de {len(df_faqs)} FAQs / Tutoriais**")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Exibição dos FAQs em Cards num grid de 2 colunas
+    cols = st.columns(2)
+    for index, row in filtered_df.iterrows():
+        col_target = cols[index % 2]
+        with col_target:
+            with st.container(border=True):
+                st.caption(f"📌 {row['tipo_faq']}")
+                st.subheader(row['titulo'])
+                
+                c_btn1, c_btn2 = st.columns([1, 1])
+                with c_btn1:
+                    if st.button("📖 Ler Tutorial", key=f"btn_read_{row['id']}", use_container_width=True):
+                        open_faq_modal(row['id'])
+                with c_btn2:
+                    st.markdown(f'<a href="{row["url"]}" target="_blank" style="display: block; text-align: center; background-color: #2a2b36; border: 1px solid #343541; color: white; text-decoration: none; font-size: 0.85rem; padding: 6px; border-radius: 6px; font-weight: bold;">🔗 SharePoint ↗</a>', unsafe_allow_html=True)
+
+
+
+def render_contracts_page():
+    """Renderiza a página de Fiscalização de Contratos a partir da planilha oficial do OneDrive/SharePoint."""
+    st.title("📜 Fiscalização de Contratos & Processos SAJ")
+    st.write("Acompanhamento das indicações de fiscais titulares, suplentes, processos SAJ e portarias publicadas.")
+    st.markdown("---")
+
+    relative_path = os.getenv("FISCAL_EXCEL_RELATIVE_PATH", "")
+    excel_file = Path.home() / relative_path if relative_path else None
+
+    # Cabeçalho com botão de sincronização
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.info("Os dados exibidos abaixo são lidos em tempo real da planilha oficial sincronizada via OneDrive/SharePoint.")
+    with col2:
+        if st.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True):
+            st.cache_data.clear()
+            st.toast("✅ Dados da planilha recarregados!", icon="🔄")
+            st.rerun()
+
+    if not excel_file or not excel_file.exists():
+        st.warning(f"⚠️ Planilha de Fiscais não localizada no caminho:\n`{excel_file}`")
+        st.info("Verifique se o OneDrive está sincronizado e o arquivo 'Indicação para atuar como fiscal.xlsx' está disponível.")
+        return
+
+    try:
+        # Lê as três abas da planilha do Excel
+        excel_data = pd.ExcelFile(excel_file)
+        
+        df_indicacoes = pd.read_excel(excel_data, sheet_name="Indicações") if "Indicações" in excel_data.sheet_names else pd.DataFrame()
+        df_publicacoes = pd.read_excel(excel_data, sheet_name="Publicações") if "Publicações" in excel_data.sheet_names else pd.DataFrame()
+        df_contador = pd.read_excel(excel_data, sheet_name="Contador") if "Contador" in excel_data.sheet_names else pd.DataFrame()
+        
+    except Exception as e:
+        st.error(f"Erro ao ler a planilha de Fiscais: {e}")
+        return
+
+    # Normalização dos nomes das colunas de Indicações
+    if not df_indicacoes.empty:
+        df_indicacoes.columns = [str(col).strip() for col in df_indicacoes.columns]
+    
+    # Normalização das Publicações
+    if not df_publicacoes.empty:
+        df_publicacoes.columns = [str(col).strip() for col in df_publicacoes.columns]
+
+    # --- CARDS KPI (CONTADOR DOS 3 FISCAIS PRINCIPAIS) ---
+    fiscais_foco = [
+        "Paulo Henrique Gonçalves Rezende",
+        "Reginaldo da Silva Bandeira",
+        "Luiz Leonardo Villalba"
+    ]
+
+    st.subheader("📊 Resumo de Contratos por Fiscal")
+    kpi_cols = st.columns(3)
+
+    for i, fiscal in enumerate(fiscais_foco):
+        count_titular = 0
+        count_suplente = 0
+        
+        if not df_indicacoes.empty:
+            if "Fiscal titular" in df_indicacoes.columns:
+                count_titular = (df_indicacoes["Fiscal titular"].astype(str).str.strip() == fiscal).sum()
+            if "Fiscal suplente" in df_indicacoes.columns:
+                count_suplente = (df_indicacoes["Fiscal suplente"].astype(str).str.strip() == fiscal).sum()
+        
+        total_fiscal = count_titular + count_suplente
+        primeiro_nome = fiscal.split()[0] + " " + fiscal.split()[-1]
+
+        with kpi_cols[i % 3]:
+            st.markdown(f"""
+            <div style="
+                background-color: #1e1f25;
+                border: 1px solid #343541;
+                border-radius: 8px;
+                padding: 16px;
+                text-align: center;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            ">
+                <h4 style="margin:0; color:#ff4b4b; font-size:1.1rem;">👤 {primeiro_nome}</h4>
+                <h2 style="margin: 8px 0; color:#ffffff; font-size:2rem;">{total_fiscal} <span style="font-size:0.9rem; color:#a0a0a0;">processos</span></h2>
+                <div style="display:flex; justify-content:space-around; margin-top:8px; font-size:0.8rem; color:#cccccc;">
+                    <span>📌 Titular: <b>{count_titular}</b></span>
+                    <span>🔄 Suplente: <b>{count_suplente}</b></span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- FILTROS SIDEBAR ---
+    st.sidebar.markdown("## 🔍 Filtros de Contratos")
+    
+    # Filtro por Fiscal
+    opcoes_fiscais = ["Todos"] + fiscais_foco
+    selected_fiscal_filter = st.sidebar.selectbox("👤 Filtrar por Fiscal:", opcoes_fiscais)
+    
+    # Busca por texto livre (Objeto / Nº SAJ / Contrato)
+    search_text = st.sidebar.text_input("🔍 Buscar por Nº SAJ, Objeto ou Contrato:", "")
+
+    # Aplicação dos filtros em Indicações
+    df_filtered_ind = df_indicacoes.copy()
+    
+    if selected_fiscal_filter != "Todos":
+        cond_titular = df_filtered_ind["Fiscal titular"].astype(str).str.strip() == selected_fiscal_filter if "Fiscal titular" in df_filtered_ind.columns else False
+        cond_suplente = df_filtered_ind["Fiscal suplente"].astype(str).str.strip() == selected_fiscal_filter if "Fiscal suplente" in df_filtered_ind.columns else False
+        df_filtered_ind = df_filtered_ind[cond_titular | cond_suplente]
+
+    if search_text:
+        mask = pd.Series(False, index=df_filtered_ind.index)
+        for col in df_filtered_ind.columns:
+            mask = mask | df_filtered_ind[col].astype(str).str.contains(search_text, case=False, na=False)
+        df_filtered_ind = df_filtered_ind[mask]
+
+    # --- ABAS DE EXIBIÇÃO ---
+    tab_ind, tab_charts, tab_pub, tab_raw_count = st.tabs(["📋 Indicações de Fiscais", "📈 Gráficos & Estatísticas", "📰 Publicações & Portarias", "📊 Tabela Contadora"])
+
+    with tab_ind:
+        c_head1, c_head2 = st.columns([3, 1])
+        with c_head1:
+            st.subheader(f"📋 Processos e Indicações ({len(df_filtered_ind)} registros)")
+        with c_head2:
+            if not df_filtered_ind.empty:
+                # Botão de download dos dados filtrados para Excel
+                import io
+                output_buffer = io.BytesIO()
+                with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+                    df_filtered_ind.to_excel(writer, index=False, sheet_name='Fiscais')
+                excel_bytes = output_buffer.getvalue()
+                
+                st.download_button(
+                    label="📥 Exportar Excel",
+                    data=excel_bytes,
+                    file_name="contratos_fiscais_filtrados.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+        if not df_filtered_ind.empty:
+            st.dataframe(
+                df_filtered_ind,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "nº Saj": st.column_config.TextColumn("Nº SAJ"),
+                    "Fiscal titular": st.column_config.TextColumn("Fiscal Titular"),
+                    "Fiscal suplente": st.column_config.TextColumn("Fiscal Suplente"),
+                    "Objeto": st.column_config.TextColumn("Objeto / Descrição"),
+                    "Contrato": st.column_config.TextColumn("Contrato / Empenho"),
+                }
+            )
+        else:
+            st.info("Nenhum registro encontrado para os filtros selecionados.")
+
+    with tab_charts:
+        st.subheader("📈 Visão Geral da Carga de Trabalho dos Fiscais")
+        if not df_indicacoes.empty and "Fiscal titular" in df_indicacoes.columns and "Fiscal suplente" in df_indicacoes.columns:
+            # Prepara dataframe comparativo de Titulares vs Suplentes
+            df_t = df_indicacoes["Fiscal titular"].dropna().astype(str).str.strip().value_counts().reset_index()
+            df_t.columns = ["Fiscal", "Como Titular"]
+            
+            df_s = df_indicacoes["Fiscal suplente"].dropna().astype(str).str.strip().value_counts().reset_index()
+            df_s.columns = ["Fiscal", "Como Suplente"]
+            
+            df_comp = pd.merge(df_t, df_s, on="Fiscal", how="outer").fillna(0)
+            df_comp["Como Titular"] = df_comp["Como Titular"].astype(int)
+            df_comp["Como Suplente"] = df_comp["Como Suplente"].astype(int)
+            df_comp["Total Processos"] = df_comp["Como Titular"] + df_comp["Como Suplente"]
+            df_comp = df_comp.sort_values(by="Total Processos", ascending=False)
+            
+            g_col1, g_col2 = st.columns(2)
+            with g_col1:
+                st.markdown("#### 📌 Distribuição de Titularidades")
+                st.bar_chart(df_comp.set_index("Fiscal")[["Como Titular"]], use_container_width=True)
+            with g_col2:
+                st.markdown("#### 🔄 Distribuição de Suplências")
+                st.bar_chart(df_comp.set_index("Fiscal")[["Como Suplente"]], use_container_width=True)
+                
+            st.markdown("---")
+            st.markdown("#### 📊 Carga Total Comparativa de Fiscais")
+            st.bar_chart(df_comp.set_index("Fiscal")[["Como Titular", "Como Suplente"]], use_container_width=True)
+
+            # --- NOVO GRÁFICO POR TIPO DE OBJETO ---
+            st.markdown("---")
+            st.subheader("📦 Agrupamento por Tipo de Objeto / Equipamento")
+            
+            if "Objeto" in df_indicacoes.columns:
+                df_obj = df_indicacoes["Objeto"].dropna().astype(str).str.strip().str.lower()
+                
+                # Mapeamento / Categorização dos objetos
+                def categorizar_objeto(desc):
+                    if "monitor" in desc:
+                        return "🖥️ Monitores"
+                    elif "desktop" in desc or "computador" in desc:
+                        return "💻 Desktops / Computadores"
+                    elif "fone" in desc or "headset" in desc:
+                        return "🎧 Fones / Headsets"
+                    elif "webcam" in desc or "mouse" in desc:
+                        return "🖱️ Periféricos (Webcam/Mouse/Teclado)"
+                    elif "notebook" in desc or "laptop" in desc:
+                        return "💻 Notebooks"
+                    elif "telefone" in desc or "ramal" in desc:
+                        return "📞 Telefonia / Ramais"
+                    elif "hd" in desc or "ssd" in desc:
+                        return "💾 Armazenamento (HD/SSD)"
+                    elif "internet" in desc or "satélite" in desc:
+                        return "📡 Internet / Conectividade"
+                    elif "scanner" in desc:
+                        return "🖨️ Scanners / Impressão"
+                    elif "tablet" in desc:
+                        return "📱 Tablets"
+                    else:
+                        return "📦 Outros Suprimentos / Serviços"
+
+                df_indicacoes_cats = df_indicacoes.copy()
+                df_indicacoes_cats["Categoria_Objeto"] = df_indicacoes_cats["Objeto"].astype(str).apply(categorizar_objeto)
+                
+                counts_obj = df_indicacoes_cats["Categoria_Objeto"].value_counts().reset_index()
+                counts_obj.columns = ["Categoria", "Quantidade"]
+                
+                o_col1, o_col2 = st.columns([2, 1])
+                with o_col1:
+                    st.bar_chart(counts_obj.set_index("Categoria"), use_container_width=True)
+                with o_col2:
+                    st.markdown("##### 📌 Quantidade por Tipo:")
+                    for _, r in counts_obj.iterrows():
+                        st.markdown(f"- **{r['Categoria']}**: `{r['Quantidade']}` processos")
+        else:
+            st.info("Dados insuficientes para renderização dos gráficos.")
+
+    with tab_pub:
+        st.subheader("📰 Publicações em Diário Oficial & Portarias")
+        df_filtered_pub = df_publicacoes.copy()
+        
+        if selected_fiscal_filter != "Todos" and not df_filtered_pub.empty:
+            cond_t = df_filtered_pub["Fiscal titular"].astype(str).str.strip() == selected_fiscal_filter if "Fiscal titular" in df_filtered_pub.columns else False
+            cond_s = df_filtered_pub["Fiscal suplente"].astype(str).str.strip() == selected_fiscal_filter if "Fiscal suplente" in df_filtered_pub.columns else False
+            df_filtered_pub = df_filtered_pub[cond_t | cond_s]
+
+        if search_text and not df_filtered_pub.empty:
+            mask_p = pd.Series(False, index=df_filtered_pub.index)
+            for col in df_filtered_pub.columns:
+                mask_p = mask_p | df_filtered_pub[col].astype(str).str.contains(search_text, case=False, na=False)
+            df_filtered_pub = df_filtered_pub[mask_p]
+
+        if not df_filtered_pub.empty:
+            st.dataframe(
+                df_filtered_pub,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "nº Saj": st.column_config.TextColumn("Nº SAJ"),
+                    "Fiscal titular": st.column_config.TextColumn("Fiscal Titular"),
+                    "Fiscal suplente": st.column_config.TextColumn("Fiscal Suplente"),
+                    "Objeto": st.column_config.TextColumn("Objeto / Nota de Empenho"),
+                    "Obs.:": st.column_config.TextColumn("Portaria / Observações"),
+                }
+            )
+        else:
+            st.info("Nenhuma publicação/portaria encontrada.")
+
+    with tab_raw_count:
+        st.subheader("📊 Tabela de Contagem Geral")
+        if not df_contador.empty:
+            st.dataframe(df_contador, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aba Contador indisponível ou vazia na planilha.")
+
+
+# Estado da página ativa
+if "current_page" not in st.session_state:
+    st.session_state["current_page"] = "📋 Painel de Chamados"
+
+# Menu Hambúrguer (Popover) fixado no Header Superior Direito via CSS
+with st.popover("☰ Menu"):
+    st.markdown("### 📌 Sistemas / Páginas")
+    if st.button("📋 Painel de Chamados", use_container_width=True):
+        st.session_state["current_page"] = "📋 Painel de Chamados"
+        st.rerun()
+    if st.button("📍 Mapa & Localização", use_container_width=True):
+        st.session_state["current_page"] = "📍 Mapa & Localização"
+        st.rerun()
+    if st.button("🖥️ Doação & Redistribuição", use_container_width=True):
+        st.session_state["current_page"] = "🖥️ Doação & Redistribuição"
+        st.rerun()
+    if st.button("📜 Fiscalização de Contratos", use_container_width=True):
+        st.session_state["current_page"] = "📜 Fiscalização de Contratos"
+        st.rerun()
+    if st.button("📚 FAQ & Tutoriais", use_container_width=True):
+        st.session_state["current_page"] = "📚 FAQ & Tutoriais"
+        st.rerun()
+
+page = st.session_state["current_page"]
 
 if page == "📍 Mapa & Localização":
     render_mapa_page()
-    st.stop()  # Interrompe a execução para não carregar a página padrão de chamados
+    st.stop()
 
 if page == "🖥️ Doação & Redistribuição":
     render_donations_page()
-    st.stop()  # Interrompe a execução para não carregar a página padrão de chamados
+    st.stop()
+
+if page == "📜 Fiscalização de Contratos":
+    render_contracts_page()
+    st.stop()
+
+if page == "📚 FAQ & Tutoriais":
+    render_faq_page()
+    st.stop()
 
 
 
@@ -2401,14 +2850,70 @@ else:
     if user_search:
         filtered_df = filtered_df[filtered_df['usuario'].str.contains(user_search, case=False, na=False)]
         
-    # Exibe métricas
+    # Exibe métricas no topo
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Chamados", len(filtered_df))
     col2.metric("Abertos", len(filtered_df[filtered_df['status'] == 'Aberto']))
     col3.metric("Fechados", len(filtered_df[filtered_df['status'] == 'Fechado']))
     
     st.write("---")
-    
+
+    # Organização em Abas: Tabela principal vs Gráficos & Estatísticas
+    main_tab_list, main_tab_charts = st.tabs(["📋 Tabela Geral de Chamados", "📈 Gráficos & Estatísticas do Painel"])
+
+    with main_tab_charts:
+        st.subheader("📊 Análise Estatística dos Chamados Filtrados")
+        st.write("Visualização consolidada de abertura de chamados por Prédio, Unidade, Categorias (TAGs) e Usuários.")
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if not filtered_df.empty:
+            # Row 1: Prédios e Unidades mais demandantes
+            g_col1, g_col2 = st.columns(2)
+            with g_col1:
+                st.markdown("#### 🏢 Top Prédios / Cidades com Mais Chamados")
+                city_counts = filtered_df['cidade_predio'].value_counts().head(10).reset_index()
+                city_counts.columns = ['Prédio / Cidade', 'Quantidade']
+                st.bar_chart(city_counts.set_index('Prédio / Cidade'), use_container_width=True)
+
+            with g_col2:
+                st.markdown("#### 🏛️ Top Unidades / Setores Mais Demandantes")
+                unit_counts = filtered_df['unidade'].value_counts().head(10).reset_index()
+                unit_counts.columns = ['Unidade / Setor', 'Quantidade']
+                st.bar_chart(unit_counts.set_index('Unidade / Setor'), use_container_width=True)
+
+            st.markdown("---")
+
+            # Row 2: TAGs / Categorias de IA e Usuários com Mais Chamados
+            g_col3, g_col4 = st.columns(2)
+            with g_col3:
+                st.markdown("#### 🏷️ Distribuição por Categoria (TAG de IA)")
+                tag_counts = filtered_df['tag'].value_counts().reset_index()
+                tag_counts.columns = ['Categoria (TAG)', 'Quantidade']
+                st.bar_chart(tag_counts.set_index('Categoria (TAG)'), use_container_width=True)
+
+            with g_col4:
+                st.markdown("#### 👤 Top Usuários que Mais Abrem Chamados")
+                user_counts = filtered_df['usuario'].value_counts().head(10).reset_index()
+                user_counts.columns = ['Usuário', 'Quantidade']
+                st.bar_chart(user_counts.set_index('Usuário'), use_container_width=True)
+                
+            st.markdown("---")
+
+            # Row 3: Comparativo de Bases e Status
+            g_col5, g_col6 = st.columns(2)
+            with g_col5:
+                st.markdown("#### 🔄 Origem dos Chamados (Base)")
+                base_counts = filtered_df['base'].value_counts().reset_index()
+                base_counts.columns = ['Base de Origem', 'Quantidade']
+                st.bar_chart(base_counts.set_index('Base de Origem'), use_container_width=True)
+
+            with g_col6:
+                st.markdown("#### 📍 Status por Prédio / Cidade (Abertos x Fechados)")
+                status_city = filtered_df.groupby(['cidade_predio', 'status']).size().unstack(fill_value=0)
+                st.bar_chart(status_city.head(10), use_container_width=True)
+        else:
+            st.info("Sem chamados no filtro selecionado para renderizar gráficos.")
+
     @st.dialog("Detalhes do Chamado", width="large")
     def show_ticket_details(row):
         # Cabeçalho do chamado unificado em um Expander aberto por padrão para economizar espaço se necessário
@@ -2417,7 +2922,7 @@ else:
             header_text = f"🎫 Chamado #{row['id']} – {title}"
         else:
             header_text = f"🎫 Chamado #{row['id']}"
-            
+        
         with st.expander(header_text, expanded=True):
             # Cria as duas colunas para otimizar espaço vertical
             col1, col2 = st.columns(2)
@@ -2572,173 +3077,174 @@ else:
         
     df_final_display = df_display[cols_for_dataframe]
     
-    st.subheader("Lista de Chamados")
-    st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha na tabela abaixo para abrir os Detalhes e Descrição no Modal.")
-    
-    # Controle de estado para evitar loop do modal
-    if "last_selected" not in st.session_state:
-        st.session_state["last_selected"] = None
-    
-    # Função para colorir as linhas do DataFrame de acordo com as TAGs e suas cores oficiais do Excel
-    def style_dataframe(row):
-        tag = str(row.get('tag', '')).upper().strip()
-        bg_color = TAG_COLORS.get(tag, "")
-        if bg_color:
-            # Garante contraste excelente calculando a luminância da cor de fundo
-            hex_color = bg_color.lstrip('#')
-            r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-            luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-            text_color = "#ffffff" if luminance < 0.6 else "#212529"
-            style = f"background-color: {bg_color}; color: {text_color};"
+    with main_tab_list:
+        st.subheader("Lista de Chamados")
+        st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha na tabela abaixo para abrir os Detalhes e Descrição no Modal.")
+        
+        # Controle de estado para evitar loop do modal
+        if "last_selected" not in st.session_state:
+            st.session_state["last_selected"] = None
+        
+        # Função para colorir as linhas do DataFrame de acordo com as TAGs e suas cores oficiais do Excel
+        def style_dataframe(row):
+            tag = str(row.get('tag', '')).upper().strip()
+            bg_color = TAG_COLORS.get(tag, "")
+            if bg_color:
+                # Garante contraste excelente calculando a luminância da cor de fundo
+                hex_color = bg_color.lstrip('#')
+                r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+                luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+                text_color = "#ffffff" if luminance < 0.6 else "#212529"
+                style = f"background-color: {bg_color}; color: {text_color};"
+            else:
+                style = ""
+                
+            return [style] * len(row)
+
+        # Configuramos o st.dataframe com seleção nativa e estilização de cores (Altamente compatível)
+        selection_event = st.dataframe(
+            df_final_display.style.apply(style_dataframe, axis=1),
+            column_order=cols_to_show, # Especifica quais colunas aparecem por padrão (oculta ip_origem)
+            column_config={
+                "id": st.column_config.LinkColumn("Chamado #", display_text=r".*#id:(.*)"),
+                "status": st.column_config.TextColumn("Status"),
+                "tag": st.column_config.TextColumn("TAG"),
+                "andamento": st.column_config.TextColumn("Andamento"),
+                "localidade_fisica": st.column_config.TextColumn("Localidade Física"),
+                "cidade_predio": st.column_config.TextColumn("Cidade - Prédio"),
+                "unidade": st.column_config.TextColumn("Unidade"),
+                "usuario": st.column_config.TextColumn("Usuário"),
+                "datetime_obj": st.column_config.DatetimeColumn("Data Criação", format="DD/MM/YYYY HH:mm:ss"),
+                "ip_origem": st.column_config.TextColumn("IP de Origem"),
+                "base": st.column_config.TextColumn("Base"),
+            },
+            hide_index=True,
+            width="stretch",
+            height=600,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="tabela_chamados_datagrid"
+        )
+
+        # Lógica para exibir o Modal baseado na seleção da linha
+        selected_rows = selection_event.selection.rows if hasattr(selection_event, "selection") else []
+        
+        if selected_rows:
+            current_selected = selected_rows[0]
+            if st.session_state["last_selected"] != current_selected:
+                st.session_state["last_selected"] = current_selected
+                row_data = filtered_df.iloc[current_selected]
+                show_ticket_details(row_data)
         else:
-            style = ""
-            
-        return [style] * len(row)
+            st.session_state["last_selected"] = None
 
-    # Configuramos o st.dataframe com seleção nativa e estilização de cores (Altamente compatível)
-    selection_event = st.dataframe(
-        df_final_display.style.apply(style_dataframe, axis=1),
-        column_order=cols_to_show, # Especifica quais colunas aparecem por padrão (oculta ip_origem)
-        column_config={
-            "id": st.column_config.LinkColumn("Chamado #", display_text=r".*#id:(.*)"),
-            "status": st.column_config.TextColumn("Status"),
-            "tag": st.column_config.TextColumn("TAG"),
-            "andamento": st.column_config.TextColumn("Andamento"),
-            "localidade_fisica": st.column_config.TextColumn("Localidade Física"),
-            "cidade_predio": st.column_config.TextColumn("Cidade - Prédio"),
-            "unidade": st.column_config.TextColumn("Unidade"),
-            "usuario": st.column_config.TextColumn("Usuário"),
-            "datetime_obj": st.column_config.DatetimeColumn("Data Criação", format="DD/MM/YYYY HH:mm:ss"),
-            "ip_origem": st.column_config.TextColumn("IP de Origem"),
-            "base": st.column_config.TextColumn("Base"),
-        },
-        hide_index=True,
-        width="stretch",
-        height=600,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="tabela_chamados_datagrid"
-    )
-
-    # Lógica para exibir o Modal baseado na seleção da linha
-    selected_rows = selection_event.selection.rows if hasattr(selection_event, "selection") else []
-    
-    if selected_rows:
-        current_selected = selected_rows[0]
-        if st.session_state["last_selected"] != current_selected:
-            st.session_state["last_selected"] = current_selected
-            row_data = filtered_df.iloc[current_selected]
-            show_ticket_details(row_data)
-    else:
-        st.session_state["last_selected"] = None
-
-    # NOVO: Seção para geração rápida de resumo para WhatsApp com interpretação de IA e problema completo
-    st.markdown("---")
-    st.subheader("📲 Compartilhar Fila por WhatsApp")
-    with st.expander("💬 Gerar Resumo Formatado (Pronto para copiar e enviar)", expanded=False):
-        if filtered_df.empty:
-            st.info("Nenhum chamado na fila filtrada.")
-        else:
-            # Opção de resumo com NLP Local
-            usar_resumo_ia = st.checkbox(
-                "✨ Usar Resumos Inteligentes (NLP Local)", 
-                value=True, 
-                help="Usa Processamento de Linguagem Natural (spaCy) rodando totalmente local para resumir o chamado em poucas palavras."
-            )
-            
-            def get_ai_diagnostico(tag, desc):
-                tag = str(tag).upper().strip()
-                desc = str(desc).strip()
+        # NOVO: Seção para geração rápida de resumo para WhatsApp com interpretação de IA e problema completo
+        st.markdown("---")
+        st.subheader("📲 Compartilhar Fila por WhatsApp")
+        with st.expander("💬 Gerar Resumo Formatado (Pronto para copiar e enviar)", expanded=False):
+            if filtered_df.empty:
+                st.info("Nenhum chamado na fila filtrada.")
+            else:
+                # Opção de resumo com NLP Local
+                usar_resumo_ia = st.checkbox(
+                    "✨ Usar Resumos Inteligentes (NLP Local)", 
+                    value=True, 
+                    help="Usa Processamento de Linguagem Natural (spaCy) rodando totalmente local para resumir o chamado em poucas palavras."
+                )
                 
-                # Limpeza de saudações iniciais para extrair sintoma puro
-                import re
-                clean_desc = re.sub(r'^(bom dia|boa tarde|boa noite|ola|prezados|favor|solicito|gostaria de)\b.*?\n', '', desc, flags=re.IGNORECASE)
-                clean_desc = clean_desc.strip()
-                
-                sentences = re.split(r'[.!?\n]', clean_desc)
-                first_sentence = ""
-                for s in sentences:
-                    s = s.strip()
-                    if len(s) > 10:
-                        first_sentence = s
-                        break
-                if not first_sentence:
-                    first_sentence = desc[:100]
-                    if len(desc) > 100:
-                        first_sentence += "..."
-                        
-                diagnosticos = {
-                    "BACKUP": "Cópia de segurança ou restauração de arquivos pendente.",
-                    "EVENTO": "Suporte técnico para eventos ou solenidades institucionais.",
-                    "FORMATAÇÃO": "Computador com lentidão extrema/travamento exigindo formatação e reinstalação de OS.",
-                    "GARANTIA": "Defeito físico de fábrica em equipamento que exige acionamento de suporte terceirizado.",
-                    "IMPRESSORA": "Instabilidade na fila de impressão local, papel atolado ou configuração de nova impressora de rede.",
-                    "INSTALAÇÃO HARDWARE": "Necessidade de substituição física ou acréscimo de componente de hardware na máquina.",
-                    "INSTALAÇÃO SOFTWARE": "Instalação, licenciamento ou atualização corretiva de programas corporativos.",
-                    "MANUTENÇÃO": "Necessidade de intervenção mecânica/elétrica, limpeza interna ou reaperto de conexões físicas.",
-                    "MONITOR": "Sem sinal de vídeo, tela preta, piscando ou distorcendo imagens de saída.",
-                    "MUDANÇA": "Deslocamento físico completo de equipamentos de informática entre salas ou comarcas.",
-                    "PREPARAÇÃO COMPUTADORES": "Configuração inicial de máquinas novas e perfis de rede para novos servidores.",
-                    "REDE": "Ausência total de internet, falha de rede física ou lentidão no tráfego de dados locais.",
-                    "SOLICITAÇÃO SSD": "Melhoria de desempenho físico de máquina lenta via substituição por disco de estado sólido (SSD).",
-                    "SUPORTE": "Instruções de uso básico ou esclarecimento de dúvidas técnicas em sistemas internos.",
-                    "TELEFONIA FIXA": "Aparelho de telefone mudo, ramal com ruídos/chiado ou necessidade de transferência de ramal.",
-                    "VIAGEM": "Deslocamento programado da equipe STI para atendimento em promotoria regional externa.",
-                    "VISTORIA CPDS": "Check-up preventivo completo nos servidores e no centro de processamento de dados local."
-                }
-                
-                diag = diagnosticos.get(tag, "Análise e resolução de ticket técnico STI.")
-                return f"🧠 *Possível Problema:* {diag}\n🩺 *Sintoma:* _{first_sentence}_"
- 
-            from src.database import get_comments_by_ticket
- 
-            lines = []
-            lines.append("📋 *LISTA DE CHAMADOS STI - MPMS* 📋\n")
-            for _, row in filtered_df.iterrows():
-                cid = str(row['id']).strip()
-                link = str(row.get('link', '')).strip()
-                if not link or link.lower() in ["none", "nan", "null", ""]:
-                    if row['base'] == 'CitSmart':
-                        link = f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}"
+                def get_ai_diagnostico(tag, desc):
+                    tag = str(tag).upper().strip()
+                    desc = str(desc).strip()
+                    
+                    # Limpeza de saudações iniciais para extrair sintoma puro
+                    import re
+                    clean_desc = re.sub(r'^(bom dia|boa tarde|boa noite|ola|prezados|favor|solicito|gostaria de)\b.*?\n', '', desc, flags=re.IGNORECASE)
+                    clean_desc = clean_desc.strip()
+                    
+                    sentences = re.split(r'[.!?\n]', clean_desc)
+                    first_sentence = ""
+                    for s in sentences:
+                        s = s.strip()
+                        if len(s) > 10:
+                            first_sentence = s
+                            break
+                    if not first_sentence:
+                        first_sentence = desc[:100]
+                        if len(desc) > 100:
+                            first_sentence += "..."
+                            
+                    diagnosticos = {
+                        "BACKUP": "Cópia de segurança ou restauração de arquivos pendente.",
+                        "EVENTO": "Suporte técnico para eventos ou solenidades institucionais.",
+                        "FORMATAÇÃO": "Computador com lentidão extrema/travamento exigindo formatação e reinstalação de OS.",
+                        "GARANTIA": "Defeito físico de fábrica em equipamento que exige acionamento de suporte terceirizado.",
+                        "IMPRESSORA": "Instabilidade na fila de impressão local, papel atolado ou configuração de nova impressora de rede.",
+                        "INSTALAÇÃO HARDWARE": "Necessidade de substituição física ou acréscimo de componente de hardware na máquina.",
+                        "INSTALAÇÃO SOFTWARE": "Instalação, licenciamento ou atualização corretiva de programas corporativos.",
+                        "MANUTENÇÃO": "Necessidade de intervenção mecânica/elétrica, limpeza interna ou reaperto de conexões físicas.",
+                        "MONITOR": "Sem sinal de vídeo, tela preta, piscando ou distorcendo imagens de saída.",
+                        "MUDANÇA": "Deslocamento físico completo de equipamentos de informática entre salas ou comarcas.",
+                        "PREPARAÇÃO COMPUTADORES": "Configuração inicial de máquinas novas e perfis de rede para novos servidores.",
+                        "REDE": "Ausência total de internet, falha de rede física ou lentidão no tráfego de dados locais.",
+                        "SOLICITAÇÃO SSD": "Melhoria de desempenho físico de máquina lenta via substituição por disco de estado sólido (SSD).",
+                        "SUPORTE": "Instruções de uso básico ou esclarecimento de dúvidas técnicas em sistemas internos.",
+                        "TELEFONIA FIXA": "Aparelho de telefone mudo, ramal com ruídos/chiado ou necessidade de transferência de ramal.",
+                        "VIAGEM": "Deslocamento programado da equipe STI para atendimento em promotoria regional externa.",
+                        "VISTORIA CPDS": "Check-up preventivo completo nos servidores e no centro de processamento de dados local."
+                    }
+                    
+                    diag = diagnosticos.get(tag, "Análise e resolução de ticket técnico STI.")
+                    return f"🧠 *Possível Problema:* {diag}\n🩺 *Sintoma:* _{first_sentence}_"
+     
+                from src.database import get_comments_by_ticket
+     
+                lines = []
+                lines.append("📋 *LISTA DE CHAMADOS STI - MPMS* 📋\n")
+                for _, row in filtered_df.iterrows():
+                    cid = str(row['id']).strip()
+                    link = str(row.get('link', '')).strip()
+                    if not link or link.lower() in ["none", "nan", "null", ""]:
+                        if row['base'] == 'CitSmart':
+                            link = f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}"
+                        else:
+                            link = "https://central.mpms.mp.br/otrs/index.pl"
+                    
+                    user = str(row['usuario'])
+                    loc = str(row['localidade_fisica'])
+                    tag = str(row['tag'])
+                    desc = str(row['descricao']).strip()
+                    
+                    # Recupera os comentários históricos do banco para enviar junto
+                    comments_list = get_comments_by_ticket(row['id'])
+                    comments_text = ""
+                    comments_summary_input = ""
+                    if comments_list:
+                        comments_text = "💬 *Histórico de Acompanhamento:*"
+                        comments_summary_input = "\n".join([f"- {c['data']} ({c['autor']}): {c['texto']}" for c in comments_list])
+                        for i, c in enumerate(comments_list, start=1):
+                            comments_text += f"\n  • #{i} [{c['data']}] – {c['autor']}: {c['texto']}"
+                    
+                    # Gera diagnóstico inteligente
+                    diagnostico_ia = get_ai_diagnostico(tag, desc)
+                    
+                    lines.append(f"🎫 *Chamado #{cid}* ({row['base']})")
+                    lines.append(f"👤 *Usuário:* {user}")
+                    lines.append(f"📍 *Local:* {loc}")
+                    lines.append(f"🏷️ *TAG:* {tag}")
+                    lines.append(f"{diagnostico_ia}")
+                    
+                    if usar_resumo_ia:
+                        resumo_nlp = summarize_ticket_locally(desc, comments_summary_input)
+                        lines.append(f"📝 *Resumo Inteligente:* {resumo_nlp}")
                     else:
-                        link = "https://central.mpms.mp.br/otrs/index.pl"
+                        lines.append(f"📝 *Problema Completo:*")
+                        lines.append(f"{desc}")
+                        if comments_text:
+                            lines.append(comments_text)
+                    
+                    lines.append(f"🔗 *Link Direto:* {link}")
+                    lines.append("--------------------------------------------------")
                 
-                user = str(row['usuario'])
-                loc = str(row['localidade_fisica'])
-                tag = str(row['tag'])
-                desc = str(row['descricao']).strip()
-                
-                # Recupera os comentários históricos do banco para enviar junto
-                comments_list = get_comments_by_ticket(row['id'])
-                comments_text = ""
-                comments_summary_input = ""
-                if comments_list:
-                    comments_text = "💬 *Histórico de Acompanhamento:*"
-                    comments_summary_input = "\n".join([f"- {c['data']} ({c['autor']}): {c['texto']}" for c in comments_list])
-                    for i, c in enumerate(comments_list, start=1):
-                        comments_text += f"\n  • #{i} [{c['data']}] – {c['autor']}: {c['texto']}"
-                
-                # Gera diagnóstico inteligente
-                diagnostico_ia = get_ai_diagnostico(tag, desc)
-                
-                lines.append(f"🎫 *Chamado #{cid}* ({row['base']})")
-                lines.append(f"👤 *Usuário:* {user}")
-                lines.append(f"📍 *Local:* {loc}")
-                lines.append(f"🏷️ *TAG:* {tag}")
-                lines.append(f"{diagnostico_ia}")
-                
-                if usar_resumo_ia:
-                    resumo_nlp = summarize_ticket_locally(desc, comments_summary_input)
-                    lines.append(f"📝 *Resumo Inteligente:* {resumo_nlp}")
-                else:
-                    lines.append(f"📝 *Problema Completo:*")
-                    lines.append(f"{desc}")
-                    if comments_text:
-                        lines.append(comments_text)
-                
-                lines.append(f"🔗 *Link Direto:* {link}")
-                lines.append("--------------------------------------------------")
-            
-            whats_text = "\n".join(lines)
-            st.write("Dica: Use o botão de **copiar** no canto superior direito do bloco de código abaixo:")
-            st.code(whats_text, language="text")
+                whats_text = "\n".join(lines)
+                st.write("Dica: Use o botão de **copiar** no canto superior direito do bloco de código abaixo:")
+                st.code(whats_text, language="text")

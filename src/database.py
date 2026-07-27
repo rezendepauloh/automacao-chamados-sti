@@ -133,11 +133,11 @@ def save_tickets_to_db(df: pd.DataFrame):
             # Campos comuns
             update_fields.extend([
                 "titulo = ?", "usuario = ?", "id_cliente = ?", "descricao = ?",
-                "ip_origem = ?", "data_atualizacao = ?", "base = ?", "link = ?", "hostname = ?"
+                "ip_origem = ?", "data_atualizacao = ?", "base = ?", "link = ?", "hostname = ?", "data_criacao = ?"
             ])
             update_params.extend([
                 row.get('Título', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''), row.get('Descrição', ''),
-                row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', '')
+                row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), row.get('Data Criação', '')
             ])
             
             # Se a tag NÃO for manual, atualiza
@@ -145,8 +145,8 @@ def save_tickets_to_db(df: pd.DataFrame):
                 update_fields.append("tag = ?")
                 update_params.append(row.get('TAG', ''))
                 
-            # Se a localidade/prédio/unidade NÃO for manual, atualiza
-            if dados_manuais != 1:
+            # Se a localidade/prédio/unidade NÃO for manual e o chamado NÃO estiver Fechado, atualiza
+            if dados_manuais != 1 and current_status != 'Fechado':
                 update_fields.extend(["cidade_predio = ?", "unidade = ?", "localidade_fisica = ?"])
                 update_params.extend([row.get('Cidade - Prédio', ''), row.get('Unidade', ''), row.get('Localidade física', '')])
                 

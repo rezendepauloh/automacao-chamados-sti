@@ -279,20 +279,13 @@ def main():
     if tamanho_antes != tamanho_depois:
         logger.info(f"⚠️ {tamanho_antes - tamanho_depois} chamados duplicados foram removidos!")
     
-    # 2. Padroniza a Data de Criação (Resolve os fusos e o padrão americano)
+    # 2. Padroniza a Data de Criação (Preserva o fuso local de Campo Grande/MS capturado dos portais)
     if 'Data Criação' in combined.columns:
-        # pd.to_datetime com utc=True converte todos os horários de forma consistente,
-        # em seguida convertemos de volta para o fuso horário local de Campo Grande para não distorcer as horas
         dt_col = pd.to_datetime(
             combined['Data Criação'], 
             errors='coerce', 
-            dayfirst=True, 
-            utc=True
+            dayfirst=True
         )
-        try:
-            dt_col = dt_col.dt.tz_convert('America/Campo_Grande')
-        except Exception:
-            pass
         combined['Data Criação'] = dt_col.dt.strftime('%Y-%m-%d %H:%M:%S').fillna(combined['Data Criação'])
 
     # 3. Limpa espaços extras no começo e no fim dos IDs e Nomes
