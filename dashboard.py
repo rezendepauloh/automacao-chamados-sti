@@ -1883,13 +1883,14 @@ def render_donations_page():
 
 
 def render_faq_page():
-    """Renderiza a página de FAQs e Tutoriais do SharePoint com modal leitor interativo."""
-    st.title("📚 FAQ & Tutoriais da Bancada / MPMS")
-    st.write("Base de conhecimento centralizada com os guias, manutenções e procedimentos da equipe.")
+    """Renderiza a página de FAQs, Tutoriais do SharePoint e Links Úteis da Bancada."""
+    st.title("📚 FAQ, Tutoriais & Links Úteis da Bancada")
+    st.write("Base de conhecimento centralizada com tutoriais da equipe e atalhos rápidos para sistemas externos.")
     st.markdown("---")
 
     db_path = root_dir / "chamados.db"
-    json_path = root_dir / "temp" / "faqs_template.json"
+    json_faq_path = root_dir / "temp" / "faqs_template.json"
+    json_links_path = root_dir / "temp" / "links_uteis_template.json"
     
     # Sincroniza/Cria a tabela faqs no SQLite a partir do JSON se necessário
     try:
@@ -1913,13 +1914,13 @@ def render_faq_page():
             cursor.execute("ALTER TABLE faqs ADD COLUMN conteudo TEXT")
             conn.commit()
 
-        # Importa registros do JSON caso o banco esteja vazio
+        # Importa registros do JSON de FAQs caso o banco esteja vazio
         cursor.execute("SELECT COUNT(*) FROM faqs")
         count = cursor.fetchone()[0]
 
-        if count == 0 and json_path.exists():
+        if count == 0 and json_faq_path.exists():
             import json
-            with open(json_path, "r", encoding="utf-8") as f:
+            with open(json_faq_path, "r", encoding="utf-8") as f:
                 faqs_json = json.load(f)
             
             for item in faqs_json:
@@ -1935,103 +1936,144 @@ def render_faq_page():
         st.error(f"Erro ao carregar banco de dados de FAQs: {e}")
         df_faqs = pd.DataFrame()
 
-    if df_faqs.empty:
-        st.info("Nenhum FAQ cadastrado no momento.")
-        return
+    # Carrega Links Úteis
+    links_uteis = []
+    if json_links_path.exists():
+        import json
+        try:
+            with open(json_links_path, "r", encoding="utf-8") as f:
+                links_uteis = json.load(f)
+        except Exception as e:
+            logger.error(f"Erro ao ler links_uteis_template.json: {e}")
 
-    # Modal para Leitura do Conteúdo do FAQ
-    @st.dialog("📖 Leitor de FAQ", width="large")
-    def open_faq_modal(faq_id):
-        faq_item = df_faqs[df_faqs['id'] == faq_id].iloc[0]
-        
-        # CSS de estilização refinada para a leitura dos tutoriais no modal
-        st.markdown("""
-        <style>
-        .faq-container {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            color: #e0e0e0;
-            line-height: 1.6;
-        }
-        .faq-container h1, .faq-container h2, .faq-container h3, .faq-container h4 {
-            color: #ffffff !important;
-            margin-top: 1.5rem;
-            margin-bottom: 0.75rem;
-            font-weight: 600;
-        }
-        .faq-container p {
-            margin-bottom: 1rem;
-            font-size: 0.95rem;
-        }
-        .faq-container img {
-            max-width: 100% !important;
-            height: auto !important;
-            border-radius: 8px !important;
-            margin: 16px 0 !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
-            border: 1px solid #343541 !important;
-        }
-        .faq-container ol, .faq-container ul {
-            padding-left: 1.5rem;
-            margin-bottom: 1rem;
-        }
-        .faq-container li {
-            margin-bottom: 0.4rem;
-        }
-        .faq-container code {
-            background-color: #2a2b36;
-            color: #ff4b4b;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+    # Criação das Abas Principais
+    tab_faqs, tab_links = st.tabs(["📚 FAQs & Tutoriais (SharePoint)", "🔗 Links Úteis da Bancada"])
 
-        st.subheader(faq_item['titulo'])
-        st.caption(f"Categoria: **{faq_item['tipo_faq']}**")
-        st.markdown("---")
-        
-        if faq_item['conteudo'] and str(faq_item['conteudo']).strip():
-            st.markdown(f'<div class="faq-container">{faq_item["conteudo"]}</div>', unsafe_allow_html=True)
+    with tab_faqs:
+        if df_faqs.empty:
+            st.info("Nenhum FAQ cadastrado no momento.")
         else:
-            st.info("O conteúdo detalhado deste FAQ ainda não foi sincronizado localmente.")
-            st.write("Você pode visualizar o tutorial completo diretamente no SharePoint pelo botão abaixo.")
-            
-        st.markdown("---")
-        st.markdown(f'<a href="{faq_item["url"]}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 6px;">🔗 Abrir no SharePoint (Nova Aba) ↗</a>', unsafe_allow_html=True)
-
-    # Filtros e Busca na Sidebar Lateral Esquerda
-    st.sidebar.markdown("## 🔍 Filtros do FAQ")
-    search_query = st.sidebar.text_input("Buscar por palavra-chave:", "")
-    
-    tipos_disponiveis = ["Todos"] + sorted(df_faqs['tipo_faq'].dropna().unique().tolist())
-    selected_tipo = st.sidebar.selectbox("📂 Categoria:", tipos_disponiveis)
-
-    # Aplicação dos Filtros
-    filtered_df = df_faqs.copy()
-    if search_query:
-        filtered_df = filtered_df[filtered_df['titulo'].str.contains(search_query, case=False, na=False)]
-    if selected_tipo != "Todos":
-        filtered_df = filtered_df[filtered_df['tipo_faq'] == selected_tipo]
-
-    st.markdown(f"**Exibindo {len(filtered_df)} de {len(df_faqs)} FAQs / Tutoriais**")
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Exibição dos FAQs em Cards num grid de 2 colunas
-    cols = st.columns(2)
-    for index, row in filtered_df.iterrows():
-        col_target = cols[index % 2]
-        with col_target:
-            with st.container(border=True):
-                st.caption(f"📌 {row['tipo_faq']}")
-                st.subheader(row['titulo'])
+            # Modal para Leitura do Conteúdo do FAQ
+            @st.dialog("📖 Leitor de FAQ", width="large")
+            def open_faq_modal(faq_id):
+                faq_item = df_faqs[df_faqs['id'] == faq_id].iloc[0]
                 
-                c_btn1, c_btn2 = st.columns([1, 1])
-                with c_btn1:
-                    if st.button("📖 Ler Tutorial", key=f"btn_read_{row['id']}", use_container_width=True):
-                        open_faq_modal(row['id'])
-                with c_btn2:
-                    st.markdown(f'<a href="{row["url"]}" target="_blank" style="display: block; text-align: center; background-color: #2a2b36; border: 1px solid #343541; color: white; text-decoration: none; font-size: 0.85rem; padding: 6px; border-radius: 6px; font-weight: bold;">🔗 SharePoint ↗</a>', unsafe_allow_html=True)
+                st.markdown("""
+                <style>
+                .faq-container {
+                    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+                    color: #e0e0e0;
+                    line-height: 1.6;
+                }
+                .faq-container h1, .faq-container h2, .faq-container h3, .faq-container h4 {
+                    color: #ffffff !important;
+                    margin-top: 1.5rem;
+                    margin-bottom: 0.75rem;
+                    font-weight: 600;
+                }
+                .faq-container p {
+                    margin-bottom: 1rem;
+                    font-size: 0.95rem;
+                }
+                .faq-container img {
+                    max-width: 100% !important;
+                    height: auto !important;
+                    border-radius: 8px !important;
+                    margin: 16px 0 !important;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+                    border: 1px solid #343541 !important;
+                }
+                .faq-container ol, .faq-container ul {
+                    padding-left: 1.5rem;
+                    margin-bottom: 1rem;
+                }
+                .faq-container li {
+                    margin-bottom: 0.4rem;
+                }
+                .faq-container code {
+                    background-color: #2a2b36;
+                    color: #ff4b4b;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    font-size: 0.9rem;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                st.subheader(faq_item['titulo'])
+                st.caption(f"Categoria: **{faq_item['tipo_faq']}**")
+                st.markdown("---")
+                
+                if faq_item['conteudo'] and str(faq_item['conteudo']).strip():
+                    st.markdown(f'<div class="faq-container">{faq_item["conteudo"]}</div>', unsafe_allow_html=True)
+                else:
+                    st.info("O conteúdo detalhado deste FAQ ainda não foi sincronizado localmente.")
+                    st.write("Você pode visualizar o tutorial completo diretamente no SharePoint pelo botão abaixo.")
+                    
+                st.markdown("---")
+                st.markdown(f'<a href="{faq_item["url"]}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 6px;">🔗 Abrir no SharePoint (Nova Aba) ↗</a>', unsafe_allow_html=True)
+
+            # Filtros e Busca na Sidebar Lateral Esquerda para FAQs
+            st.sidebar.markdown("## 🔍 Filtros do FAQ")
+            search_query = st.sidebar.text_input("Buscar por palavra-chave:", "", key="faq_search")
+            
+            tipos_disponiveis = ["Todos"] + sorted(df_faqs['tipo_faq'].dropna().unique().tolist())
+            selected_tipo = st.sidebar.selectbox("📂 Categoria:", tipos_disponiveis, key="faq_cat")
+
+            # Aplicação dos Filtros
+            filtered_df = df_faqs.copy()
+            if search_query:
+                filtered_df = filtered_df[filtered_df['titulo'].str.contains(search_query, case=False, na=False)]
+            if selected_tipo != "Todos":
+                filtered_df = filtered_df[filtered_df['tipo_faq'] == selected_tipo]
+
+            st.markdown(f"**Exibindo {len(filtered_df)} de {len(df_faqs)} FAQs / Tutoriais**")
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Exibição dos FAQs em Cards num grid de 2 colunas
+            cols = st.columns(2)
+            for index, row in filtered_df.iterrows():
+                col_target = cols[index % 2]
+                with col_target:
+                    with st.container(border=True):
+                        st.caption(f"📌 {row['tipo_faq']}")
+                        st.subheader(row['titulo'])
+                        
+                        c_btn1, c_btn2 = st.columns([1, 1])
+                        with c_btn1:
+                            if st.button("📖 Ler Tutorial", key=f"btn_read_{row['id']}", use_container_width=True):
+                                open_faq_modal(row['id'])
+                        with c_btn2:
+                            st.markdown(f'<a href="{row["url"]}" target="_blank" style="display: block; text-align: center; background-color: #2a2b36; border: 1px solid #343541; color: white; text-decoration: none; font-size: 0.85rem; padding: 6px; border-radius: 6px; font-weight: bold;">🔗 SharePoint ↗</a>', unsafe_allow_html=True)
+
+    with tab_links:
+        st.subheader("🌐 Links e Atalhos Rápidos da Bancada")
+        st.write("Acesso direto aos sistemas operacionais, filas de atendimento e ferramentas externas.")
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if not links_uteis:
+            st.info("Nenhum link útil cadastrado em `temp/links_uteis_template.json`.")
+        else:
+            # Busca de Links Rápidos
+            search_link = st.text_input("🔍 Pesquisar por Nome do Sistema / Link:", "", key="search_link_input")
+            
+            filtered_links = links_uteis
+            if search_link:
+                filtered_links = [l for l in links_uteis if search_link.lower() in l.get("titulo", "").lower()]
+
+            # Exibe os links em um grid elegante de 3 colunas
+            link_cols = st.columns(3)
+            for idx, item in enumerate(filtered_links):
+                col_lk = link_cols[idx % 3]
+                with col_lk:
+                    with st.container(border=True):
+                        st.markdown(f"#### 🚀 {item.get('titulo', 'Sem Título')}")
+                        st.caption(item.get("url", ""))
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.markdown(
+                            f'<a href="{item.get("url")}" target="_blank" style="display: block; text-align: center; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; padding: 10px; border-radius: 6px;">🔗 Acessar Sistema ↗</a>', 
+                            unsafe_allow_html=True
+                        )
 
 
 
@@ -2664,13 +2706,19 @@ else:
         st.session_state["f_bases"] = []
     if "f_user" not in st.session_state:
         st.session_state["f_user"] = ""
+    if "f_mode" not in st.session_state:
+        st.session_state["f_mode"] = "🟢 Manter Selecionados"
+    if "f_ticket_ids" not in st.session_state:
+        st.session_state["f_ticket_ids"] = []
 
     def get_filtered_options(col_name: str) -> list:
         """
         Calcula as opções únicas disponíveis para uma coluna específica,
-        aplicando todos os filtros ativos, exceto o filtro da própria coluna.
+        aplicando todos os filtros ativos, exceto o filtro da própria coluna,
+        respeitando o modo de filtragem (Manter vs Ocultar).
         """
         temp_df = df.copy()
+        is_exclude_mode = (st.session_state.get("f_mode") == "🔴 Ocultar Selecionados")
         
         # 1. Filtro de data
         dr = st.session_state.get("f_date_range", (min_date, max_date))
@@ -2681,27 +2729,48 @@ else:
                 (temp_df['datetime_obj'].dt.date <= end_date)
             ]
             
-        # 2. Aplica demais filtros (exceto o próprio)
+        # 2. Aplica demais filtros (exceto o próprio) respeitando o modo de exclusão
         if col_name != 'status' and st.session_state.get("f_status"):
-            temp_df = temp_df[temp_df['status'].isin(st.session_state["f_status"])]
+            if is_exclude_mode:
+                temp_df = temp_df[~temp_df['status'].isin(st.session_state["f_status"])]
+            else:
+                temp_df = temp_df[temp_df['status'].isin(st.session_state["f_status"])]
             
         if col_name != 'tag' and st.session_state.get("f_tags"):
-            temp_df = temp_df[temp_df['tag'].isin(st.session_state["f_tags"])]
+            if is_exclude_mode:
+                temp_df = temp_df[~temp_df['tag'].isin(st.session_state["f_tags"])]
+            else:
+                temp_df = temp_df[temp_df['tag'].isin(st.session_state["f_tags"])]
             
         if col_name != 'localidade_fisica' and st.session_state.get("custom_loc_selection"):
-            temp_df = temp_df[temp_df['localidade_fisica'].isin(st.session_state["custom_loc_selection"])]
+            if is_exclude_mode:
+                temp_df = temp_df[~temp_df['localidade_fisica'].isin(st.session_state["custom_loc_selection"])]
+            else:
+                temp_df = temp_df[temp_df['localidade_fisica'].isin(st.session_state["custom_loc_selection"])]
             
         if col_name != 'cidade_predio' and st.session_state.get("f_cities"):
-            temp_df = temp_df[temp_df['cidade_predio'].isin(st.session_state["f_cities"])]
+            if is_exclude_mode:
+                temp_df = temp_df[~temp_df['cidade_predio'].isin(st.session_state["f_cities"])]
+            else:
+                temp_df = temp_df[temp_df['cidade_predio'].isin(st.session_state["f_cities"])]
             
         if col_name != 'unidade' and st.session_state.get("f_units"):
-            temp_df = temp_df[temp_df['unidade'].isin(st.session_state["f_units"])]
+            if is_exclude_mode:
+                temp_df = temp_df[~temp_df['unidade'].isin(st.session_state["f_units"])]
+            else:
+                temp_df = temp_df[temp_df['unidade'].isin(st.session_state["f_units"])]
             
         if col_name != 'base' and st.session_state.get("f_bases"):
-            temp_df = temp_df[temp_df['base'].isin(st.session_state["f_bases"])]
+            if is_exclude_mode:
+                temp_df = temp_df[~temp_df['base'].isin(st.session_state["f_bases"])]
+            else:
+                temp_df = temp_df[temp_df['base'].isin(st.session_state["f_bases"])]
             
         if col_name != 'usuario' and st.session_state.get("f_user"):
-            temp_df = temp_df[temp_df['usuario'].str.contains(st.session_state["f_user"], case=False, na=False)]
+            if is_exclude_mode:
+                temp_df = temp_df[~temp_df['usuario'].str.contains(st.session_state["f_user"], case=False, na=False)]
+            else:
+                temp_df = temp_df[temp_df['usuario'].str.contains(st.session_state["f_user"], case=False, na=False)]
             
         options = sorted(list(temp_df[col_name].dropna().unique()))
         
@@ -2728,13 +2797,37 @@ else:
                     
         return options
 
-    # Layout do título de Filtros e do Botão de Limpar
-    col_h, col_b = st.sidebar.columns([5, 4])
-    with col_h:
-        st.markdown("### Filtros")
-    with col_b:
-        # Botão menor e elegante alinhado horizontalmente
-        if st.button("🧹 Limpar", help="Limpa todos os filtros ativos de uma vez"):
+    # Cabeçalho dos Filtros na Sidebar
+    st.sidebar.markdown("### 🔍 Filtros de Chamados")
+    
+    # Seletor de Modo do Filtro (Inclusão vs Exclusão)
+    filter_mode = st.sidebar.radio(
+        "Modo de Filtragem:",
+        options=["🟢 Manter Selecionados", "🔴 Ocultar Selecionados"],
+        key="f_mode",
+        horizontal=True,
+        help="🟢 Manter: Mostra apenas os itens escolhidos.\n🔴 Ocultar: Exibe tudo EXCETO os itens escolhidos (ideal para 'Todos Menos Um')."
+    )
+    
+    # Opções carregadas antecipadamente para o botão Marcar Todos
+    status_options = get_filtered_options('status')
+    tag_options = get_filtered_options('tag')
+    city_options = get_filtered_options('cidade_predio')
+    unit_options = get_filtered_options('unidade')
+    base_options = get_filtered_options('base')
+
+    # Botões rápidos Marcar Todos / Limpar Tudo
+    col_btn_sel1, col_btn_sel2 = st.sidebar.columns(2)
+    with col_btn_sel1:
+        if st.button("☑️ Marcar Todos", use_container_width=True, help="Seleciona todas as opções para que você possa remover apenas uma ou duas"):
+            st.session_state["f_status"] = list(status_options)
+            st.session_state["f_tags"] = list(tag_options)
+            st.session_state["f_cities"] = list(city_options)
+            st.session_state["f_units"] = list(unit_options)
+            st.session_state["f_bases"] = list(base_options)
+            st.rerun()
+    with col_btn_sel2:
+        if st.button("🧹 Limpar Tudo", use_container_width=True, help="Limpa todos os filtros ativos de uma vez"):
             st.session_state["f_date_range"] = (min_date, max_date)
             st.session_state["f_status"] = []
             st.session_state["f_tags"] = []
@@ -2743,8 +2836,11 @@ else:
             st.session_state["f_units"] = []
             st.session_state["f_bases"] = []
             st.session_state["f_user"] = ""
+            st.session_state["f_ticket_ids"] = []
             st.rerun()
-            
+
+    st.sidebar.markdown("---")
+
     # Filtro de Datas (Calendário)
     date_range = st.sidebar.date_input(
         "Intervalo de Datas",
@@ -2756,7 +2852,6 @@ else:
     )
     
     # Filtros Multi-seleção com opções dinâmicas dependentes
-    status_options = get_filtered_options('status')
     selected_status = st.sidebar.multiselect(
         "Status", 
         options=status_options, 
@@ -2764,9 +2859,8 @@ else:
         placeholder="Escolha as opções..."
     )
     
-    tag_options = get_filtered_options('tag')
     selected_tags = st.sidebar.multiselect(
-        "TAG", 
+        "TAG (Categoria de IA)", 
         options=tag_options, 
         key="f_tags", 
         placeholder="Escolha as opções..."
@@ -2789,7 +2883,6 @@ else:
     if selected_locs is None:
         selected_locs = []
     
-    city_options = get_filtered_options('cidade_predio')
     selected_cities = st.sidebar.multiselect(
         "Cidade - Prédio", 
         options=city_options, 
@@ -2797,7 +2890,6 @@ else:
         placeholder="Escolha as opções..."
     )
     
-    unit_options = get_filtered_options('unidade')
     selected_units = st.sidebar.multiselect(
         "Unidade", 
         options=unit_options, 
@@ -2806,7 +2898,6 @@ else:
     )
     
     # Filtro de Base (CitSmart/OTRS)
-    base_options = get_filtered_options('base')
     selected_bases = st.sidebar.multiselect(
         "Base de Origem", 
         options=base_options, 
@@ -2820,12 +2911,10 @@ else:
         key="f_user", 
         placeholder="Digite o nome do usuário..."
     )
-    
-    st.sidebar.markdown("---")
-    
 
-    # Aplica os filtros
+    # Aplica os filtros principais primeiro
     filtered_df = df.copy()
+    is_exclude_mode = (filter_mode == "🔴 Ocultar Selecionados")
     
     # Filtro de data
     if isinstance(date_range, tuple) and len(date_range) == 2:
@@ -2836,19 +2925,80 @@ else:
         ]
         
     if selected_status:
-        filtered_df = filtered_df[filtered_df['status'].isin(selected_status)]
+        if is_exclude_mode:
+            filtered_df = filtered_df[~filtered_df['status'].isin(selected_status)]
+        else:
+            filtered_df = filtered_df[filtered_df['status'].isin(selected_status)]
+
     if selected_tags:
-        filtered_df = filtered_df[filtered_df['tag'].isin(selected_tags)]
+        if is_exclude_mode:
+            filtered_df = filtered_df[~filtered_df['tag'].isin(selected_tags)]
+        else:
+            filtered_df = filtered_df[filtered_df['tag'].isin(selected_tags)]
+
     if selected_locs:
-        filtered_df = filtered_df[filtered_df['localidade_fisica'].isin(selected_locs)]
+        if is_exclude_mode:
+            filtered_df = filtered_df[~filtered_df['localidade_fisica'].isin(selected_locs)]
+        else:
+            filtered_df = filtered_df[filtered_df['localidade_fisica'].isin(selected_locs)]
+
     if selected_cities:
-        filtered_df = filtered_df[filtered_df['cidade_predio'].isin(selected_cities)]
+        if is_exclude_mode:
+            filtered_df = filtered_df[~filtered_df['cidade_predio'].isin(selected_cities)]
+        else:
+            filtered_df = filtered_df[filtered_df['cidade_predio'].isin(selected_cities)]
+
     if selected_units:
-        filtered_df = filtered_df[filtered_df['unidade'].isin(selected_units)]
+        if is_exclude_mode:
+            filtered_df = filtered_df[~filtered_df['unidade'].isin(selected_units)]
+        else:
+            filtered_df = filtered_df[filtered_df['unidade'].isin(selected_units)]
+
     if selected_bases:
-        filtered_df = filtered_df[filtered_df['base'].isin(selected_bases)]
+        if is_exclude_mode:
+            filtered_df = filtered_df[~filtered_df['base'].isin(selected_bases)]
+        else:
+            filtered_df = filtered_df[filtered_df['base'].isin(selected_bases)]
+
     if user_search:
-        filtered_df = filtered_df[filtered_df['usuario'].str.contains(user_search, case=False, na=False)]
+        if is_exclude_mode:
+            filtered_df = filtered_df[~filtered_df['usuario'].str.contains(user_search, case=False, na=False)]
+        else:
+            filtered_df = filtered_df[filtered_df['usuario'].str.contains(user_search, case=False, na=False)]
+
+    st.sidebar.markdown("---")
+    
+    # Filtro Específico por Chamado Individual (alimentado pelos chamados filtrados ou pela base completa se vazio)
+    source_df = filtered_df if not filtered_df.empty else df
+    df_tickets_list = source_df[['id', 'titulo']].copy()
+    ids_clean = df_tickets_list['id'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+    titles_clean = df_tickets_list['titulo'].fillna("Sem Título").astype(str).str.strip()
+    labels = ids_clean + " - " + titles_clean
+    ticket_options = sorted(labels.unique().tolist())
+    
+    # Garante que qualquer chamado já selecionado continue na lista de opções para evitar erros do Streamlit
+    current_sel_tickets = st.session_state.get("f_ticket_ids", [])
+    for sel_t in current_sel_tickets:
+        if sel_t not in ticket_options:
+            ticket_options.append(sel_t)
+
+    selected_tickets = st.sidebar.multiselect(
+        "🎫 Chamados Específicos (por ID / Título)",
+        options=ticket_options,
+        key="f_ticket_ids",
+        placeholder="Selecione chamados individuais..."
+    )
+    
+    st.sidebar.markdown("---")
+
+    # Aplica o filtro de chamados específicos selecionados
+    if selected_tickets:
+        selected_ids = [t.split(" - ")[0].strip() for t in selected_tickets]
+        clean_df_ids = filtered_df['id'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        if is_exclude_mode:
+            filtered_df = filtered_df[~clean_df_ids.isin(selected_ids)]
+        else:
+            filtered_df = filtered_df[clean_df_ids.isin(selected_ids)]
         
     # Exibe métricas no topo
     col1, col2, col3 = st.columns(3)
@@ -3078,8 +3228,72 @@ else:
     df_final_display = df_display[cols_for_dataframe]
     
     with main_tab_list:
-        st.subheader("Lista de Chamados")
-        st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha na tabela abaixo para abrir os Detalhes e Descrição no Modal.")
+        col_tbl_head, col_tbl_cap = st.columns([3, 2])
+        with col_tbl_head:
+            st.subheader(f"📋 Lista de Chamados ({len(filtered_df)} registros)")
+            st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha para abrir os Detalhes no Modal.")
+        with col_tbl_cap:
+            components.html("""
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+            <div style="text-align: right; padding-top: 5px;">
+                <button id="btn-cap-tbl" onclick="captureTable()" style="
+                    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                    color: white;
+                    border: none;
+                    padding: 8px 14px;
+                    font-size: 0.85rem;
+                    font-weight: bold;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                    transition: all 0.2s ease;
+                ">
+                    📸 Baixar Tabela em Alta Resolução (PNG)
+                </button>
+            </div>
+            <script>
+            function captureTable() {
+                const btn = document.getElementById("btn-cap-tbl");
+                btn.innerText = "⏳ Gerando PNG em alta resolução...";
+                btn.disabled = true;
+
+                const tableEl = window.parent.document.querySelector('div[data-testid="stDataFrame"]') || 
+                                window.parent.document.querySelector('.stDataFrame');
+
+                if (!tableEl) {
+                    alert("Não foi possível encontrar a tabela na tela.");
+                    btn.innerText = "📸 Baixar Tabela em Alta Resolução (PNG)";
+                    btn.disabled = false;
+                    return;
+                }
+
+                html2canvas(tableEl, {
+                    scale: 2.5,
+                    useCORS: true,
+                    backgroundColor: "#0e1117",
+                    logging: false
+                }).then(canvas => {
+                    const link = document.createElement("a");
+                    const d = new Date();
+                    const dateStr = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,'0') + "-" + String(d.getDate()).padStart(2,'0');
+                    link.download = `tabela_chamados_sti_${dateStr}.png`;
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+
+                    btn.innerText = "✅ Imagem Salva!";
+                    setTimeout(() => {
+                        btn.innerText = "📸 Baixar Tabela em Alta Resolução (PNG)";
+                        btn.disabled = false;
+                    }, 3000);
+                }).catch(err => {
+                    console.error("Erro no html2canvas:", err);
+                    alert("Erro ao capturar tabela: " + err);
+                    btn.innerText = "📸 Baixar Tabela em Alta Resolução (PNG)";
+                    btn.disabled = false;
+                });
+            }
+            </script>
+            """, height=65)
         
         # Controle de estado para evitar loop do modal
         if "last_selected" not in st.session_state:

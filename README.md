@@ -46,6 +46,18 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 - **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot automatizado com navegação em modo headless via `Playwright` que varre as páginas institucionais de tutoriais do SharePoint DIT-Manutenção, extrai a árvore de conteúdo em HTML limpo (preservando imagens, tabelas e estilizações) e armazena na tabela relacional `faqs` do SQLite.
 - **Leitor Interativo e Modal no Dashboard (`st.dialog`):** Aba dedicada de FAQs e Tutoriais no dashboard com barra de busca inteligente por palavra-chave e filtro de categorias na sidebar. Permite a leitura completa do tutorial formatado em modal popup direto no sistema, com opção de link para abertura na aba original (`target="_blank"`).
 
+### 8. Visualizador & Fiscalização de Contratos (Processos SAJ)
+- **Integração em Tempo Real com OneDrive/SharePoint:** Leitura automatizada da planilha oficial de indicações de fiscais, portarias e processos SAJ sincronizada na nuvem.
+- **Cards KPI & Resumo por Fiscal:** Indicadores de topo com contagem detalhada da carga de trabalho dos fiscais (funções de Fiscal Titular vs Suplente).
+- **Filtros Dinâmicos:** Filtro por fiscal responsável e caixa de busca textual abrangente por número SAJ, objeto do contrato ou nota de empenho.
+- **Visualização Multi-Abas Interativa:**
+  - 📋 **Indicações de Fiscais:** Tabela completa dos processos com botão integrado para **Exportação filtrada para Excel**.
+  - 📈 **Gráficos & Estatísticas:** Gráficos comparativos de carga de trabalho e **categorização inteligente automatizada** por tipo de suprimento/equipamento (Desktops, Notebooks, Monitores, Periféricos, Telefonia, Conectividade, etc.).
+  - 📰 **Publicações & Portarias:** Acompanhamento de portarias publicadas em Diário Oficial.
+  - 📊 **Tabela Contadora:** Visão geral da aba consolidada da planilha.
+- **Sincronização Sob Demanda:** Botão no cabeçalho que limpa o cache do Streamlit e recarrega instantaneamente os dados mais recentes da planilha sem reiniciar a aplicação.
+
+
 ---
 
 ## 🛠️ Tecnologias Utilizadas
