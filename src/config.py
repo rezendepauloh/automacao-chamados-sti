@@ -59,7 +59,7 @@ MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
 MASTER_FILE_PATH = USER_HOME / os.getenv("SHAREPOINT_RELATIVE_PATH", "")
 DONATIONS_FILE_PATH = USER_HOME / os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
-
+SHAREPOINT_MATUTINO_URL = os.getenv("SHAREPOINT_MATUTINO_URL", "https://ministeriopublicoms.sharepoint.com/:x:/s/DIT/EdhJA61Nq41LorRyJ0Ld9sYBICxIa2oUTfOvUiunxHLmjw?e=A6grDw")
 
 # OTRS
 DEBUG_DIR_OTRS = BASE_DIR / "debug_logs" / "otrs"
@@ -102,6 +102,14 @@ DEBUG_DIR_ORQUESTRADOR.mkdir(parents=True, exist_ok=True)
 # Leaflet Map Logs
 DEBUG_DIR_LEAFLET = BASE_DIR / "debug_logs" / "leaflet"
 DEBUG_DIR_LEAFLET.mkdir(parents=True, exist_ok=True)
+
+# FAQ Logs
+DEBUG_DIR_FAQ = BASE_DIR / "debug_logs" / "faq"
+DEBUG_DIR_FAQ.mkdir(parents=True, exist_ok=True)
+
+# Plantao Logs
+DEBUG_DIR_PLANTOES = BASE_DIR / "debug_logs" / "plantoes"
+DEBUG_DIR_PLANTOES.mkdir(parents=True, exist_ok=True)
 
 LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"
 

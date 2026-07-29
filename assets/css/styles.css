@@ -1,0 +1,65 @@
+/* Oculta apenas o botão de Deploy do cabeçalho */
+[data-testid="stAppDeployButton"], .stAppDeployButton {
+    display: none !important;
+}
+/* Remove rodapé padrão */
+footer {
+    display: none !important;
+}
+/* Borda fina vermelha e glow suave para o modal (st.dialog) */
+div[data-testid="stDialog"] > div:first-child,
+div[role="dialog"] {
+    border: 2px solid #ff4b4b !important;
+    box-shadow: 0 0 15px rgba(255, 75, 75, 0.3) !important;
+    border-radius: 8px !important;
+}
+/* Reduz drasticamente o padding superior e ancora o posicionamento absoluto */
+.block-container, div[data-testid="stMainBlockContainer"] {
+    padding-top: 1.5rem !important;
+    padding-bottom: 1rem !important;
+    position: relative !important;
+}
+/* Posiciona o botão Popover de navegação no header nativo do Streamlit, compacto no canto superior direito */
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    pointer-events: none !important;
+}
+header[data-testid="stHeader"] * {
+    pointer-events: auto !important;
+}
+div[data-testid="stMainBlockContainer"] > div:first-child > div[data-testid="stPopover"],
+.main div[data-testid="stPopover"] {
+    position: fixed !important;
+    top: 0.4rem !important;
+    right: 4.5rem !important;
+    width: auto !important;
+    z-index: 999999 !important;
+}
+div[data-testid="stMainBlockContainer"] > div:first-child > div[data-testid="stPopover"] > button,
+.main div[data-testid="stPopover"] > button {
+    background-color: #1e1f25 !important;
+    border: 1px solid #343541 !important;
+    padding: 4px 12px !important;
+    height: auto !important;
+    min-height: 0px !important;
+    width: auto !important;
+    font-size: 0.85rem !important;
+    color: #ffffff !important;
+    border-radius: 6px !important;
+}
+div[data-testid="stPopover"] > button:hover {
+    border-color: #ff4b4b !important;
+    color: #ff4b4b !important;
+}
+/* Garante que o dataframe ocupe 100% da tela quando entrar no modo Tela Cheia (Fullscreen) */
+div[data-testid="stDataFrame"][data-st-mode="fullscreen"],
+div[data-testid="stElementContainer"]:aria-modal,
+:fullscreen div[data-testid="stDataFrame"],
+:fullscreen div[data-testid="stDataFrame"] > div,
+[data-testid="stDataFrame"]:fullscreen,
+[data-testid="stDataFrame"]:fullscreen iframe {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+}

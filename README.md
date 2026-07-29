@@ -1,6 +1,6 @@
 # 🤖 Automação e Classificação de Chamados de TI (MPMS)
 
-Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para automatizar a extração, unificação, sincronização e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS e CitSmart).
+Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para automatizar a extração, unificação, sincronização e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS e CitSmart).
 
 ## 🚀 Funcionalidades
 
@@ -28,35 +28,28 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
 ### 4. Execução Stealth (Invisível)
 - O orquestrador roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background, sem roubar o foco do usuário e sem disparar alertas indesejados.
 
-### 5. Gestão Centralizada (Dashboard Web e Banco de Dados)
-- **Painel Interativo Premium (Streamlit):** Interface gráfica web lindíssima e responsiva (Hot-Reloading) para acompanhamento dos chamados em tempo real, com ordenação inteligente de datas e filtros dinâmicos de Status, Unidade, Usuário e TAG de IA.
-- **Deep Linking Centralizado (Acesso em Um Clique):** Geração dinâmica de URLs diretas para os chamados tanto no OTRS quanto no CitSmart. Exibido de forma ultra-elegante no Streamlit através de `st.column_config.LinkColumn` (coluna "Link Direto") e pelo botão nativo `st.link_button` no modal de detalhes, permitindo abrir o chamado de origem em uma nova aba instantaneamente.
-- **Gestão de Visibilidade Dinâmica:** Controle avançado via UI (ex: toggle elegante na barra lateral para mostrar ou ocultar o IP de rede dos usuários sob demanda).
-- **Persistência Inteligente (SQLite):** Todo o tráfego de dados gerado é consolidado num banco de dados local leve e ultra-rápido (`chamados.db`), que monitora e gerencia os estados lógicos de "Aberto" e "Fechado" autonomamente conforme chamados novos chegam ou desaparecem da fila de triagem.
+### 5. Gestão Centralizada & Dashboard Modularizado
+- **Arquitetura Modular em Camadas (`dashboard.py`):** O dashboard principal é estruturado como um orquestrador conciso (< 70 linhas) com separação completa em pastas:
+  - `assets/css/styles.css`: Estilos globais e refinamentos de UI.
+  - `src/components/`: Componentes reutilizáveis (cabeçalho/popover, status de logs).
+  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `redistribuicao.py`, `mapas.py`, `links_faqs.py`, `fiscalizacao.py`).
+- **Painel Interativo Premium (Streamlit):** Interface gráfica web responsiva para acompanhamento dos chamados em tempo real, com ordenação inteligente de datas e filtros dinâmicos de Status, Unidade, Usuário e TAG de IA.
+- **Deep Linking Centralizado:** Geração dinâmica de URLs diretas para os chamados tanto no OTRS quanto no CitSmart.
+- **Persistência Inteligente (SQLite):** Todo o tráfego de dados gerado é consolidado num banco de dados local leve e ultra-rápido (`chamados.db`).
 
 ### 6. Módulo de Doação & Redistribuição de Máquinas
 - **Inventário de Movimentações:** Aba dedicada no painel para visualização e análise de equipamentos destinados a doação, redistribuição, garantia ou baixados.
 - **Gráficos Temporais e KPIs:** Métricas de acompanhamento de estoque e gráficos dinâmicos de distribuição por tipo e histórico por ano.
-- **Gerador de Relatórios para Chamados (Rich Text HTML):** Ferramenta integrada na barra lateral que gera automaticamente textos formatados com tabelas estilizadas em HTML (Zebra Striping) a partir das movimentações de uma data específica. O conteúdo gerado pode ser colado diretamente em editores ricos (Rich Text/Código-Fonte) de chamados (como OTRS) sem perda de formatação e bordas.
-- **Sincronização Segura e Criptografada:** Importação sob demanda da planilha oficial no OneDrive/SharePoint diretamente para uma tabela dedicada no banco de dados SQLite (`equipamentos_doados`), utilizando caminhos protegidos via variáveis de ambiente (`.env`).
-
-
+- **Gerador de Relatórios para Chamados (Rich Text HTML):** Ferramenta integrada na barra lateral que gera automaticamente textos formatados com tabelas estilizadas em HTML (Zebra Striping) a partir das movimentações de uma data específica.
 
 ### 7. Base de Conhecimento & FAQs do SharePoint
-- **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot automatizado com navegação em modo headless via `Playwright` que varre as páginas institucionais de tutoriais do SharePoint DIT-Manutenção, extrai a árvore de conteúdo em HTML limpo (preservando imagens, tabelas e estilizações) e armazena na tabela relacional `faqs` do SQLite.
-- **Leitor Interativo e Modal no Dashboard (`st.dialog`):** Aba dedicada de FAQs e Tutoriais no dashboard com barra de busca inteligente por palavra-chave e filtro de categorias na sidebar. Permite a leitura completa do tutorial formatado em modal popup direto no sistema, com opção de link para abertura na aba original (`target="_blank"`).
+- **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot automatizado com navegação em modo headless via `Playwright` que varre as páginas institucionais de tutoriais do SharePoint, extrai a árvore de conteúdo em HTML limpo e armazena na tabela relacional `faqs` do SQLite.
+- **Leitor Interativo e Modal no Dashboard (`st.dialog`):** Aba dedicada de FAQs e Tutoriais no dashboard com busca inteligente por palavra-chave e categorias.
 
 ### 8. Visualizador & Fiscalização de Contratos (Processos SAJ)
 - **Integração em Tempo Real com OneDrive/SharePoint:** Leitura automatizada da planilha oficial de indicações de fiscais, portarias e processos SAJ sincronizada na nuvem.
-- **Cards KPI & Resumo por Fiscal:** Indicadores de topo com contagem detalhada da carga de trabalho dos fiscais (funções de Fiscal Titular vs Suplente).
-- **Filtros Dinâmicos:** Filtro por fiscal responsável e caixa de busca textual abrangente por número SAJ, objeto do contrato ou nota de empenho.
-- **Visualização Multi-Abas Interativa:**
-  - 📋 **Indicações de Fiscais:** Tabela completa dos processos com botão integrado para **Exportação filtrada para Excel**.
-  - 📈 **Gráficos & Estatísticas:** Gráficos comparativos de carga de trabalho e **categorização inteligente automatizada** por tipo de suprimento/equipamento (Desktops, Notebooks, Monitores, Periféricos, Telefonia, Conectividade, etc.).
-  - 📰 **Publicações & Portarias:** Acompanhamento de portarias publicadas em Diário Oficial.
-  - 📊 **Tabela Contadora:** Visão geral da aba consolidada da planilha.
-- **Sincronização Sob Demanda:** Botão no cabeçalho que limpa o cache do Streamlit e recarrega instantaneamente os dados mais recentes da planilha sem reiniciar a aplicação.
-
+- **Cards KPI & Resumo por Fiscal:** Indicadores de topo com contagem detalhada da carga de trabalho dos fiscais.
+- **Filtros Dinâmicos e Exportação:** Filtro por fiscal responsável, busca textual e exportação filtrada para Excel.
 
 ---
 
@@ -72,26 +65,43 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
   - `spacy`: Processamento de linguagem natural (NLP) e lematização.
   - `pywin32` e `WMI`: Automação nativa do Microsoft Excel e consultas profundas ao servidor SCCM para extração de IPs na rede.
   - `streamlit`: Construção do dashboard web moderno, rápido e interativo.
-  - `sqlite3`: Banco de dados relacional embutido de altíssimo desempenho para retenção do ciclo de vida dos chamados e tutoriais da equipe.
+  - `sqlite3`: Banco de dados relacional embutido de altíssimo desempenho.
 
 ---
 
 ## 📂 Estrutura do Projeto
 
-- `salvar_senha.py`: Utilitário de segurança para salvar e criptografar as credenciais de acesso localmente, evitando senhas expostas no código.
-- `citsmart_scraper.py`: Bot para extração do sistema LowCode/CitSmart.
-- `otrs_scraper.py`: Bot para extração do sistema legado OTRS.
-- `unidades_scraper.py`: Scraper que atualiza a lista de unidades/promotorias do site oficial do MPMS em tempo real com `BeautifulSoup`.
-- `faq_scraper.py`: Bot automatizado com Playwright para captura e atualização dos tutoriais e FAQs do SharePoint no SQLite.
-- `preprocess_chamados.py`: Limpeza, padronização, remoção de assinaturas/saudações e unificação das bases brutas.
-- `tag_classifier.py`: O "cérebro" da IA. Limpa o texto com NLP, treina os modelos, avalia métricas e classifica os novos chamados.
-- `sync_master.py`: Compara os chamados novos com a base de produção, sincroniza os estados "Aberto/Fechado" com o banco de dados SQLite e realiza a inserção *Append-Only* com formatações Win32 na Planilha Master.
-- `database.py`: Interface dedicada de controle (DAO) do banco de dados relacional SQLite, responsável por Inserções (UPSERT) dinâmicas e transições de status do ciclo de vida dos chamados.
-- `dashboard.py`: Aplicação Web (Frontend em Streamlit) para que os usuários e gestores leiam o banco de dados, apliquem filtros em tempo real e visualizem chamados e tutoriais de forma responsiva.
-- `manual_entries.py`: Hub central de regras estáticas (ranges de IP CIDR para rastreamento de prédios geográficos, Regex de NLP e mapeamentos institucionais).
-- `config.py`: Central de configurações unificadas, conexões seguras ao AD (LDAP), queries WMI de rede ao SCCM para resolução de IPs e utilitários globais do sistema.
-- `orquestrador.py`: Script mestre do fluxo, executado 100% em background pelo Agendador de Tarefas do Windows.
-- `test_app.py`: Suíte de testes automatizados unitários para validação de NLP, IA, IP Ranges, limpeza de disco e rotinas críticas do pipeline.
+```text
+automated-OTRS-and-CitSmart/
+├── assets/
+│   └── css/styles.css                # Estilos CSS globais da aplicação
+├── src/
+│   ├── components/                   # Componentes reutilizáveis do frontend
+│   │   ├── header.py                 # Menu popover de navegação rápida
+│   │   └── status_banner.py          # Checagem de status e leitor de logs do robô
+│   ├── database.py                   # Interface DAO SQLite (UPSERTs, chamados, doações)
+│   ├── tabs/                         # Módulos isolados por sistema/página
+│   │   ├── chamados.py               # Aba 1: Painel Geral de Chamados
+│   │   ├── redistribuicao.py         # Aba 2: Doação & Redistribuição
+│   │   ├── mapas.py                  # Aba 3: Planta Baixa e Rotas Leaflet
+│   │   ├── links_faqs.py             # Aba 4: FAQs, Tutoriais & Links Úteis
+│   │   └── fiscalizacao.py           # Aba 5: Fiscalização de Contratos SAJ
+│   ├── citsmart_scraper.py           # Bot de extração do CitSmart
+│   ├── otrs_scraper.py               # Bot de extração do OTRS
+│   ├── unidades_scraper.py           # Raspador de unidades/promotorias
+│   ├── faq_scraper.py                # Bot Playwright para FAQs do SharePoint
+│   ├── preprocess_chamados.py        # Limpeza e padronização de dados
+│   ├── tag_classifier.py             # Classificador de IA com NLP (spaCy + Scikit-Learn)
+│   └── sync_master.py                # Sincronizador Append-Only na Planilha Master
+├── tests/                            # Suíte de testes unitários automatizados
+│   ├── test_app.py                   # Testes de NLP, scrapers e regras de negócio
+│   └── test_tabs_and_components.py   # Testes dos novos módulos do dashboard
+├── dashboard.py                      # Orquestrador central conciso do Streamlit (< 70 linhas)
+├── orquestrador.py                   # Script mestre do fluxo executado em background
+└── salvar_senha.py                   # Utilitário de segurança e credenciais
+```
+
+---
 
 ## 📦 Como Instalar e Configurar
 
@@ -110,20 +120,21 @@ Este projeto consiste em uma suite de ferramentas desenvolvidas em Python para a
    ```
 
 3. **Configure as credenciais criptografadas:**
-   Execute o script utilitário para registrar suas chaves e logins com segurança:
    ```bash
    venv\Scripts\python.exe salvar_senha.py
    ```
 
-4. **(Opcional) Sincronizar tutoriais do SharePoint para a base local:**
+4. **Executar o Dashboard Web:**
    ```bash
-   python src/faq_scraper.py
+   streamlit run dashboard.py
    ```
+
+---
 
 ## 🧪 Executando Testes Unitários
 
-Para garantir que as modificações de fluxo ou de dados não introduziram regressões no pipeline, execute os testes unitários integrados:
-```bash
-venv\Scripts\python.exe -m unittest test_app.py
-```
+Para rodar todos os testes unitários integrados da aplicação e validar os módulos refatorados:
 
+```bash
+python -m unittest discover -s tests
+```

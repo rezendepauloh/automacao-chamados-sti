@@ -11,7 +11,10 @@ sys.path.insert(0, str(root_dir / "src"))
 
 db_path = root_dir / "chamados.db"
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from src.config import setup_logging, DEBUG_DIR_FAQ
+
+logger = setup_logging(DEBUG_DIR_FAQ / "faq_scraper.log", __name__)
+
 
 def init_faq_schema():
     """Garante que a tabela faqs possui a estrutura completa no SQLite."""
