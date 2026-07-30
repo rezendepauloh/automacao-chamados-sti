@@ -1,6 +1,8 @@
 # 🤖 Automação e Classificação de Chamados de TI (MPMS)
 
-Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para automatizar a extração, unificação, sincronização e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS e CitSmart).
+Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para automatizar a extração, unificação, sincronização e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS e CitSmart), agregando módulos de mapa predial, escalas de plantão, conferência de portarias, vídeos de FAQs e notificações automatizadas.
+
+---
 
 ## 🚀 Funcionalidades
 
@@ -25,31 +27,44 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Tratamento de Anomalias:** Proteção contra vazamento de memória e erros de conversão do Pandas para o Excel (como o erro `65535` em células vazias).
 - **Automação Visual Win32:** Uso nativo do COM (`pywin32`) para formatar a planilha Master (autofit de colunas, quebra de texto, pintura de linhas baseada em TAGs) de forma 100% invisível no background.
 
-### 4. Execução Stealth (Invisível)
-- O orquestrador roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background, sem roubar o foco do usuário e sem disparar alertas indesejados.
+### 4. Execução Stealth (Invisível) & Orquestração Unificada
+- O orquestrador (`orquestrador.py`) roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background.
+- Fluxo sequencial automático: Coleta OTRS → Coleta CitSmart → Pré-processamento → Classificação por IA → Sincronização de Portarias → Verificação de Alertas de Plantão.
 
 ### 5. Gestão Centralizada & Dashboard Modularizado
-- **Arquitetura Modular em Camadas (`dashboard.py`):** O dashboard principal é estruturado como um orquestrador conciso (< 70 linhas) com separação completa em pastas:
+- **Arquitetura Modular em Camadas (`dashboard.py`):** O dashboard principal é estruturado como um orquestrador conciso com separação completa em pastas:
   - `assets/css/styles.css`: Estilos globais e refinamentos de UI.
-  - `src/components/`: Componentes reutilizáveis (cabeçalho/popover, status de logs).
-  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `redistribuicao.py`, `mapas.py`, `links_faqs.py`, `fiscalizacao.py`).
+  - `src/components/`: Componentes reutilizáveis (cabeçalho/popover, alertas, status de logs).
+  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `plantoes.py`, `portarias.py`, `notificacoes.py`, `redistribuicao.py`, `mapas.py`, `links_faqs.py`, `fiscalizacao.py`).
 - **Painel Interativo Premium (Streamlit):** Interface gráfica web responsiva para acompanhamento dos chamados em tempo real, com ordenação inteligente de datas e filtros dinâmicos de Status, Unidade, Usuário e TAG de IA.
-- **Deep Linking Centralizado:** Geração dinâmica de URLs diretas para os chamados tanto no OTRS quanto no CitSmart.
-- **Persistência Inteligente (SQLite):** Todo o tráfego de dados gerado é consolidado num banco de dados local leve e ultra-rápido (`chamados.db`).
+- **Persistência Relacional (SQLite):** Dados consolidados no banco relacional `chamados.db`.
 
 ### 6. Módulo de Doação & Redistribuição de Máquinas
 - **Inventário de Movimentações:** Aba dedicada no painel para visualização e análise de equipamentos destinados a doação, redistribuição, garantia ou baixados.
 - **Gráficos Temporais e KPIs:** Métricas de acompanhamento de estoque e gráficos dinâmicos de distribuição por tipo e histórico por ano.
-- **Gerador de Relatórios para Chamados (Rich Text HTML):** Ferramenta integrada na barra lateral que gera automaticamente textos formatados com tabelas estilizadas em HTML (Zebra Striping) a partir das movimentações de uma data específica.
+- **Gerador de Relatórios para Chamados (Rich Text HTML):** Ferramenta integrada na barra lateral que gera automaticamente textos formatados com tabelas estilizadas em HTML (Zebra Striping).
 
-### 7. Base de Conhecimento & FAQs do SharePoint
-- **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot automatizado com navegação em modo headless via `Playwright` que varre as páginas institucionais de tutoriais do SharePoint, extrai a árvore de conteúdo em HTML limpo e armazena na tabela relacional `faqs` do SQLite.
-- **Leitor Interativo e Modal no Dashboard (`st.dialog`):** Aba dedicada de FAQs e Tutoriais no dashboard com busca inteligente por palavra-chave e categorias.
+### 7. Base de Conhecimento, FAQs & Vídeos de Tutoriais
+- **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot headless com `Playwright` que varre as páginas institucionais de tutoriais do SharePoint, extrai a árvore de conteúdo em HTML limpo e armazena na tabela relacional `faqs` do SQLite.
+- **Visualizador de Vídeos FAQ Local/SharePoint:** Aba de vídeos com varredura recursiva de pastas, categorização automática por subpastas, reprodução em modal e botão de execução nativa via Windows (`os.startfile`) para suporte total a codecs de celular/Teams (H.265/HEVC).
+- **Sub-Navegação em Abas Stylized:** Interface com navegação por abas customizadas via CSS e sincronização dinâmica da barra lateral de filtros conforme a aba ativa.
 
-### 8. Visualizador & Fiscalização de Contratos (Processos SAJ)
-- **Integração em Tempo Real com OneDrive/SharePoint:** Leitura automatizada da planilha oficial de indicações de fiscais, portarias e processos SAJ sincronizada na nuvem.
-- **Cards KPI & Resumo por Fiscal:** Indicadores de topo com contagem detalhada da carga de trabalho dos fiscais.
-- **Filtros Dinâmicos e Exportação:** Filtro por fiscal responsável, busca textual e exportação filtrada para Excel.
+### 8. Conferência de Portarias dos Membros da Bancada
+- **Integração com a API de Atos e Normas do MPMS:** Consulta automatizada para os servidores da bancada (*Paulo Rezende, Reginaldo Bandeira e Luiz Villalba*).
+- **Sanitização Unicode & HTML:** Limpeza de tags HTML (`<strong>`), acentos e hífens Unicode quebrados (`\u0096`, `\u2013`), além de deduplicação inteligente.
+- **Modal de Detalhes & Download de PDF:** Visualizador completo da ementa, diário oficial e download direto do PDF do anexo (`/download/{atocod}`).
+
+### 9. Escala de Plantões da Bancada (Matutino & Semanal)
+- **Calendário Interativo FullCalendar v6:** Exibição dinâmica das escalas em modo dark glassmorphism.
+- **Coleta Autônoma (`plantoes_scraper.py`):** Bot de sincronização das escalas de Plantão Matutino (PGJ) e Plantão Semanal (SIMP).
+
+### 10. Sistema Unificado de Notificações & Alertas Inteligentes
+- **Notificações de Novas Portarias:** Gera alerta automaticamente no banco sempre que uma nova portaria é identificada pelo orquestrador.
+- **Lembretes Antecipados de Plantão:**
+  - *Plantão Matutino*: Notificação emitida 1 dia útil antes (se o plantão for na segunda-feira, a notificação é emitida na **sexta-feira**).
+  - *Plantão Semanal*: Notificação emitida na **segunda-feira** da semana do plantão SIMP.
+- **Alertas visuais Toast & Badge no Header:** Notificações em balão (`st.toast`) ao abrir o sistema e contador dinâmico de pendências no menu (`🔔 Central de Notificações (3)`).
+- **Central de Gerenciamento (`notificacoes.py`):** Interface para filtrar por tipo/status, marcar como lida e redirecionar direto para a página referente.
 
 ---
 
@@ -66,6 +81,7 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
   - `pywin32` e `WMI`: Automação nativa do Microsoft Excel e consultas profundas ao servidor SCCM para extração de IPs na rede.
   - `streamlit`: Construção do dashboard web moderno, rápido e interativo.
   - `sqlite3`: Banco de dados relacional embutido de altíssimo desempenho.
+  - `python-dotenv`: Gerenciamento seguro de variáveis de ambiente.
 
 ---
 
@@ -77,17 +93,23 @@ automated-OTRS-and-CitSmart/
 │   └── css/styles.css                # Estilos CSS globais da aplicação
 ├── src/
 │   ├── components/                   # Componentes reutilizáveis do frontend
-│   │   ├── header.py                 # Menu popover de navegação rápida
+│   │   ├── header.py                 # Menu popover de navegação rápida e notificações
 │   │   └── status_banner.py          # Checagem de status e leitor de logs do robô
-│   ├── database.py                   # Interface DAO SQLite (UPSERTs, chamados, doações)
-│   ├── tabs/                         # Módulos isolados por sistema/página
+│   ├── database.py                   # Interface DAO SQLite (chamados, doações, plantões, notificações)
+│   ├── tabs/                         # Módulos isolados por página
 │   │   ├── chamados.py               # Aba 1: Painel Geral de Chamados
-│   │   ├── redistribuicao.py         # Aba 2: Doação & Redistribuição
-│   │   ├── mapas.py                  # Aba 3: Planta Baixa e Rotas Leaflet
-│   │   ├── links_faqs.py             # Aba 4: FAQs, Tutoriais & Links Úteis
-│   │   └── fiscalizacao.py           # Aba 5: Fiscalização de Contratos SAJ
+│   │   ├── plantoes.py               # Aba 2: Escala de Plantões da Bancada & FullCalendar
+│   │   ├── portarias.py              # Aba 3: Portarias & Atos dos Membros da Bancada
+│   │   ├── notificacoes.py           # Aba 4: Central de Notificações
+│   │   ├── redistribuicao.py         # Aba 5: Doação & Redistribuição
+│   │   ├── mapas.py                  # Aba 6: Planta Baixa e Rotas Leaflet
+│   │   ├── links_faqs.py             # Aba 7: FAQs, Tutoriais (SharePoint) & Vídeos FAQ
+│   │   └── fiscalizacao.py           # Aba 8: Fiscalização de Contratos SAJ
 │   ├── citsmart_scraper.py           # Bot de extração do CitSmart
 │   ├── otrs_scraper.py               # Bot de extração do OTRS
+│   ├── plantoes_scraper.py           # Bot de extração dos plantões PGJ e SIMP
+│   ├── sync_portarias.py             # Sincronizador de portarias para o orquestrador
+│   ├── sync_plantoes_alerts.py       # Verificador de alertas de plantão para o orquestrador
 │   ├── unidades_scraper.py           # Raspador de unidades/promotorias
 │   ├── faq_scraper.py                # Bot Playwright para FAQs do SharePoint
 │   ├── preprocess_chamados.py        # Limpeza e padronização de dados
@@ -95,8 +117,10 @@ automated-OTRS-and-CitSmart/
 │   └── sync_master.py                # Sincronizador Append-Only na Planilha Master
 ├── tests/                            # Suíte de testes unitários automatizados
 │   ├── test_app.py                   # Testes de NLP, scrapers e regras de negócio
-│   └── test_tabs_and_components.py   # Testes dos novos módulos do dashboard
-├── dashboard.py                      # Orquestrador central conciso do Streamlit (< 70 linhas)
+│   └── test_tabs_and_components.py   # Testes dos módulos do dashboard
+├── .env.example                      # Template de variáveis de ambiente e endpoints
+├── .env                              # Variáveis de ambiente locais (não commitado)
+├── dashboard.py                      # Orquestrador central do Streamlit
 ├── orquestrador.py                   # Script mestre do fluxo executado em background
 └── salvar_senha.py                   # Utilitário de segurança e credenciais
 ```
@@ -119,12 +143,23 @@ automated-OTRS-and-CitSmart/
    python -m spacy download pt_core_news_sm
    ```
 
-3. **Configure as credenciais criptografadas:**
+3. **Configure as Variáveis de Ambiente:**
+   Copie o arquivo `.env.example` para `.env` e preencha as variáveis correspondentes:
+   ```bash
+   cp .env.example .env
+   ```
+
+4. **Configure as credenciais criptografadas do Windows (Keyring):**
    ```bash
    venv\Scripts\python.exe salvar_senha.py
    ```
 
-4. **Executar o Dashboard Web:**
+5. **Executar a Orquestração em Segundo Plano:**
+   ```bash
+   venv\Scripts\python.exe orquestrador.py
+   ```
+
+6. **Executar o Dashboard Web:**
    ```bash
    streamlit run dashboard.py
    ```
