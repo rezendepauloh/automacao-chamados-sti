@@ -48,6 +48,9 @@ def render_header_navigation() -> str:
         if st.button("📜 Fiscalização de Contratos", use_container_width=True):
             st.session_state["current_page"] = "📜 Fiscalização de Contratos"
             st.rerun()
+        if st.button("🖨️ Impressoras (PaperCut)", use_container_width=True):
+            st.session_state["current_page"] = "🖨️ Impressoras (PaperCut)"
+            st.rerun()
         if st.button("📚 FAQ & Tutoriais", use_container_width=True):
             st.session_state["current_page"] = "📚 FAQ & Tutoriais"
             st.rerun()

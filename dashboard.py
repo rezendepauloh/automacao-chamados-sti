@@ -75,6 +75,11 @@ elif selected_page == "📜 Portarias da Bancada":
     importlib.reload(src.tabs.portarias)
     src.tabs.portarias.render_portarias_page()
 
+elif selected_page == "🖨️ Impressoras (PaperCut)":
+    import src.tabs.impressoras
+    importlib.reload(src.tabs.impressoras)
+    src.tabs.impressoras.render_impressoras_page()
+
 elif selected_page == "🔔 Central de Notificações":
     import src.tabs.notificacoes
     importlib.reload(src.tabs.notificacoes)

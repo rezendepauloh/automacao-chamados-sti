@@ -17,6 +17,10 @@ OTRS_URL = os.getenv("OTRS_LINK", "")
 PROMOTORIAS_URL = "https://www.mpms.mp.br/promotorias"
 PROCURADORIAS_URL = "https://www.mpms.mp.br/procuradorias"
 
+PAPERCUT_URL = os.getenv("PAPERCUT_URL", "")
+PAPERCUT_PRINTER_LIST_URL = os.getenv("PAPERCUT_PRINTER_LIST_URL", "")
+PAPERCUT_DEVICE_LIST_URL = os.getenv("PAPERCUT_DEVICE_LIST_URL", "")
+
 USERNAME = os.getlogin()
 CITSMART_EMAIL = f"{USERNAME}@{os.getenv('AD_EMAIL', '')}"
 
@@ -25,6 +29,13 @@ try:
     PASSWORD = keyring.get_password("otrs", USERNAME)
 except:
     PASSWORD = None
+
+try:
+    PAPERCUT_USER = os.getenv("PAPERCUT_USER", keyring.get_password("papercut_user", "papercut") or "admin")
+    PAPERCUT_PASS = os.getenv("PAPERCUT_PASS", keyring.get_password("papercut", PAPERCUT_USER) or "")
+except:
+    PAPERCUT_USER = os.getenv("PAPERCUT_USER", "admin")
+    PAPERCUT_PASS = os.getenv("PAPERCUT_PASS", "")
 
 # Domínio
 DOMINIO = os.getenv("AD_DOMAIN", "")
@@ -117,6 +128,10 @@ DEBUG_DIR_FAQ.mkdir(parents=True, exist_ok=True)
 # Plantao Logs
 DEBUG_DIR_PLANTOES = BASE_DIR / "debug_logs" / "plantoes"
 DEBUG_DIR_PLANTOES.mkdir(parents=True, exist_ok=True)
+
+# PaperCut Logs
+DEBUG_DIR_PAPERCUT = BASE_DIR / "debug_logs" / "papercut"
+DEBUG_DIR_PAPERCUT.mkdir(parents=True, exist_ok=True)
 
 LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"
 

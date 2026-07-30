@@ -28,5 +28,18 @@ if quer_salvar == 'S':
         print(f"\n✅ Senha de administrador salva com sucesso para a conta: {admin_user}!")
     else:
         print("\n⚠️ Nenhuma senha digitada. Configuração de Admin ignorada.")
+print("\n" + "="*60)
+print("🖨️ CONFIGURAÇÃO OPCIONAL: USUÁRIO ADMINISTRADOR DO PAPERCUT")
+print("="*60)
+quer_salvar_papercut = input("Deseja salvar as credenciais de Admin do PaperCut? (S/N): ").strip().upper()
+if quer_salvar_papercut == 'S':
+    pc_user = input("Digite o usuário do PaperCut (padrão: admin): ").strip() or "admin"
+    pc_pass = input("Digite a senha do PaperCut: ").strip()
+    if pc_pass:
+        keyring.set_password("papercut_user", "papercut", pc_user)
+        keyring.set_password("papercut", pc_user, pc_pass)
+        print(f"✅ Credenciais do PaperCut salvas para o usuário: {pc_user}")
+    else:
+        print("⚠️ Nenhuma senha digitada. Configuração do PaperCut ignorada.")
 else:
-    print("\nℹ️ Configuração de Admin ignorada.")
+    print("ℹ️ Configuração do PaperCut ignorada.")
