@@ -70,7 +70,19 @@ elif selected_page == "📚 FAQ & Tutoriais":
     importlib.reload(src.tabs.links_faqs)
     src.tabs.links_faqs.render_faq_page()
 
+elif selected_page == "📜 Portarias da Bancada":
+    import src.tabs.portarias
+    importlib.reload(src.tabs.portarias)
+    src.tabs.portarias.render_portarias_page()
+
+elif selected_page == "🔔 Central de Notificações":
+    import src.tabs.notificacoes
+    importlib.reload(src.tabs.notificacoes)
+    src.tabs.notificacoes.render_notificacoes_page()
+
 else:
     import src.tabs.chamados
     importlib.reload(src.tabs.chamados)
     src.tabs.chamados.render_chamados_page()
+
+

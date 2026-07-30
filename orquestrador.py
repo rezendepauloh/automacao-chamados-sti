@@ -90,9 +90,11 @@ def main():
         ("src/otrs_scraper.py", "Coleta OTRS"),
         ("src/citsmart_scraper.py", "Coleta CitSmart"),
         ("src/preprocess_chamados.py", "Pré-processamento"),
-        ("src/tag_classifier.py", "Classificação de TAGs por IA")
-        # ("src/sync_master.py", "Sincronização Planilha Master")  # Legado (Streamlit é o novo painel)
+        ("src/tag_classifier.py", "Classificação de TAGs por IA"),
+        ("src/sync_portarias.py", "Sincronização de Portarias MPMS"),
+        ("src/sync_plantoes_alerts.py", "Verificação de Lembretes de Plantão")
     ]
+
 
 
     reports = []

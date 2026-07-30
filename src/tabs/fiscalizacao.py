@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 import streamlit as st
+from src.config import ATOS_NORMAS_API_URL, ATOS_NORMAS_DOWNLOAD_URL
 
 def _formatar_texto_portaria(texto: str, nomes_destacar: list[str] | None = None) -> str:
     """Formata o texto bruto da portaria retornado pela API do MPMS para exibição legível."""
@@ -49,12 +50,13 @@ def _consultar_portaria_mpms(nome_portaria: str, fiscal_titular: str = "", fisca
     """Consulta a API pública do MPMS e exibe os detalhes da portaria em um modal."""
     st.markdown(f"**Consultando:** `{nome_portaria}`")
 
-    url = "https://www.mpms.mp.br/atos-e-normas/listAll"
+    url = ATOS_NORMAS_API_URL
     params = {
         "atotit": nome_portaria,
         "atotipcod[]": "1",
         "atocod": "",
     }
+
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
     with st.spinner("Consultando API do MPMS..."):
@@ -115,7 +117,8 @@ def _consultar_portaria_mpms(nome_portaria: str, fiscal_titular: str = "", fisca
 
         if atocod and nome_arquivo:
             st.markdown("---")
-            download_url = f"https://www.mpms.mp.br/atos-e-normas/download/{atocod}"
+            download_url = f"{ATOS_NORMAS_DOWNLOAD_URL}{atocod}"
+
             col_anx_info, col_anx_btn = st.columns([3, 1])
             with col_anx_info:
                 st.info(f"📎 **Arquivo anexo:** {nome_arquivo}")

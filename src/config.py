@@ -59,7 +59,14 @@ MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
 MASTER_FILE_PATH = USER_HOME / os.getenv("SHAREPOINT_RELATIVE_PATH", "")
 DONATIONS_FILE_PATH = USER_HOME / os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
-SHAREPOINT_MATUTINO_URL = os.getenv("SHAREPOINT_MATUTINO_URL", "https://ministeriopublicoms.sharepoint.com/:x:/s/DIT/EdhJA61Nq41LorRyJ0Ld9sYBICxIa2oUTfOvUiunxHLmjw?e=A6grDw")
+SHAREPOINT_MATUTINO_URL = os.getenv("SHAREPOINT_MATUTINO_URL", "")
+VIDEO_FAQ_DIR = USER_HOME / os.getenv("VIDEO_FAQ_PATH", "")
+
+# Atos e Normas
+ATOS_NORMAS_API_URL = os.getenv("ATOS_NORMAS_API_URL", "")
+ATOS_NORMAS_DOWNLOAD_URL = os.getenv("ATOS_NORMAS_DOWNLOAD_URL", "")
+
+
 
 # OTRS
 DEBUG_DIR_OTRS = BASE_DIR / "debug_logs" / "otrs"
