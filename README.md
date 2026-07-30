@@ -1,6 +1,6 @@
 # 🤖 Automação e Classificação de Chamados de TI (MPMS)
 
-Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para automatizar a extração, unificação, sincronização e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS e CitSmart), agregando módulos de mapa predial, escalas de plantão, conferência de portarias, vídeos de FAQs e notificações automatizadas.
+Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para automatizar a extração, unificação, sincronização e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS e CitSmart), agregando módulos de gestão de impressoras (PaperCut), mapa predial, escalas de plantão, conferência de portarias, vídeos de FAQs e notificações automatizadas.
 
 ---
 
@@ -29,13 +29,13 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 
 ### 4. Execução Stealth (Invisível) & Orquestração Unificada
 - O orquestrador (`orquestrador.py`) roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background.
-- Fluxo sequencial automático: Coleta OTRS → Coleta CitSmart → Pré-processamento → Classificação por IA → Sincronização de Portarias → Verificação de Alertas de Plantão.
+- Fluxo sequencial automático: Coleta OTRS → Coleta CitSmart → Coleta PaperCut Impressoras → Pré-processamento → Classificação por IA → Sincronização de Portarias → Verificação de Alertas de Plantão.
 
 ### 5. Gestão Centralizada & Dashboard Modularizado
 - **Arquitetura Modular em Camadas (`dashboard.py`):** O dashboard principal é estruturado como um orquestrador conciso com separação completa em pastas:
   - `assets/css/styles.css`: Estilos globais e refinamentos de UI.
   - `src/components/`: Componentes reutilizáveis (cabeçalho/popover, alertas, status de logs).
-  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `plantoes.py`, `portarias.py`, `notificacoes.py`, `redistribuicao.py`, `mapas.py`, `links_faqs.py`, `fiscalizacao.py`).
+  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `plantoes.py`, `portarias.py`, `notificacoes.py`, `redistribuicao.py`, `mapas.py`, `links_faqs.py`, `fiscalizacao.py`, `impressoras.py`).
 - **Painel Interativo Premium (Streamlit):** Interface gráfica web responsiva para acompanhamento dos chamados em tempo real, com ordenação inteligente de datas e filtros dinâmicos de Status, Unidade, Usuário e TAG de IA.
 - **Persistência Relacional (SQLite):** Dados consolidados no banco relacional `chamados.db`.
 
@@ -66,6 +66,11 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Alertas visuais Toast & Badge no Header:** Notificações em balão (`st.toast`) ao abrir o sistema e contador dinâmico de pendências no menu (`🔔 Central de Notificações (3)`).
 - **Central de Gerenciamento (`notificacoes.py`):** Interface para filtrar por tipo/status, marcar como lida e redirecionar direto para a página referente.
 
+### 11. Gestão de Impressoras & Dispositivos (PaperCut)
+- **Coleta e Tratamento Autônomo (`papercut_scraper.py`):** Automação via Selenium que loga no sistema de gerenciamento de impressões PaperCut, navega até as listagens de impressoras e dispositivos multifuncionais (MFDs) e efetua a exportação dos relatórios em CSV.
+- **Tratamento de Encodings e Limpeza Automática:** Processamento inteligente com detecção de encodings (`latin1`, `utf-8-sig`), leitura estruturada de delimitadores (`;`) e remoção automática de temporários baixados na pasta Downloads.
+- **Visualização & Filtros no Dashboard (`impressoras.py`):** Interface dedicada no painel com cards KPI em tempo real (Total de Ativos, Filas, MFDs, Status OK e Alertas/Erros), busca textual e filtros dinâmicos laterais por Tipo, Status, Localização e Modelo, além de exportação para Excel.
+
 ---
 
 ## 🛠️ Tecnologias Utilizadas
@@ -95,7 +100,7 @@ automated-OTRS-and-CitSmart/
 │   ├── components/                   # Componentes reutilizáveis do frontend
 │   │   ├── header.py                 # Menu popover de navegação rápida e notificações
 │   │   └── status_banner.py          # Checagem de status e leitor de logs do robô
-│   ├── database.py                   # Interface DAO SQLite (chamados, doações, plantões, notificações)
+│   ├── database.py                   # Interface DAO SQLite (chamados, doações, plantões, notificações, impressoras)
 │   ├── tabs/                         # Módulos isolados por página
 │   │   ├── chamados.py               # Aba 1: Painel Geral de Chamados
 │   │   ├── plantoes.py               # Aba 2: Escala de Plantões da Bancada & FullCalendar
@@ -104,9 +109,11 @@ automated-OTRS-and-CitSmart/
 │   │   ├── redistribuicao.py         # Aba 5: Doação & Redistribuição
 │   │   ├── mapas.py                  # Aba 6: Planta Baixa e Rotas Leaflet
 │   │   ├── links_faqs.py             # Aba 7: FAQs, Tutoriais (SharePoint) & Vídeos FAQ
-│   │   └── fiscalizacao.py           # Aba 8: Fiscalização de Contratos SAJ
+│   │   ├── fiscalizacao.py           # Aba 8: Fiscalização de Contratos SAJ
+│   │   └── impressoras.py            # Aba 9: Gestão de Impressoras & Dispositivos (PaperCut)
 │   ├── citsmart_scraper.py           # Bot de extração do CitSmart
 │   ├── otrs_scraper.py               # Bot de extração do OTRS
+│   ├── papercut_scraper.py           # Bot de extração de impressoras e dispositivos do PaperCut
 │   ├── plantoes_scraper.py           # Bot de extração dos plantões PGJ e SIMP
 │   ├── sync_portarias.py             # Sincronizador de portarias para o orquestrador
 │   ├── sync_plantoes_alerts.py       # Verificador de alertas de plantão para o orquestrador
@@ -114,15 +121,15 @@ automated-OTRS-and-CitSmart/
 │   ├── faq_scraper.py                # Bot Playwright para FAQs do SharePoint
 │   ├── preprocess_chamados.py        # Limpeza e padronização de dados
 │   ├── tag_classifier.py             # Classificador de IA com NLP (spaCy + Scikit-Learn)
-│   └── sync_master.py                # Sincronizador Append-Only na Planilha Master
+│   ├── sync_master.py                # Sincronizador Append-Only na Planilha Master
+│   └── salvar_senha.py               # Utilitário de segurança e credenciais (Keyring)
 ├── tests/                            # Suíte de testes unitários automatizados
 │   ├── test_app.py                   # Testes de NLP, scrapers e regras de negócio
 │   └── test_tabs_and_components.py   # Testes dos módulos do dashboard
 ├── .env.example                      # Template de variáveis de ambiente e endpoints
 ├── .env                              # Variáveis de ambiente locais (não commitado)
 ├── dashboard.py                      # Orquestrador central do Streamlit
-├── orquestrador.py                   # Script mestre do fluxo executado em background
-└── salvar_senha.py                   # Utilitário de segurança e credenciais
+└── orquestrador.py                   # Script mestre do fluxo executado em background
 ```
 
 ---
@@ -151,7 +158,7 @@ automated-OTRS-and-CitSmart/
 
 4. **Configure as credenciais criptografadas do Windows (Keyring):**
    ```bash
-   venv\Scripts\python.exe salvar_senha.py
+   venv\Scripts\python.exe src/salvar_senha.py
    ```
 
 5. **Executar a Orquestração em Segundo Plano:**
