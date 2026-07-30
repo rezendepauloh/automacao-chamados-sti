@@ -21,6 +21,8 @@ PAPERCUT_URL = os.getenv("PAPERCUT_URL", "")
 PAPERCUT_PRINTER_LIST_URL = os.getenv("PAPERCUT_PRINTER_LIST_URL", "")
 PAPERCUT_DEVICE_LIST_URL = os.getenv("PAPERCUT_DEVICE_LIST_URL", "")
 
+OXE_URL = os.getenv("OXE_URL", "")
+
 # Scripts de Automação PowerShell
 PS_SCRIPT_ANALISADOR = Path(os.getenv("PS_SCRIPT_ANALISADOR", ""))
 PS_SCRIPT_MANUTENCAO = Path(os.getenv("PS_SCRIPT_MANUTENCAO", ""))
@@ -42,6 +44,14 @@ try:
 except:
     PAPERCUT_USER = os.getenv("PAPERCUT_USER", "admin")
     PAPERCUT_PASS = os.getenv("PAPERCUT_PASS", "")
+
+try:
+    OXE_USER = os.getenv("OXE_USER", keyring.get_password("oxe_user", "oxe") or "mtcl")
+    OXE_PASS = os.getenv("OXE_PASS", keyring.get_password("oxe", OXE_USER) or "")
+except:
+    OXE_USER = os.getenv("OXE_USER", "mtcl")
+    OXE_PASS = os.getenv("OXE_PASS", "")
+
 
 # Domínio
 DOMINIO = os.getenv("AD_DOMAIN", "")
@@ -139,9 +149,14 @@ DEBUG_DIR_PLANTOES.mkdir(parents=True, exist_ok=True)
 DEBUG_DIR_PAPERCUT = BASE_DIR / "debug_logs" / "papercut"
 DEBUG_DIR_PAPERCUT.mkdir(parents=True, exist_ok=True)
 
+# OXE Central Telefonica Logs
+DEBUG_DIR_OXE = BASE_DIR / "debug_logs" / "oxe"
+DEBUG_DIR_OXE.mkdir(parents=True, exist_ok=True)
+
 # Scripts Logs
 DEBUG_DIR_SCRIPTS = BASE_DIR / "debug_logs" / "scripts"
 DEBUG_DIR_SCRIPTS.mkdir(parents=True, exist_ok=True)
+
 
 
 LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"
@@ -545,8 +560,15 @@ def get_chrome_driver(
     
     opts = webdriver.ChromeOptions()
     
+    # Aceita certificados SSL autoassinados / inseguros
+    opts.accept_insecure_certs = True
+    opts.add_argument('--ignore-certificate-errors')
+    opts.add_argument('--ignore-ssl-errors=yes')
+    opts.add_argument('--allow-insecure-localhost')
+    
     # Desativa logs desnecessários do Chrome
     opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+
     opts.add_argument('--log-level=3')
     opts.add_argument('--disable-logging')
     opts.add_argument("--incognito")

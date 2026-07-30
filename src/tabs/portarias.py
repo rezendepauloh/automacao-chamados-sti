@@ -5,6 +5,11 @@ import pandas as pd
 import streamlit as st
 from urllib.parse import quote
 from src.config import setup_logging, DEBUG_DIR_FAQ, ATOS_NORMAS_API_URL, ATOS_NORMAS_DOWNLOAD_URL
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
 
 logger = setup_logging(DEBUG_DIR_FAQ / "portarias.log", "portarias")
 
@@ -80,9 +85,6 @@ def fetch_portarias_bancada():
                     # URL de download do PDF usando atocod (ato_id)
                     pdf_url = f"{ATOS_NORMAS_DOWNLOAD_URL}{ato_id}" if ato_id else None
 
-
-
-
                     # Informações do subtipo e situação
                     subtipo_info = ato.get("atosubtipcod") or {}
                     subtipo_nome = subtipo_info.get("atosubtipnom", "Geral") if isinstance(subtipo_info, dict) else "Geral"
@@ -122,7 +124,6 @@ def render_portarias_page():
     st.write("Consulta unificada de atos e portarias publicados no diário oficial do MPMS referente aos membros da equipe.")
     st.markdown("---")
 
-    # Botão para forçar atualização do cache na sidebar
     with st.sidebar:
         st.markdown("## 🔍 Filtros de Portarias")
         
@@ -154,6 +155,12 @@ def render_portarias_page():
 
     with st.sidebar:
         selected_ano = st.selectbox("📅 Ano:", ["Todos"] + anos_disponiveis, key="filter_portaria_ano")
+        sort_order = st.selectbox(
+            "⬆️⬇️ Ordenar por Data:",
+            ["Mais recentes primeiro (DESC)", "Mais antigas primeiro (ASC)"],
+            key="filter_portaria_sort"
+        )
+        items_per_page = render_items_per_page_selector("portarias", options=[6, 10, 20, 50, 100], default_index=1)
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Atualizar Dados (API)", use_container_width=True):
             st.cache_data.clear()
@@ -174,6 +181,11 @@ def render_portarias_page():
             p for p in filtered_portarias
             if query_lower in p['titulo'].lower() or query_lower in p['numero'].lower()
         ]
+
+    # Ordenação por Data (ASC / DESC)
+    is_desc = (sort_order == "Mais recentes primeiro (DESC)")
+    filtered_portarias.sort(key=lambda x: x["id"], reverse=is_desc)
+
 
     # Métrica de Resumo em Cards
     m1, m2, m3, m4 = st.columns(4)
@@ -228,19 +240,24 @@ def render_portarias_page():
                     unsafe_allow_html=True
                 )
 
-    # Renderização dos Cards de Portarias
+    # Paginação dos registros
+    page_portarias, current_page, total_pages, total_items = paginate_items(
+        filtered_portarias,
+        page_key="portarias",
+        items_per_page=items_per_page
+    )
+
+    # Renderização dos Cards de Portarias fatiados pela página
     cols = st.columns(2)
-    for idx, p in enumerate(filtered_portarias):
+    for idx, p in enumerate(page_portarias):
         col_target = cols[idx % 2]
         with col_target:
             with st.container(border=True):
                 st.caption(f"📜 Portaria nº **{p['numero']}** • Data: {p['data_emissao']}")
                 
-                # Exibe tags dos membros envolvidos
                 membros_str = ", ".join(p['membros'])
                 st.markdown(f"**Membro(s):** `{membros_str}`")
 
-                # Resumo do título cortado
                 titulo_curto = p['titulo'][:160] + "..." if len(p['titulo']) > 160 else p['titulo']
                 st.write(titulo_curto)
                 
@@ -256,3 +273,13 @@ def render_portarias_page():
                             f'<a href="{p["pdf_url"]}" target="_blank" style="display: block; text-align: center; background-color: #2a2b36; border: 1px solid #343541; color: white; text-decoration: none; font-size: 0.85rem; padding: 6px; border-radius: 6px; font-weight: bold;">📥 PDF MPMS ↗</a>',
                             unsafe_allow_html=True
                         )
+
+    # Controles da Paginação ao final da página
+    render_pagination_controls(
+        page_key="portarias",
+        current_page=current_page,
+        total_pages=total_pages,
+        total_items=total_items,
+        items_per_page=items_per_page
+    )
+

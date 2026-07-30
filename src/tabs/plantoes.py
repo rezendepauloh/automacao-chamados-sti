@@ -61,17 +61,23 @@ def render_fullcalendar(events: list[dict]):
       <meta charset="utf-8"/>
       <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
       <style>
-        body {{
+        html, body {{
           margin: 0;
           padding: 0;
+          height: 100%;
+          overflow: hidden;
           font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
           background-color: #0e1117;
           color: #fafafa;
         }}
         #calendar {{
           max-width: 100%;
-          margin: 0 auto;
+          height: 100%;
+          box-sizing: border-box;
           padding: 10px;
+        }}
+        .fc-scroller {{
+          overflow-y: auto !important;
         }}
         .fc {{
           --fc-border-color: #31333f;
@@ -80,6 +86,7 @@ def render_fullcalendar(events: list[dict]):
           --fc-list-event-hover-bg-color: #262730;
           --fc-today-bg-color: rgba(230, 126, 34, 0.15);
         }}
+
         .fc-toolbar-title {{
           font-size: 1.25rem !important;
           font-weight: 600 !important;
@@ -286,8 +293,9 @@ def render_fullcalendar(events: list[dict]):
           var calendarEl = document.getElementById('calendar');
           var calendar = new FullCalendar.Calendar(calendarEl, {{
             initialView: 'dayGridMonth',
-            height: 'auto',
+            height: '100%',
             locale: 'pt-br',
+
             headerToolbar: {{
               left: 'prev,next today',
               center: 'title',

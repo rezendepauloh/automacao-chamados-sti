@@ -43,3 +43,24 @@ if quer_salvar_papercut == 'S':
         print("⚠️ Nenhuma senha digitada. Configuração do PaperCut ignorada.")
 else:
     print("ℹ️ Configuração do PaperCut ignorada.")
+
+print("\n" + "="*60)
+print("📞 CONFIGURAÇÃO OPCIONAL: CENTRAL TELEFÔNICA (OXE)")
+print("="*60)
+oxe_input = input("Digite a senha do OXE (ou 'S' para alterar usuário / ENTER para ignorar): ").strip()
+if oxe_input and oxe_input.upper() != 'N':
+    if oxe_input.upper() == 'S':
+        oxe_user = input("Digite o usuário do OXE (padrão: mtcl): ").strip() or "mtcl"
+        oxe_pass = input(f"Digite a senha do OXE para o usuário '{oxe_user}': ").strip()
+    else:
+        oxe_user = "mtcl"
+        oxe_pass = oxe_input
+
+    if oxe_pass:
+        keyring.set_password("oxe_user", "oxe", oxe_user)
+        keyring.set_password("oxe", oxe_user, oxe_pass)
+        print(f"✅ Credenciais da Central Telefônica (OXE) salvas com sucesso no cofre do Windows para o usuário: {oxe_user}")
+    else:
+        print("⚠️ Nenhuma senha digitada. Configuração do OXE ignorada.")
+else:
+    print("ℹ️ Configuração do OXE ignorada.")

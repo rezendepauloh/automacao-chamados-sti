@@ -5,8 +5,14 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from src.config import setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
 
 logger = setup_logging(DEBUG_DIR_FAQ / "faq.log", "faq")
+
 
 
 def format_file_size(size_in_bytes: int) -> str:
@@ -208,6 +214,7 @@ def render_faq_page():
         
         tipos_disponiveis = ["Todos"] + sorted(df_faqs['tipo_faq'].dropna().unique().tolist()) if not df_faqs.empty else ["Todos"]
         selected_tipo = st.sidebar.selectbox("📂 Categoria:", tipos_disponiveis, key="faq_cat")
+        items_per_page_faq = render_items_per_page_selector("faq_sp", options=[6, 10, 20, 50], default_index=1)
 
         if df_faqs.empty:
             st.info("Nenhum FAQ cadastrado no momento.")
@@ -280,8 +287,15 @@ def render_faq_page():
             st.markdown(f"**Exibindo {len(filtered_df)} de {len(df_faqs)} FAQs / Tutoriais**")
             st.markdown("<br>", unsafe_allow_html=True)
 
+            # Paginação dos registros do FAQ
+            page_faqs, cur_p_faq, tot_p_faq, tot_i_faq = paginate_items(
+                filtered_df,
+                page_key="faq_sp",
+                items_per_page=items_per_page_faq
+            )
+
             cols = st.columns(2)
-            for index, row in filtered_df.iterrows():
+            for index, row in page_faqs.iterrows():
                 col_target = cols[index % 2]
                 with col_target:
                     with st.container(border=True):
@@ -295,12 +309,15 @@ def render_faq_page():
                         with c_btn2:
                             st.markdown(f'<a href="{row["url"]}" target="_blank" style="display: block; text-align: center; background-color: #2a2b36; border: 1px solid #343541; color: white; text-decoration: none; font-size: 0.85rem; padding: 6px; border-radius: 6px; font-weight: bold;">🔗 SharePoint ↗</a>', unsafe_allow_html=True)
 
+            render_pagination_controls("faq_sp", cur_p_faq, tot_p_faq, tot_i_faq, items_per_page_faq)
+
     elif active_tab == "🎥 Vídeos FAQ (Tutoriais)":
         st.sidebar.markdown("## 🔍 Filtros de Vídeos FAQ")
         search_vid = st.sidebar.text_input("Pesquisar vídeo por palavra-chave:", "", key="search_video_input")
         
         categorias_vid = ["Todas"] + sorted(list(set(v['categoria'] for v in videos_list))) if videos_list else ["Todas"]
         selected_cat_vid = st.sidebar.selectbox("📂 Categoria / Pasta:", categorias_vid, key="select_cat_video")
+        items_per_page_vid = render_items_per_page_selector("faq_vid", options=[6, 10, 20, 50], default_index=1)
 
         st.subheader("🎥 Vídeos de FAQ & Tutoriais da Bancada")
         st.write("Vídeos demonstrativos armazenados localmente e sincronizados via SharePoint.")
@@ -380,8 +397,14 @@ def render_faq_page():
             if not filtered_videos:
                 st.info("Nenhum vídeo corresponde aos filtros selecionados.")
             else:
+                page_videos, cur_p_vid, tot_p_vid, tot_i_vid = paginate_items(
+                    filtered_videos,
+                    page_key="faq_vid",
+                    items_per_page=items_per_page_vid
+                )
+
                 vid_cols = st.columns(2)
-                for idx, vid in enumerate(filtered_videos):
+                for idx, vid in enumerate(page_videos):
                     col_target = vid_cols[idx % 2]
                     with col_target:
                         with st.container(border=True):
@@ -393,9 +416,12 @@ def render_faq_page():
                             if st.button("🎥 Assistir Vídeo", key=f"btn_vid_{idx}_{hash(vid['titulo'])}", use_container_width=True):
                                 open_video_modal(vid)
 
+                render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
+
     elif active_tab == "🔗 Links Úteis da Bancada":
         st.sidebar.markdown("## 🔍 Filtros de Links")
         search_link = st.sidebar.text_input("Pesquisar por nome ou URL:", "", key="search_link_input")
+        items_per_page_link = render_items_per_page_selector("faq_links", options=[6, 12, 24, 48], default_index=1)
 
         st.subheader("🌐 Links e Atalhos Rápidos da Bancada")
         st.write("Acesso direto aos sistemas operacionais, filas de atendimento e ferramentas externas.")
@@ -411,8 +437,14 @@ def render_faq_page():
             st.markdown(f"**Exibindo {len(filtered_links)} de {len(links_uteis)} link(s)**")
             st.markdown("<br>", unsafe_allow_html=True)
 
+            page_links, cur_p_link, tot_p_link, tot_i_link = paginate_items(
+                filtered_links,
+                page_key="faq_links",
+                items_per_page=items_per_page_link
+            )
+
             link_cols = st.columns(3)
-            for idx, item in enumerate(filtered_links):
+            for idx, item in enumerate(page_links):
                 col_lk = link_cols[idx % 3]
                 with col_lk:
                     with st.container(border=True):
@@ -423,3 +455,6 @@ def render_faq_page():
                             f'<a href="{item.get("url")}" target="_blank" style="display: block; text-align: center; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; padding: 10px; border-radius: 6px;">🔗 Acessar Sistema ↗</a>', 
                             unsafe_allow_html=True
                         )
+
+            render_pagination_controls("faq_links", cur_p_link, tot_p_link, tot_i_link, items_per_page_link)
+

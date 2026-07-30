@@ -45,6 +45,12 @@ def render_notificacoes_page():
         key="filter_notif_tipo"
     )
 
+    sort_notif = st.sidebar.selectbox(
+        "⬆️⬇️ Ordenar por Data:",
+        ["Mais recentes primeiro (DESC)", "Mais antigas primeiro (ASC)"],
+        key="filter_notif_sort"
+    )
+
     # Carrega notificações do banco
     only_unread = (filter_status == "Não Lidas")
     df_notif = get_notifications(only_unread=False, limit=200)
@@ -61,6 +67,13 @@ def render_notificacoes_page():
 
     if filter_tipo != "Todos":
         df_notif = df_notif[df_notif['tipo'] == filter_tipo]
+
+    # Ordenação por data/id
+    if sort_notif == "Mais antigas primeiro (ASC)":
+        df_notif = df_notif.sort_values(by="id", ascending=True)
+    else:
+        df_notif = df_notif.sort_values(by="id", ascending=False)
+
 
     st.markdown(f"**Exibindo {len(df_notif)} notificação(ões)**")
     st.markdown("<br>", unsafe_allow_html=True)
