@@ -175,12 +175,34 @@ def render_impressoras_page():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # -----------------------------------------------------------------------------
-    # ABAS INTERNAS DE VISUALIZAÇÃO
-    # -----------------------------------------------------------------------------
-    tab_tabela, tab_graficos = st.tabs(["📋 Tabela Completa", "📊 Gráficos & Estatísticas"])
+    # ABAS INTERNAS DE VISUALIZAÇÃO COM QUERY PARAMETERS (?subtab=slug)
+    IMPRESSORAS_SUBTAB_MAP = {
+        "tabela": "📋 Tabela Completa",
+        "graficos": "📊 Gráficos & Estatísticas"
+    }
+    IMPRESSORAS_SUBTAB_REVERSE = {v: k for k, v in IMPRESSORAS_SUBTAB_MAP.items()}
 
-    with tab_tabela:
+    url_subtab = st.query_params.get("subtab", "tabela")
+    default_title = IMPRESSORAS_SUBTAB_MAP.get(url_subtab, "📋 Tabela Completa")
+    options = list(IMPRESSORAS_SUBTAB_MAP.values())
+    default_idx = options.index(default_title) if default_title in options else 0
+
+    selected_subtab = st.radio(
+        "Visualização:",
+        options=options,
+        index=default_idx,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="impressoras_subtab_radio"
+    )
+
+    new_slug = IMPRESSORAS_SUBTAB_REVERSE.get(selected_subtab, "tabela")
+    if st.query_params.get("subtab") != new_slug:
+        st.query_params["subtab"] = new_slug
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if selected_subtab == "📋 Tabela Completa":
         header_col, export_col = st.columns([3, 1])
         with header_col:
             st.subheader(f"Listagem de Impressoras ({len(df_filtered)} registros)")
@@ -231,7 +253,8 @@ def render_impressoras_page():
             }
         )
 
-    with tab_graficos:
+    elif selected_subtab == "📊 Gráficos & Estatísticas":
+
         st.subheader("📊 Análise Gráfica de Impressoras")
         
         g_col1, g_col2 = st.columns(2)

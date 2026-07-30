@@ -21,6 +21,12 @@ PAPERCUT_URL = os.getenv("PAPERCUT_URL", "")
 PAPERCUT_PRINTER_LIST_URL = os.getenv("PAPERCUT_PRINTER_LIST_URL", "")
 PAPERCUT_DEVICE_LIST_URL = os.getenv("PAPERCUT_DEVICE_LIST_URL", "")
 
+# Scripts de Automação PowerShell
+PS_SCRIPT_ANALISADOR = Path(os.getenv("PS_SCRIPT_ANALISADOR", ""))
+PS_SCRIPT_MANUTENCAO = Path(os.getenv("PS_SCRIPT_MANUTENCAO", ""))
+PS_SCRIPT_REMOVER_USUARIOS = Path(os.getenv("PS_SCRIPT_REMOVER_USUARIOS", ""))
+
+
 USERNAME = os.getlogin()
 CITSMART_EMAIL = f"{USERNAME}@{os.getenv('AD_EMAIL', '')}"
 
@@ -132,6 +138,11 @@ DEBUG_DIR_PLANTOES.mkdir(parents=True, exist_ok=True)
 # PaperCut Logs
 DEBUG_DIR_PAPERCUT = BASE_DIR / "debug_logs" / "papercut"
 DEBUG_DIR_PAPERCUT.mkdir(parents=True, exist_ok=True)
+
+# Scripts Logs
+DEBUG_DIR_SCRIPTS = BASE_DIR / "debug_logs" / "scripts"
+DEBUG_DIR_SCRIPTS.mkdir(parents=True, exist_ok=True)
+
 
 LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"
 

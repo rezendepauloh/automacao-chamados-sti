@@ -51,6 +51,15 @@ div[data-testid="stPopover"] > button:hover {
     border-color: #ff4b4b !important;
     color: #ff4b4b !important;
 }
+/* Ajusta a altura máxima do menu popover de acordo com a tela para evitar barra de rolagem */
+div[data-testid="stPopoverBody"] {
+    max-height: calc(100vh - 70px) !important;
+    overflow-y: auto !important;
+}
+div[data-testid="stPopoverBody"] > div {
+    max-height: none !important;
+}
+
 /* Garante que o dataframe ocupe 100% da tela quando entrar no modo Tela Cheia (Fullscreen) */
 div[data-testid="stDataFrame"][data-st-mode="fullscreen"],
 div[data-testid="stElementContainer"]:aria-modal,

@@ -514,16 +514,38 @@ def render_plantoes_page():
                     }
                 })
 
-    tab_cal, tab_mat, tab_sem = st.tabs([
-        "📅 Agenda / Calendário Interativo",
-        "☀️ Plantão Matutino PGJ (08h-15h)",
-        "🌃 Plantão Semanal SIMP"
-    ])
+    # ABAS INTERNAS DE VISUALIZAÇÃO COM QUERY PARAMETERS (?subtab=slug)
+    PLANTOES_SUBTAB_MAP = {
+        "agenda": "📅 Agenda / Calendário Interativo",
+        "matutino": "☀️ Plantão Matutino PGJ (08h-15h)",
+        "semanal": "🌃 Plantão Semanal SIMP"
+    }
+    PLANTOES_SUBTAB_REVERSE = {v: k for k, v in PLANTOES_SUBTAB_MAP.items()}
 
-    with tab_cal:
+    url_subtab = st.query_params.get("subtab", "agenda")
+    default_title = PLANTOES_SUBTAB_MAP.get(url_subtab, "📅 Agenda / Calendário Interativo")
+    options = list(PLANTOES_SUBTAB_MAP.values())
+    default_idx = options.index(default_title) if default_title in options else 0
+
+    selected_subtab = st.radio(
+        "Navegação do Plantão:",
+        options=options,
+        index=default_idx,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="plantoes_subtab_radio"
+    )
+
+    new_slug = PLANTOES_SUBTAB_REVERSE.get(selected_subtab, "agenda")
+    if st.query_params.get("subtab") != new_slug:
+        st.query_params["subtab"] = new_slug
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if selected_subtab == "📅 Agenda / Calendário Interativo":
         render_fullcalendar(events)
 
-    with tab_mat:
+    elif selected_subtab == "☀️ Plantão Matutino PGJ (08h-15h)":
         st.markdown("### ☀️ Escala do Plantão Matutino (PGJ)")
         if df_matutino.empty:
             st.info("Nenhum registro de plantão matutino cadastrado no banco.")
@@ -544,7 +566,7 @@ def render_plantoes_page():
                 hide_index=True
             )
 
-    with tab_sem:
+    elif selected_subtab == "🌃 Plantão Semanal SIMP":
         st.markdown("### 🌃 Escala do Plantão Semanal STI (SIMP)")
         if df_semanal.empty:
             st.info("Nenhum registro de plantão semanal cadastrado no banco. Clique em 'Sincronizar Tudo' para buscar do SIMP.")
@@ -573,3 +595,4 @@ def render_plantoes_page():
                 use_container_width=True,
                 hide_index=True
             )
+

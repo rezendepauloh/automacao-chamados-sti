@@ -80,7 +80,13 @@ elif selected_page == "🖨️ Impressoras (PaperCut)":
     importlib.reload(src.tabs.impressoras)
     src.tabs.impressoras.render_impressoras_page()
 
+elif selected_page == "⚡ Scripts de Automação":
+    import src.tabs.scripts_automacao
+    importlib.reload(src.tabs.scripts_automacao)
+    src.tabs.scripts_automacao.render_scripts_automacao_page()
+
 elif selected_page == "🔔 Central de Notificações":
+
     import src.tabs.notificacoes
     importlib.reload(src.tabs.notificacoes)
     src.tabs.notificacoes.render_notificacoes_page()

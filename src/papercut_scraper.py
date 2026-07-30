@@ -129,6 +129,15 @@ def get_flexible_value(row_dict: dict, candidates: list, default=""):
     return default
 
 
+def is_valid_printer_name(nome: str) -> bool:
+    if not nome or len(nome) <= 1:
+        return False
+    nome_lower = nome.lower()
+    if ';' in nome or 'dispositivo;' in nome_lower or 'tipo de dispositivo' in nome_lower or 'atividade;' in nome_lower:
+        return False
+    return True
+
+
 def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.DataFrame) -> pd.DataFrame:
     """
     Unifica e normaliza os dados de Impressoras (filas) e Dispositivos Físicos do PaperCut.
@@ -160,7 +169,7 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
             except (ValueError, TypeError):
                 paginas = 0
 
-            if nome and len(nome) > 1:
+            if is_valid_printer_name(nome):
                 records.append({
                     'nome': nome,
                     'servidor': servidor if servidor else 'PaperCut',
@@ -201,7 +210,7 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
             except (ValueError, TypeError):
                 paginas = 0
 
-            if nome and len(nome) > 1:
+            if is_valid_printer_name(nome):
                 records.append({
                     'nome': nome,
                     'servidor': servidor if servidor else ip_host,

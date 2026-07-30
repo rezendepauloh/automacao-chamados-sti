@@ -248,9 +248,37 @@ def render_contracts_page():
             mask = mask | df_filtered_ind[col].astype(str).str.contains(search_text, case=False, na=False)
         df_filtered_ind = df_filtered_ind[mask]
 
-    tab_ind, tab_charts, tab_pub, tab_raw_count = st.tabs(["📋 Indicações de Fiscais", "📈 Gráficos & Estatísticas", "📰 Publicações & Portarias", "📊 Tabela Contadora"])
+    # ABAS INTERNAS DE VISUALIZAÇÃO COM QUERY PARAMETERS (?subtab=slug)
+    FISCAL_SUBTAB_MAP = {
+        "indicacoes": "📋 Indicações de Fiscais",
+        "graficos": "📈 Gráficos & Estatísticas",
+        "publicacoes": "📰 Publicações & Portarias",
+        "contadora": "📊 Tabela Contadora"
+    }
+    FISCAL_SUBTAB_REVERSE = {v: k for k, v in FISCAL_SUBTAB_MAP.items()}
 
-    with tab_ind:
+    url_subtab = st.query_params.get("subtab", "indicacoes")
+    default_title = FISCAL_SUBTAB_MAP.get(url_subtab, "📋 Indicações de Fiscais")
+    options = list(FISCAL_SUBTAB_MAP.values())
+    default_idx = options.index(default_title) if default_title in options else 0
+
+    selected_subtab = st.radio(
+        "Navegação:",
+        options=options,
+        index=default_idx,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="fiscalizacao_subtab_radio"
+    )
+
+    new_slug = FISCAL_SUBTAB_REVERSE.get(selected_subtab, "indicacoes")
+    if st.query_params.get("subtab") != new_slug:
+        st.query_params["subtab"] = new_slug
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if selected_subtab == "📋 Indicações de Fiscais":
+
         c_head1, c_head2 = st.columns([3, 1])
         with c_head1:
             st.subheader(f"📋 Processos e Indicações ({len(df_filtered_ind)} registros)")
@@ -285,7 +313,7 @@ def render_contracts_page():
         else:
             st.info("Nenhum registro encontrado para os filtros selecionados.")
 
-    with tab_charts:
+    elif selected_subtab == "📈 Gráficos & Estatísticas":
         st.subheader("📈 Visão Geral da Carga de Trabalho dos Fiscais")
         if not df_indicacoes.empty and "Fiscal titular" in df_indicacoes.columns and "Fiscal suplente" in df_indicacoes.columns:
             df_t = df_indicacoes["Fiscal titular"].dropna().astype(str).str.strip().value_counts().reset_index()
@@ -358,7 +386,7 @@ def render_contracts_page():
         else:
             st.info("Dados insuficientes para renderização dos gráficos.")
 
-    with tab_pub:
+    elif selected_subtab == "📰 Publicações & Portarias":
         st.subheader("📰 Publicações em Diário Oficial & Portarias")
         df_filtered_pub = df_publicacoes.copy()
         
@@ -413,9 +441,10 @@ def render_contracts_page():
         else:
             st.info("Nenhuma publicação/portaria encontrada.")
 
-    with tab_raw_count:
+    elif selected_subtab == "📊 Tabela Contadora":
         st.subheader("📊 Tabela de Contagem Geral")
         if not df_contador.empty:
             st.dataframe(df_contador, use_container_width=True, hide_index=True)
         else:
             st.info("Aba Contador indisponível ou vazia na planilha.")
+

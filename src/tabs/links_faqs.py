@@ -171,19 +171,34 @@ def render_faq_page():
     </style>
     """, unsafe_allow_html=True)
 
-    # Navegação superior estilo Abas
+    # Navegação superior estilo Abas com suporte a query parameter (?subtab=slug)
+    FAQ_SUBTAB_MAP = {
+        "sharepoint": "📚 FAQs & Tutoriais (SharePoint)",
+        "videos": "🎥 Vídeos FAQ (Tutoriais)",
+        "links": "🔗 Links Úteis da Bancada"
+    }
+    FAQ_SUBTAB_REVERSE = {v: k for k, v in FAQ_SUBTAB_MAP.items()}
+
+    url_subtab = st.query_params.get("subtab", "sharepoint")
+    default_title = FAQ_SUBTAB_MAP.get(url_subtab, "📚 FAQs & Tutoriais (SharePoint)")
+    options = list(FAQ_SUBTAB_MAP.values())
+    default_idx = options.index(default_title) if default_title in options else 0
+
     active_tab = st.radio(
         "Navegação:",
-        [
-            "📚 FAQs & Tutoriais (SharePoint)",
-            "🎥 Vídeos FAQ (Tutoriais)",
-            "🔗 Links Úteis da Bancada"
-        ],
+        options=options,
+        index=default_idx,
         horizontal=True,
         label_visibility="collapsed",
         key="faq_nav_radio"
     )
+
+    new_slug = FAQ_SUBTAB_REVERSE.get(active_tab, "sharepoint")
+    if st.query_params.get("subtab") != new_slug:
+        st.query_params["subtab"] = new_slug
+
     st.markdown("<br>", unsafe_allow_html=True)
+
 
 
     # Roteamento dinâmico das Abas com Filtros Específicos na Sidebar

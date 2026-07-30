@@ -557,11 +557,35 @@ def render_chamados_page():
     col2.metric("Abertos", len(filtered_df[filtered_df['status'] == 'Aberto']))
     col3.metric("Fechados", len(filtered_df[filtered_df['status'] == 'Fechado']))
     
-    st.write("---")
+    # ABAS INTERNAS DE VISUALIZAÇÃO COM QUERY PARAMETERS (?subtab=slug)
+    CHAMADOS_SUBTAB_MAP = {
+        "tabela": "📋 Tabela Geral de Chamados",
+        "graficos": "📈 Gráficos & Estatísticas do Painel"
+    }
+    CHAMADOS_SUBTAB_REVERSE = {v: k for k, v in CHAMADOS_SUBTAB_MAP.items()}
 
-    main_tab_list, main_tab_charts = st.tabs(["📋 Tabela Geral de Chamados", "📈 Gráficos & Estatísticas do Painel"])
+    url_subtab = st.query_params.get("subtab", "tabela")
+    default_title = CHAMADOS_SUBTAB_MAP.get(url_subtab, "📋 Tabela Geral de Chamados")
+    options = list(CHAMADOS_SUBTAB_MAP.values())
+    default_idx = options.index(default_title) if default_title in options else 0
 
-    with main_tab_charts:
+    selected_subtab = st.radio(
+        "Navegação do Painel:",
+        options=options,
+        index=default_idx,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="chamados_subtab_radio"
+    )
+
+    new_slug = CHAMADOS_SUBTAB_REVERSE.get(selected_subtab, "tabela")
+    if st.query_params.get("subtab") != new_slug:
+        st.query_params["subtab"] = new_slug
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if selected_subtab == "📈 Gráficos & Estatísticas do Painel":
+
         st.subheader("📊 Análise Estatística dos Chamados Filtrados")
         st.write("Visualização consolidada de abertura de chamados por Prédio, Unidade, Categorias (TAGs) e Usuários.")
         st.markdown("<br>", unsafe_allow_html=True)
@@ -611,130 +635,132 @@ def render_chamados_page():
         else:
             st.info("Sem chamados no filtro selecionado para renderizar gráficos.")
 
-    @st.dialog("Detalhes do Chamado", width="large")
-    def show_ticket_details(row):
-        title = str(row.get('titulo', '')).strip()
-        if title and title.lower() not in ["none", "nan", "null", ""]:
-            header_text = f"🎫 Chamado #{row['id']} – {title}"
-        else:
-            header_text = f"🎫 Chamado #{row['id']}"
-        
-        with st.expander(header_text, expanded=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("### 👤 Informações do Usuário")
-                user_display = str(row['usuario'])
-                client_id = str(row.get('id_cliente', '')).strip()
-                if client_id and client_id.lower() not in ["none", "nan", "null", ""]:
-                    user_display += f" ({client_id})"
-                    
-                st.markdown(f"**Usuário:** {user_display}")
-                st.markdown(f"**Localidade:** {row['localidade_fisica']}")
-                st.markdown(f"**Base de Origem:** `{row['base']}`")
-                st.markdown(f"**IP de Origem:** `{row.get('ip_origem') or 'N/A'}`")
-                st.markdown(f"**Hostname:** `{row.get('hostname') or 'N/A'}`")
-                
-                with st.expander("📍 Editar Localização Manual", expanded=False):
-                    new_cidade = st.text_input("Cidade - Prédio", value=str(row.get('cidade_predio', '')), key=f"edit_cidade_{row['id']}")
-                    new_unidade = st.text_input("Unidade", value=str(row.get('unidade', '')), key=f"edit_unidade_{row['id']}")
-                    new_localidade = st.text_input("Localidade Física", value=str(row.get('localidade_fisica', '')), key=f"edit_localidade_{row['id']}")
-                    if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row['id']}"):
-                        update_ticket_location_details(row['id'], new_localidade, new_cidade, new_unidade)
-                        st.success("Localização salva! (Fechar para atualizar a tabela)")
-                        st.cache_data.clear()
-                
-            with col2:
-                st.markdown("### ⚙️ Classificação & Status")
-                tag_name = str(row['tag']).upper().strip()
-                bg_color = TAG_COLORS.get(tag_name, "#262730")
-                
-                hex_color = bg_color.lstrip('#')
-                try:
-                    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-                    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-                    text_color = "#ffffff" if luminance < 0.6 else "#212529"
-                except:
-                    text_color = "#ffffff"
-                    
-                tag_html = f'<span style="background-color: {bg_color}; color: {text_color}; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-family: inherit; font-size: 13px;">{row["tag"]}</span>'
-                st.markdown(f"**TAG Atual:** {tag_html}", unsafe_allow_html=True)
-                
-                tag_options = sorted(list(TAG_COLORS.keys()))
-                try:
-                    default_idx = tag_options.index(tag_name)
-                except ValueError:
-                    default_idx = 0
-                    
-                new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row['id']}")
-                if new_tag != tag_name:
-                    if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row['id']}"):
-                        update_ticket_tag(row['id'], new_tag)
-                        st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
-                        st.cache_data.clear()
-                
-                link_url = row.get('link')
-                if link_url:
-                    st.markdown("---")
-                    st.link_button("🔗 Abrir Chamado Original", link_url, width="stretch")
-        
-        with st.expander("📝 Andamento / Nota de Atendimento", expanded=True):
-            current_andamento = str(row.get('andamento', '')).strip()
-            if current_andamento.lower() in ["none", "nan", "null", ""]:
-                current_andamento = ""
-            new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
-            if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
-                update_ticket_andamento(row['id'], new_andamento)
-                st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
-                st.cache_data.clear()
-        
-        with st.expander(f"📝 #1 - {row['Data Formatada']} (Descrição)", expanded=True):
-            st.text(row['descricao'])
-            
-        comments = get_comments_by_ticket(row['id'])
-        if comments:
-            st.markdown("### 💬 Histórico de Notas e Acompanhamentos")
-            for i, c in enumerate(comments, start=2):
-                header = f"🕒 #{i} – {c['data']} – por {c['autor']}"
-                with st.expander(header):
-                    st.text(c['texto'])
-            
-        if st.button("Fechar", key="close_modal_btn"):
-            st.rerun()
-
-    cols_to_show = [
-        'id', 'status', 'tag', 'andamento', 'localidade_fisica', 
-        'cidade_predio', 'unidade', 'usuario', 'datetime_obj', 'base'
-    ]
-        
-    cols_to_generate = list(cols_to_show)
-    if 'link' not in cols_to_generate and 'link' in filtered_df.columns:
-        cols_to_generate.append('link')
-    if 'ip_origem' not in cols_to_generate and 'ip_origem' in filtered_df.columns:
-        cols_to_generate.append('ip_origem')
-        
-    df_display = filtered_df[cols_to_generate].copy()
-    
-    def format_id_link(row):
-        cid = str(row['id']).strip()
-        link = str(row.get('link', '')).strip() if 'link' in row else ''
-        if not link or link.lower() in ["none", "nan", "null", ""]:
-            if row['base'] == 'CitSmart':
-                link = f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}"
+    else:
+        @st.dialog("Detalhes do Chamado", width="large")
+        def show_ticket_details(row):
+            title = str(row.get('titulo', '')).strip()
+            if title and title.lower() not in ["none", "nan", "null", ""]:
+                header_text = f"🎫 Chamado #{row['id']} – {title}"
             else:
-                link = "https://central.mpms.mp.br/otrs/index.pl"
-        return f"{link}#id:{cid}"
+                header_text = f"🎫 Chamado #{row['id']}"
+            
+            with st.expander(header_text, expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### 👤 Informações do Usuário")
+                    user_display = str(row['usuario'])
+                    client_id = str(row.get('id_cliente', '')).strip()
+                    if client_id and client_id.lower() not in ["none", "nan", "null", ""]:
+                        user_display += f" ({client_id})"
+                        
+                    st.markdown(f"**Usuário:** {user_display}")
+                    st.markdown(f"**Localidade:** {row['localidade_fisica']}")
+                    st.markdown(f"**Base de Origem:** `{row['base']}`")
+                    st.markdown(f"**IP de Origem:** `{row.get('ip_origem') or 'N/A'}`")
+                    st.markdown(f"**Hostname:** `{row.get('hostname') or 'N/A'}`")
+                    
+                    with st.expander("📍 Editar Localização Manual", expanded=False):
+                        new_cidade = st.text_input("Cidade - Prédio", value=str(row.get('cidade_predio', '')), key=f"edit_cidade_{row['id']}")
+                        new_unidade = st.text_input("Unidade", value=str(row.get('unidade', '')), key=f"edit_unidade_{row['id']}")
+                        new_localidade = st.text_input("Localidade Física", value=str(row.get('localidade_fisica', '')), key=f"edit_localidade_{row['id']}")
+                        if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row['id']}"):
+                            update_ticket_location_details(row['id'], new_localidade, new_cidade, new_unidade)
+                            st.success("Localização salva! (Fechar para atualizar a tabela)")
+                            st.cache_data.clear()
+                    
+                with col2:
+                    st.markdown("### ⚙️ Classificação & Status")
+                    tag_name = str(row['tag']).upper().strip()
+                    bg_color = TAG_COLORS.get(tag_name, "#262730")
+                    
+                    hex_color = bg_color.lstrip('#')
+                    try:
+                        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+                        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+                        text_color = "#ffffff" if luminance < 0.6 else "#212529"
+                    except:
+                        text_color = "#ffffff"
+                        
+                    tag_html = f'<span style="background-color: {bg_color}; color: {text_color}; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-family: inherit; font-size: 13px;">{row["tag"]}</span>'
+                    st.markdown(f"**TAG Atual:** {tag_html}", unsafe_allow_html=True)
+                    
+                    tag_options = sorted(list(TAG_COLORS.keys()))
+                    try:
+                        default_idx = tag_options.index(tag_name)
+                    except ValueError:
+                        default_idx = 0
+                        
+                    new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row['id']}")
+                    if new_tag != tag_name:
+                        if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row['id']}"):
+                            update_ticket_tag(row['id'], new_tag)
+                            st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
+                            st.cache_data.clear()
+                    
+                    link_url = row.get('link')
+                    if link_url:
+                        st.markdown("---")
+                        st.link_button("🔗 Abrir Chamado Original", link_url, width="stretch")
+            
+            with st.expander("📝 Andamento / Nota de Atendimento", expanded=True):
+                current_andamento = str(row.get('andamento', '')).strip()
+                if current_andamento.lower() in ["none", "nan", "null", ""]:
+                    current_andamento = ""
+                new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
+                if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
+                    update_ticket_andamento(row['id'], new_andamento)
+                    st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
+                    st.cache_data.clear()
+            
+            with st.expander(f"📝 #1 - {row['Data Formatada']} (Descrição)", expanded=True):
+                st.text(row['descricao'])
+                
+            comments = get_comments_by_ticket(row['id'])
+            if comments:
+                st.markdown("### 💬 Histórico de Notas e Acompanhamentos")
+                for i, c in enumerate(comments, start=2):
+                    header = f"🕒 #{i} – {c['data']} – por {c['autor']}"
+                    with st.expander(header):
+                        st.text(c['texto'])
+                
+            if st.button("Fechar", key="close_modal_btn"):
+                st.rerun()
 
-    df_display['id'] = df_display.apply(format_id_link, axis=1)
-    
-    cols_for_dataframe = list(cols_to_show)
-    if 'ip_origem' in df_display.columns:
-        cols_for_dataframe.append('ip_origem')
+        cols_to_show = [
+            'id', 'status', 'tag', 'andamento', 'localidade_fisica', 
+            'cidade_predio', 'unidade', 'usuario', 'datetime_obj', 'base'
+        ]
+            
+        cols_to_generate = list(cols_to_show)
+        if 'link' not in cols_to_generate and 'link' in filtered_df.columns:
+            cols_to_generate.append('link')
+        if 'ip_origem' not in cols_to_generate and 'ip_origem' in filtered_df.columns:
+            cols_to_generate.append('ip_origem')
+            
+        df_display = filtered_df[cols_to_generate].copy()
         
-    df_final_display = df_display[cols_for_dataframe]
-    
-    with main_tab_list:
+        def format_id_link(row):
+            cid = str(row['id']).strip()
+            link = str(row.get('link', '')).strip() if 'link' in row else ''
+            if not link or link.lower() in ["none", "nan", "null", ""]:
+                if row['base'] == 'CitSmart':
+                    link = f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}"
+                else:
+                    link = "https://central.mpms.mp.br/otrs/index.pl"
+            return f"{link}#id:{cid}"
+
+        df_display['id'] = df_display.apply(format_id_link, axis=1)
+        
+        cols_for_dataframe = list(cols_to_show)
+        if 'ip_origem' in df_display.columns:
+            cols_for_dataframe.append('ip_origem')
+            
+        df_final_display = df_display[cols_for_dataframe]
+        
         col_tbl_head, col_tbl_cap = st.columns([3, 2])
+
+
         with col_tbl_head:
             st.subheader(f"📋 Lista de Chamados ({len(filtered_df)} registros)")
             st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha para abrir os Detalhes no Modal.")
