@@ -160,7 +160,8 @@ def render_portarias_page():
             ["Mais recentes primeiro (DESC)", "Mais antigas primeiro (ASC)"],
             key="filter_portaria_sort"
         )
-        items_per_page = render_items_per_page_selector("portarias", options=[6, 10, 20, 50, 100], default_index=1)
+        items_per_page = render_items_per_page_selector("portarias", options=[6, 10, 20, 50, 100, "Todos"], default_index=1)
+
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Atualizar Dados (API)", use_container_width=True):
             st.cache_data.clear()
@@ -189,17 +190,42 @@ def render_portarias_page():
 
     # Métrica de Resumo em Cards
     m1, m2, m3, m4 = st.columns(4)
+    count_paulo = sum(1 for p in all_portarias if "Paulo" in str(p['membros']))
+    count_reginaldo = sum(1 for p in all_portarias if "Reginaldo" in str(p['membros']))
+    count_luiz = sum(1 for p in all_portarias if "Luiz" in str(p['membros']))
+
     with m1:
-        st.metric("Total Exibido", f"{len(filtered_portarias)}")
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #3b82f6;">
+                <div class="metric-title">TOTAL EXIBIDO</div>
+                <div class="metric-value">{len(filtered_portarias)}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
     with m2:
-        count_paulo = sum(1 for p in all_portarias if "Paulo" in str(p['membros']))
-        st.metric("Paulo Rezende", f"{count_paulo}")
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #10b981;">
+                <div class="metric-title">PAULO REZENDE</div>
+                <div class="metric-value">{count_paulo}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
     with m3:
-        count_reginaldo = sum(1 for p in all_portarias if "Reginaldo" in str(p['membros']))
-        st.metric("Reginaldo Bandeira", f"{count_reginaldo}")
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #f59e0b;">
+                <div class="metric-title">REGINALDO BANDEIRA</div>
+                <div class="metric-value">{count_reginaldo}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
     with m4:
-        count_luiz = sum(1 for p in all_portarias if "Luiz" in str(p['membros']))
-        st.metric("Luiz Villalba", f"{count_luiz}")
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #8b5cf6;">
+                <div class="metric-title">LUIZ VILLALBA</div>
+                <div class="metric-value">{count_luiz}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -235,10 +261,7 @@ def render_portarias_page():
             st.caption(f"🏛️ **Origem:** {portaria['origem']} ({portaria['subtipo']})")
         with c_pdf:
             if portaria['pdf_url']:
-                st.markdown(
-                    f'<a href="{portaria["pdf_url"]}" target="_blank" style="display: inline-block; background-color: #2a2b36; border: 1px solid #ff4b4b; color: white; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 6px; float: right;">📥 Abrir PDF / Anexo MPMS ↗</a>',
-                    unsafe_allow_html=True
-                )
+                st.link_button("📥 Abrir PDF / Anexo MPMS ↗", url=portaria['pdf_url'], type="primary", use_container_width=True)
 
     # Paginação dos registros
     page_portarias, current_page, total_pages, total_items = paginate_items(
@@ -269,10 +292,8 @@ def render_portarias_page():
                         open_portaria_modal(p)
                 with c_b2:
                     if p['pdf_url']:
-                        st.markdown(
-                            f'<a href="{p["pdf_url"]}" target="_blank" style="display: block; text-align: center; background-color: #2a2b36; border: 1px solid #343541; color: white; text-decoration: none; font-size: 0.85rem; padding: 6px; border-radius: 6px; font-weight: bold;">📥 PDF MPMS ↗</a>',
-                            unsafe_allow_html=True
-                        )
+                        st.link_button("📥 PDF MPMS ↗", url=p['pdf_url'], use_container_width=True)
+
 
     # Controles da Paginação ao final da página
     render_pagination_controls(

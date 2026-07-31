@@ -491,22 +491,48 @@ def render_mapa_page():
           overflow: hidden;
           background-color: transparent;
         }}
+
+        /* TEMA ESCURO (DARK MODE) */
+        body, body.dark-mode {{
+          background-color: #0e1117;
+          color: #ffffff;
+        }}
+        body.dark-mode #map {{
+          background: #0e1117;
+          border: 1px solid #464855;
+        }}
+        body.dark-mode .leaflet-popup-content-wrapper,
+        body.dark-mode .leaflet-popup-tip {{
+          background: #1e1f25 !important;
+          color: #ffffff !important;
+          border: 1px solid #464855 !important;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+        }}
+
+        /* TEMA CLARO (LIGHT MODE) */
+        body.light-mode {{
+          background-color: #ffffff;
+          color: #0f172a;
+        }}
+        body.light-mode #map {{
+          background: #f8fafc;
+          border: 1px solid #cbd5e1;
+        }}
+        body.light-mode .leaflet-popup-content-wrapper,
+        body.light-mode .leaflet-popup-tip {{
+          background: #ffffff !important;
+          color: #0f172a !important;
+          border: 1px solid #cbd5e1 !important;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
+        }}
+
         #map {{
           height: 100%;
           width: 100%;
           margin: 0;
           padding: 0;
-          background: #0e1117;
-          border: 1px solid #464855;
           border-radius: 8px;
           box-sizing: border-box;
-        }}
-        .leaflet-popup-content-wrapper, .leaflet-popup-tip {{
-          background: #1e1f25 !important;
-          color: #ffffff !important;
-          border: 1px solid #464855 !important;
-          border-radius: 8px !important;
-          box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
         }}
         .dev-form {{
           display: flex;
@@ -576,6 +602,37 @@ def render_mapa_page():
     <body>
       <div id="map" style="height: 650px; width: 100%;"></div>
       <script>
+        function updateThemeFromParent() {{
+          var isLight = false;
+          try {{
+            var parentBody = window.parent.document.body;
+            var parentApp = window.parent.document.querySelector('.stApp');
+            var themeAttr = (parentBody && parentBody.getAttribute('data-theme')) || 
+                            (parentApp && parentApp.getAttribute('data-theme'));
+            
+            if (themeAttr === 'light') {{
+              isLight = true;
+            }} else if (themeAttr === 'dark') {{
+              isLight = false;
+            }} else {{
+              isLight = window.parent.matchMedia('(prefers-color-scheme: light)').matches;
+            }}
+          }} catch(e) {{
+            isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+          }}
+
+          if (isLight) {{
+            document.body.className = 'light-mode';
+          }} else {{
+            document.body.className = 'dark-mode';
+          }}
+        }}
+
+        document.addEventListener('DOMContentLoaded', function() {{
+          updateThemeFromParent();
+          setInterval(updateThemeFromParent, 1000);
+        }});
+
         var devMode = false;
         var devState = {{
           lastNodeId: sessionStorage.getItem('dev_lastNodeId') || null,

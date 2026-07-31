@@ -59,10 +59,11 @@ def render_notificacoes_page():
 
     items_per_page = render_items_per_page_selector(
         key_prefix="notificacoes",
-        options=[5, 10, 20, 50, 100],
+        options=[5, 10, 20, 50, 100, "Todos"],
         default_index=1,
         label="📄 Notificações por página:"
     )
+
 
     # Carrega notificações do banco
     df_notif = get_notifications(only_unread=False, limit=500)

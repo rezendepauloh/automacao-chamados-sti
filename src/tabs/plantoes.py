@@ -12,6 +12,12 @@ sys.path.insert(0, str(root_dir))
 
 from src.database import get_plantoes_matutino, get_plantoes_semanal
 from src.plantoes_scraper import check_plantoes_sync_running, read_plantoes_last_log_lines
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
+
 
 
 def format_phone_number(phone_raw: str) -> str:
@@ -67,9 +73,84 @@ def render_fullcalendar(events: list[dict]):
           height: 100%;
           overflow: hidden;
           font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          transition: background-color 0.3s ease, color 0.3s ease;
+        }}
+
+        /* TEMA ESCURO (DARK MODE) */
+        body, body.dark-mode {{
           background-color: #0e1117;
           color: #fafafa;
         }}
+        body.dark-mode .fc {{
+          --fc-border-color: #31333f;
+          --fc-page-bg-color: #0e1117;
+          --fc-neutral-bg-color: #1a1c24;
+          --fc-list-event-hover-bg-color: #262730;
+          --fc-today-bg-color: rgba(230, 126, 34, 0.15);
+        }}
+        body.dark-mode .fc-toolbar-title {{ color: #ffffff !important; }}
+        body.dark-mode .fc-col-header-cell-cushion,
+        body.dark-mode .fc-daygrid-day-number {{ color: #ffffff !important; }}
+        body.dark-mode .fc-button-primary {{
+          background-color: #262730 !important;
+          border-color: #41444c !important;
+          color: #ffffff !important;
+        }}
+        body.dark-mode .fc-button-primary:hover {{
+          background-color: #31333f !important;
+        }}
+        body.dark-mode .fc-list-day-cushion {{
+          background-color: #2a2b36 !important;
+          color: #ffffff !important;
+        }}
+        body.dark-mode .modal-content {{
+          background: #1e2129;
+          border: 1px solid #363945;
+          color: #ffffff;
+        }}
+
+        /* TEMA CLARO (LIGHT MODE) */
+        body.light-mode {{
+          background-color: #ffffff;
+          color: #0f172a;
+        }}
+        body.light-mode .fc {{
+          --fc-border-color: #e2e8f0;
+          --fc-page-bg-color: #ffffff;
+          --fc-neutral-bg-color: #f8fafc;
+          --fc-list-event-hover-bg-color: #f1f5f9;
+          --fc-today-bg-color: rgba(230, 126, 34, 0.15);
+        }}
+        body.light-mode .fc-toolbar-title {{ color: #0f172a !important; }}
+        body.light-mode .fc-col-header-cell-cushion,
+        body.light-mode .fc-daygrid-day-number {{ color: #0f172a !important; }}
+        body.light-mode .fc-button-primary {{
+          background-color: #f1f5f9 !important;
+          border-color: #cbd5e1 !important;
+          color: #0f172a !important;
+        }}
+        body.light-mode .fc-button-primary:hover {{
+          background-color: #e2e8f0 !important;
+          color: #0f172a !important;
+        }}
+        body.light-mode .fc-button-active {{
+          background-color: #ff4b4b !important;
+          border-color: #ff4b4b !important;
+          color: #ffffff !important;
+        }}
+        body.light-mode .fc-list-day-cushion {{
+          background-color: #f1f5f9 !important;
+          color: #0f172a !important;
+        }}
+        body.light-mode .modal-content {{
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          color: #0f172a;
+        }}
+        body.light-mode .modal-body p {{ color: #334155; }}
+        body.light-mode .modal-body strong {{ color: #0f172a; }}
+        body.light-mode .close-btn {{ color: #64748b; }}
+
         #calendar {{
           max-width: 100%;
           height: 100%;
@@ -78,32 +159,6 @@ def render_fullcalendar(events: list[dict]):
         }}
         .fc-scroller {{
           overflow-y: auto !important;
-        }}
-        .fc {{
-          --fc-border-color: #31333f;
-          --fc-page-bg-color: #0e1117;
-          --fc-neutral-bg-color: #1a1c24;
-          --fc-list-event-hover-bg-color: #262730;
-          --fc-today-bg-color: rgba(230, 126, 34, 0.15);
-        }}
-
-        .fc-toolbar-title {{
-          font-size: 1.25rem !important;
-          font-weight: 600 !important;
-          color: #ffffff !important;
-        }}
-        .fc-button-primary {{
-          background-color: #262730 !important;
-          border-color: #41444c !important;
-          color: #ffffff !important;
-        }}
-        .fc-button-primary:hover {{
-          background-color: #31333f !important;
-          border-color: #555861 !important;
-        }}
-        .fc-button-active {{
-          background-color: #ff4b4b !important;
-          border-color: #ff4b4b !important;
         }}
         .fc-event {{
           cursor: pointer;
@@ -116,22 +171,7 @@ def render_fullcalendar(events: list[dict]):
         .fc-event:hover {{
           transform: scale(1.02);
         }}
-        
-        /* ESTILIZAÇÃO DO MODO LISTA EM DARK MODE */
-        .fc-list-day-cushion {{
-          background-color: #2a2b36 !important;
-          color: #ffffff !important;
-        }}
-        .fc-list-table {{
-          border-color: #31333f !important;
-        }}
-        .fc-list-event:hover td {{
-          background-color: #262730 !important;
-        }}
-        .fc-list-day-text, .fc-list-day-side-text {{
-          color: #ffffff !important;
-          font-weight: 600 !important;
-        }}
+
 
         /* GLASSMORPHISM MODAL OVERLAY */
         .modal-overlay {{
@@ -259,6 +299,32 @@ def render_fullcalendar(events: list[dict]):
       </div>
 
       <script>
+        function updateThemeFromParent() {{
+          var isLight = false;
+          try {{
+            var parentBody = window.parent.document.body;
+            var parentApp = window.parent.document.querySelector('.stApp');
+            var themeAttr = (parentBody && parentBody.getAttribute('data-theme')) || 
+                            (parentApp && parentApp.getAttribute('data-theme'));
+            
+            if (themeAttr === 'light') {{
+              isLight = true;
+            }} else if (themeAttr === 'dark') {{
+              isLight = false;
+            }} else {{
+              isLight = window.parent.matchMedia('(prefers-color-scheme: light)').matches;
+            }}
+          }} catch(e) {{
+            isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+          }}
+
+          if (isLight) {{
+            document.body.className = 'light-mode';
+          }} else {{
+            document.body.className = 'dark-mode';
+          }}
+        }}
+
         function closeModal() {{
           document.getElementById('plantaoModal').style.display = 'none';
         }}
@@ -290,6 +356,9 @@ def render_fullcalendar(events: list[dict]):
         }}
 
         document.addEventListener('DOMContentLoaded', function() {{
+          updateThemeFromParent();
+          setInterval(updateThemeFromParent, 1000);
+
           var calendarEl = document.getElementById('calendar');
           var calendar = new FullCalendar.Calendar(calendarEl, {{
             initialView: 'dayGridMonth',
@@ -419,8 +488,16 @@ def render_plantoes_page():
     anos_disponiveis = [2026, 2025, 2024]
     selected_ano = st.sidebar.selectbox("📅 Selecionar Ano:", anos_disponiveis)
     
+    items_per_page = render_items_per_page_selector(
+        key_prefix="plantoes",
+        options=[10, 20, 50, 100, "Todos"],
+        default_index=1,
+        label="📄 Escalas por página:"
+    )
+
     df_matutino = get_plantoes_matutino(selected_ano)
     df_semanal = get_plantoes_semanal(selected_ano)
+
 
     if not df_matutino.empty and 'telefone' in df_matutino.columns:
         df_matutino['telefone'] = df_matutino['telefone'].apply(format_phone_number)
@@ -562,16 +639,32 @@ def render_plantoes_page():
             if bancada_only:
                 df_disp = df_disp[df_disp['servidor'].apply(is_bancada_member)]
             
+            df_disp_renamed = df_disp.rename(columns={
+                "data_iso": "Data ISO",
+                "dia_semana": "Dia da Semana",
+                "servidor": "Servidor",
+                "telefone": "Telefone / Contato",
+                "ano": "Ano"
+            })
+
+            df_page_mat, current_page_mat, total_pages_mat, total_items_mat = paginate_items(
+                df_disp_renamed,
+                page_key="plantoes_matutino",
+                items_per_page=items_per_page
+            )
+
             st.dataframe(
-                df_disp.rename(columns={
-                    "data_iso": "Data ISO",
-                    "dia_semana": "Dia da Semana",
-                    "servidor": "Servidor",
-                    "telefone": "Telefone / Contato",
-                    "ano": "Ano"
-                }),
+                df_page_mat,
                 use_container_width=True,
                 hide_index=True
+            )
+
+            render_pagination_controls(
+                page_key="plantoes_matutino",
+                current_page=current_page_mat,
+                total_pages=total_pages_mat,
+                total_items=total_items_mat,
+                items_per_page=items_per_page
             )
 
     elif selected_subtab == "🌃 Plantão Semanal SIMP":
@@ -588,19 +681,36 @@ def render_plantoes_page():
                     df_disp_s['desenvolvimento'].apply(is_bancada_member)
                 ]
             
+            df_disp_s_renamed = df_disp_s.rename(columns={
+                "mes": "Mês",
+                "periodo_str": "Período do Plantão",
+                "data_inicio": "Início",
+                "data_fim": "Término",
+                "service_desk": "Service Desk",
+                "manutencao": "Manutenção",
+                "infraestrutura": "Infraestrutura",
+                "desenvolvimento": "Desenvolvimento",
+                "ano": "Ano"
+            })
+
+            df_page_sem, current_page_sem, total_pages_sem, total_items_sem = paginate_items(
+                df_disp_s_renamed,
+                page_key="plantoes_semanal",
+                items_per_page=items_per_page
+            )
+
             st.dataframe(
-                df_disp_s.rename(columns={
-                    "mes": "Mês",
-                    "periodo_str": "Período do Plantão",
-                    "data_inicio": "Início",
-                    "data_fim": "Término",
-                    "service_desk": "Service Desk",
-                    "manutencao": "Manutenção",
-                    "infraestrutura": "Infraestrutura",
-                    "desenvolvimento": "Desenvolvimento",
-                    "ano": "Ano"
-                }),
+                df_page_sem,
                 use_container_width=True,
                 hide_index=True
             )
+
+            render_pagination_controls(
+                page_key="plantoes_semanal",
+                current_page=current_page_sem,
+                total_pages=total_pages_sem,
+                total_items=total_items_sem,
+                items_per_page=items_per_page
+            )
+
 

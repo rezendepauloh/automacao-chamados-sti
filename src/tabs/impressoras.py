@@ -1,87 +1,182 @@
 import io
+import re
+import platform
+import subprocess
 import pandas as pd
 import streamlit as st
 from datetime import datetime
 from src.database import get_impressoras_df
-from src.papercut_scraper import run_papercut_scraper
+from src.papercut_scraper import run_papercut_scraper, reprocess_existing_papercut_csvs
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
+
+
+
+def get_printer_url(ip_raw: str) -> str:
+    """Retorna URL formatada caso o valor seja um endereço IPv4 válido."""
+    if not ip_raw or pd.isna(ip_raw):
+        return ""
+    s = str(ip_raw).strip()
+    if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", s):
+        return f"https://{s}"
+    elif s.startswith("http://") or s.startswith("https://"):
+        return s
+    return ""
+
+
+def ping_host(host: str, count: int = 4, timeout_ms: int = 1000) -> tuple[bool, str]:
+    """Executa um ping no host informado (IP ou Hostname) e retorna status (bool) e a saída do terminal (str)."""
+    clean_host = str(host).replace("https://", "").replace("http://", "").strip().split("/")[0]
+    if not clean_host:
+        return False, "Host inválido."
+
+    param = "-n" if platform.system().lower() == "windows" else "-c"
+    timeout_param = ["-w", str(timeout_ms)] if platform.system().lower() == "windows" else ["-W", "1"]
+    
+    command = ["ping", param, str(count)] + timeout_param + [clean_host]
+
+    try:
+        output = subprocess.check_output(command, stderr=subprocess.STDOUT, universal_newlines=True, timeout=6)
+        is_success = ("0% loss" in output or "0% de perda" in output or "bytes=" in output.lower())
+        return is_success, output
+    except subprocess.CalledProcessError as e:
+        return False, e.output if e.output else "Host inalcançável (Timeout/sem resposta)."
+    except Exception as ex:
+        return False, f"Erro ao executar o ping: {str(ex)}"
+
+
+@st.dialog("🖨️ Ficha Técnica do Ativo / Impressora", width="medium")
+def show_printer_details(row_data):
+    nome = row_data.get('Nome / Ativo', row_data.get('nome', 'N/A'))
+    tipo = row_data.get('Tipo de Ativo', row_data.get('tipo', 'N/A'))
+    status = row_data.get('Status', row_data.get('status', 'N/A'))
+    modelo = row_data.get('Modelo / Fabricante', row_data.get('modelo', 'N/A'))
+    local = row_data.get('Localização', row_data.get('localizacao', 'N/A'))
+    ip_host = str(row_data.get('IP / Hostname', row_data.get('ip_host', 'N/A')))
+    servidor = row_data.get('Servidor', row_data.get('servidor', 'N/A'))
+    total_paginas = row_data.get('Total Páginas Impressas', row_data.get('total_paginas', 0))
+
+    st.markdown(f"### 🖨️ {nome}")
+    st.markdown("---")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write(f"**📌 Tipo de Ativo:** {tipo}")
+        st.write(f"**🏢 Localização:** {local}")
+        st.write(f"**🖥️ Servidor:** {servidor}")
+    with c2:
+        st.write(f"**🟢 Status:** {status}")
+        st.write(f"**⚙️ Modelo:** {modelo}")
+        st.write(f"**📊 Páginas Impressas:** {total_paginas}")
+
+    st.markdown("---")
+    
+    url_web = get_printer_url(ip_host)
+    clean_ip = ip_host.replace('https://', '').replace('http://', '').strip().split('/')[0] if ip_host and ip_host != 'N/A' else ""
+
+    if clean_ip and (re.match(r"^(\d{1,3}\.){3}\d{1,3}$", clean_ip) or url_web):
+        st.success(f"🌐 **Endereço IP / Host:** `{clean_ip}`")
+        
+        c_web, c_ping = st.columns([1.2, 1])
+        with c_web:
+            if url_web:
+                st.link_button(
+                    label="🌐 Interface Web ↗",
+                    url=url_web,
+                    type="primary",
+                    use_container_width=True
+                )
+        with c_ping:
+            do_ping = st.button("📡 Testar Ping", use_container_width=True, key=f"btn_ping_{clean_ip}")
+
+        if do_ping:
+            with st.spinner(f"Disparando 4 pacotes de ping para {clean_ip}..."):
+                is_online, ping_output = ping_host(clean_ip)
+                if is_online:
+                    st.toast(f"✅ Impressora {clean_ip} está ONLINE!", icon="📶")
+                else:
+                    st.toast(f"⚠️ Impressora {clean_ip} não respondeu ao ping!", icon="❌")
+                
+                with st.expander("📶 Resultado Detalhado do Ping (Console)", expanded=True):
+                    if is_online:
+                        st.success("🟢 **Status:** ONLINE / Alcançável")
+                    else:
+                        st.error("🔴 **Status:** OFFLINE / Inalcançável")
+                    st.code(ping_output, language="text")
+    else:
+        st.info(f"🌐 **IP / Hostname:** `{ip_host if ip_host else 'Não cadastrado'}`")
+        st.caption("⚠️ Este dispositivo não possui endereço IP IPv4 configurado para teste de conectividade.")
+
 
 
 def render_impressoras_page():
     """
     Renderiza a página principal de gestão de impressoras e dispositivos do PaperCut.
     """
-    st.markdown("""
-        <style>
-            .metric-card {
-                background-color: #1e222a;
-                border-radius: 8px;
-                padding: 15px;
-                border-left: 4px solid #3b82f6;
-                margin-bottom: 10px;
-            }
-            .metric-title {
-                font-size: 0.85rem;
-                color: #9ca3af;
-                margin-bottom: 4px;
-            }
-            .metric-value {
-                font-size: 1.6rem;
-                font-weight: bold;
-                color: #f3f4f6;
-            }
-            .status-ok {
-                color: #10b981;
-                font-weight: bold;
-            }
-            .status-error {
-                color: #ef4444;
-                font-weight: bold;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
     st.title("🖨️ Gestão de Impressoras & Dispositivos (PaperCut)")
     st.caption("Visualização unificada e controle de filas de impressão e dispositivos multifuncionais (MFDs).")
 
-    # Carrega dados do banco SQLite
+
     df = get_impressoras_df()
 
     if df.empty:
-        st.info("ℹ️ Nenhuma impressora cadastrada no banco de dados. Clique abaixo para executar o scraper ou importar os CSVs.")
-        if st.button("🚀 Executar Coleta do PaperCut", type="primary"):
-            with st.spinner("Conectando ao PaperCut e processando arquivos CSV..."):
+        st.info("Nenhuma impressora encontrada no banco de dados. Clique abaixo para executar a coleta.")
+        if st.button("🔄 Executar Coleta do PaperCut Agora", type="primary"):
+            with st.spinner("Sincronizando com o PaperCut..."):
                 run_papercut_scraper()
+                st.success("Coleta finalizada!")
                 st.rerun()
         return
 
     # -----------------------------------------------------------------------------
-    # SIDEBAR - FILTROS
+    # FILTROS SIDEBAR & AÇÕES
     # -----------------------------------------------------------------------------
     with st.sidebar:
-        st.markdown("### 🔍 Filtros de Impressoras")
+        st.markdown("## ⚙️ Ações e Coleta")
+        if st.button("🔄 Unificar & Reprocessar CSVs", type="primary", use_container_width=True, help="Mescla e desduplica os relatórios PrinterList e DeviceList locais."):
+            with st.spinner("Unificando ativos e desduplicando registros..."):
+                if reprocess_existing_papercut_csvs():
+                    st.toast("✅ Impressoras unificadas e atualizadas no banco!", icon="🎉")
+                    st.rerun()
+                else:
+                    st.error("Erro ao reprocessar os CSVs do PaperCut.")
 
-        # Busca textual rápida
-        search_query = st.text_input(
-            "Buscar por Nome, IP, Modelo ou Local",
-            placeholder="Ex: PRT-PGJ, Ricoh, 10.10...",
-            key="papercut_search"
-        ).strip().lower()
+        if st.button("🌐 Executar Scraper PaperCut", use_container_width=True, help="Baixa novos CSVs atualizados direto do PaperCut."):
+            with st.spinner("Sincronizando com o PaperCut via Selenium..."):
+                run_papercut_scraper()
+                st.toast("✅ Raspagem do PaperCut finalizada com sucesso!", icon="🔄")
+                st.rerun()
 
-        # Filtro de Tipo
+        st.markdown("---")
+        st.markdown("## 🔍 Filtros de Impressoras")
+        
+        search_query = st.text_input("🔎 Buscar (Nome, Servidor, Modelo, IP)", "").strip().lower()
+
+        servidores_disponiveis = ["Todos"] + sorted([s for s in df['servidor'].dropna().unique() if str(s).strip()])
+        selected_servidor = st.selectbox("Servidor de Impressão", servidores_disponiveis)
+
+
         tipos_disponiveis = ["Todos"] + sorted(list(df['tipo'].dropna().unique()))
         selected_tipo = st.selectbox("Tipo de Ativo", tipos_disponiveis)
 
-        # Filtro de Status
         status_disponiveis = ["Todos"] + sorted(list(df['status'].dropna().unique()))
         selected_status = st.selectbox("Status", status_disponiveis)
 
-        # Filtro de Localização
         locais_disponiveis = sorted(list(df['localizacao'].dropna().unique()))
-        selected_locais = st.multiselect("Localização / Prédio", locais_disponiveis)
+        selected_locais = st.multiselect("Localização", locais_disponiveis)
 
-        # Filtro de Modelo
         modelos_disponiveis = sorted(list(df['modelo'].dropna().unique()))
         selected_modelos = st.multiselect("Fabricante / Modelo", modelos_disponiveis)
+
+        items_per_page = render_items_per_page_selector(
+            key_prefix="impressoras",
+            options=[10, 25, 50, 100, 200, "Todos"],
+            default_index=2,
+            label="📄 Ativos por página:"
+        )
 
         st.markdown("---")
         st.markdown("### ⚙️ Ações e Sincronização")
@@ -106,6 +201,9 @@ def render_impressoras_page():
         )
         df_filtered = df_filtered[mask]
 
+    if selected_servidor != "Todos":
+        df_filtered = df_filtered[df_filtered['servidor'] == selected_servidor]
+
     if selected_tipo != "Todos":
         df_filtered = df_filtered[df_filtered['tipo'] == selected_tipo]
 
@@ -118,6 +216,7 @@ def render_impressoras_page():
     if selected_modelos:
         df_filtered = df_filtered[df_filtered['modelo'].isin(selected_modelos)]
 
+
     # -----------------------------------------------------------------------------
     # CARDS KPIS
     # -----------------------------------------------------------------------------
@@ -127,7 +226,6 @@ def render_impressoras_page():
     total_filas = len(df_filtered[df_filtered['tipo'] == 'Fila de Impressão'])
     total_mfds = len(df_filtered[df_filtered['tipo'] != 'Fila de Impressão'])
     
-    # Status OK vs Erro
     status_lower = df_filtered['status'].str.lower()
     total_ok = len(df_filtered[status_lower.isin(['ok', 'online', 'ativo', 'ready', 'pronto'])])
     total_erros = total_ativos - total_ok
@@ -160,7 +258,7 @@ def render_impressoras_page():
     with col4:
         st.markdown(f"""
             <div class="metric-card" style="border-left-color: #10b981;">
-                <div class="metric-title">STATUS OPERACIONAL OK</div>
+                <div class="metric-title">DISPOSITIVOS OK</div>
                 <div class="metric-value" style="color: #10b981;">{total_ok}</div>
             </div>
         """, unsafe_allow_html=True)
@@ -207,7 +305,6 @@ def render_impressoras_page():
         with header_col:
             st.subheader(f"Listagem de Impressoras ({len(df_filtered)} registros)")
         with export_col:
-            # Exportação Excel/CSV
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 df_filtered.to_excel(writer, index=False, sheet_name='Impressoras PaperCut')
@@ -216,7 +313,7 @@ def render_impressoras_page():
             st.download_button(
                 label="📥 Exportar Excel",
                 data=buffer,
-                file_name=f"impressoras_papercut_{datetime.now().strftime('%Y%m%m_%H%M%S')}.xlsx",
+                file_name=f"impressoras_papercut_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
@@ -240,39 +337,79 @@ def render_impressoras_page():
             'Localização', 'IP / Hostname', 'Servidor', 'Total Páginas Impressas', 'Última Atualização'
         ]
         
-        # Filtra apenas colunas existentes
         cols_to_show = [c for c in cols_to_show if c in display_df.columns]
 
-        st.dataframe(
+        # Formata o campo IP / Hostname para URL quando for um IPv4 válido (caso contrário, define None para evitar links quebrados)
+        display_df['IP / Hostname'] = display_df['IP / Hostname'].apply(
+            lambda x: get_printer_url(x) if get_printer_url(x) else None
+        )
+
+
+        df_page, current_page, total_pages, total_items = paginate_items(
             display_df[cols_to_show],
+            page_key="impressoras",
+            items_per_page=items_per_page
+        )
+
+        if "last_selected_printer" not in st.session_state:
+            st.session_state["last_selected_printer"] = None
+
+        selection_event = st.dataframe(
+            df_page,
             use_container_width=True,
             hide_index=True,
             column_config={
+                "IP / Hostname": st.column_config.LinkColumn(
+                    "IP / Hostname",
+                    display_text=r"https?://(.*)",
+                    help="Clique para abrir a interface web da impressora"
+                ),
                 "Total Páginas Impressas": st.column_config.NumberColumn(format="%d"),
                 "Última Atualização": st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm"),
-            }
+            },
+            on_select="rerun",
+            selection_mode="single-row",
+            key="tabela_impressoras_datagrid"
+        )
+
+        selected_rows = selection_event.selection.rows if hasattr(selection_event, "selection") else []
+        
+        if selected_rows:
+            current_selected = selected_rows[0]
+            if st.session_state["last_selected_printer"] != current_selected:
+                st.session_state["last_selected_printer"] = current_selected
+                row_data = display_df.iloc[(current_page - 1) * items_per_page + current_selected]
+                show_printer_details(row_data)
+        else:
+            st.session_state["last_selected_printer"] = None
+
+        render_pagination_controls(
+            page_key="impressoras",
+            current_page=current_page,
+            total_pages=total_pages,
+            total_items=total_items,
+            items_per_page=items_per_page
         )
 
     elif selected_subtab == "📊 Gráficos & Estatísticas":
-
         st.subheader("📊 Análise Gráfica de Impressoras")
         
         g_col1, g_col2 = st.columns(2)
-
+        
         with g_col1:
-            st.markdown("#### Distribution por Status")
-            status_counts = df_filtered['status'].value_counts()
-            st.bar_chart(status_counts)
-
+            st.markdown("### 📌 Dispositivos por Tipo")
+            if not df_filtered.empty and 'tipo' in df_filtered.columns:
+                tipo_counts = df_filtered['tipo'].value_counts().reset_index()
+                tipo_counts.columns = ['Tipo', 'Quantidade']
+                st.bar_chart(tipo_counts, x='Tipo', y='Quantidade', use_container_width=True)
+            else:
+                st.info("Sem dados suficientes.")
+                
         with g_col2:
-            st.markdown("#### Distribuição por Tipo de Ativo")
-            tipo_counts = df_filtered['tipo'].value_counts()
-            st.bar_chart(tipo_counts)
-
-        st.markdown("---")
-        st.markdown("#### Top 10 Impressoras por Volume de Páginas Impressas")
-        df_top_pages = df_filtered.sort_values(by='total_paginas', ascending=False).head(10)
-        if not df_top_pages.empty:
-            st.bar_chart(data=df_top_pages, x='nome', y='total_paginas')
-        else:
-            st.info("Sem dados estatísticos de páginas para exibir.")
+            st.markdown("### 🟢 Dispositivos por Status")
+            if not df_filtered.empty and 'status' in df_filtered.columns:
+                status_counts = df_filtered['status'].value_counts().reset_index()
+                status_counts.columns = ['Status', 'Quantidade']
+                st.bar_chart(status_counts, x='Status', y='Quantidade', use_container_width=True)
+            else:
+                st.info("Sem dados suficientes.")

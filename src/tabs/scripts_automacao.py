@@ -324,18 +324,19 @@ def render_scripts_automacao_page():
     engine_badge = "⚡ PowerShell 7+ (pwsh)" if "pwsh" in ps_engine.lower() else "💻 Windows PowerShell 5.1"
 
     st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 20px; border-radius: 12px; border-left: 6px solid #3b82f6; margin-bottom: 20px;">
+        <div style="background: var(--metric-bg, #1e293b); padding: 20px; border-radius: 12px; border-left: 6px solid #3b82f6; border-top: 1px solid var(--metric-border, #2d3139); border-right: 1px solid var(--metric-border, #2d3139); border-bottom: 1px solid var(--metric-border, #2d3139); margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 700;">⚡ Scripts de Automação PowerShell</h2>
-                <span style="background-color: #334155; color: #38bdf8; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid #0284c7;">
+                <h2 style="color: var(--metric-value-color, #ffffff); margin: 0; font-size: 24px; font-weight: 700;">⚡ Scripts de Automação PowerShell</h2>
+                <span style="background-color: var(--secondary-background-color, rgba(56, 189, 248, 0.15)); color: var(--text-color, #38bdf8); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid #0284c7;">
                     {engine_badge}
                 </span>
             </div>
-            <p style="color: #94a3b8; margin: 6px 0 0 0; font-size: 14px;">
+            <p style="color: var(--metric-title-color, #94a3b8); margin: 6px 0 0 0; font-size: 14px;">
                 Execute rotinas remotas em segundo plano com suporte a navegação livre, F5 e acompanhamento de logs em tempo real.
             </p>
         </div>
     """, unsafe_allow_html=True)
+
 
     # Renderiza o widget de tarefas em segundo plano (se houver)
     render_background_jobs_widget()

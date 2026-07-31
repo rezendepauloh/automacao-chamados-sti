@@ -1,5 +1,10 @@
 import pandas as pd
 import streamlit as st
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
 
 def render_donations_page():
     """Renderiza a página de Doação & Redistribuição de Máquinas."""
@@ -18,9 +23,12 @@ def render_donations_page():
         if st.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True):
             with st.spinner("Lendo dados da planilha Excel..."):
                 try:
-                    sync_donations_from_excel(EXCEL_PATH)
-                    st.toast("✅ Dados sincronizados com sucesso!", icon="💾")
-                    st.rerun()
+                    res = sync_donations_from_excel(EXCEL_PATH)
+                    if res:
+                        st.toast("Dados sincronizados com sucesso do SharePoint!", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(f"Não foi possível encontrar o arquivo da planilha no caminho configurado.")
                 except Exception as e:
                     st.error(f"Erro ao sincronizar planilha: {e}")
                     
@@ -52,6 +60,13 @@ def render_donations_page():
     selected_ssd = st.sidebar.selectbox("SSD", ssd_options, key="donations_ssd")
     
     search_query = st.sidebar.text_input("🔎 Buscar (Patrimônio, Modelo, Chamado)", "", key="donations_search").strip()
+    
+    items_per_page = render_items_per_page_selector(
+        key_prefix="redistribuicao",
+        options=[10, 25, 50, 100, "Todos"],
+        default_index=1,
+        label="📄 Equipamentos por página:"
+    )
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("📋 Gerador de Texto (Preparo)")
@@ -203,11 +218,46 @@ def render_donations_page():
     baixas = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'baixa'])
     garantias = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'garantia'])
     
-    kpi_col1.metric("Todos os Equipamentos", total_equip)
-    kpi_col2.metric("Doações", doados)
-    kpi_col3.metric("Redistribuições", redistribuicoes)
-    kpi_col4.metric("Baixas", baixas)
-    kpi_col5.metric("Garantias", garantias)
+    with kpi_col1:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #3b82f6;">
+                <div class="metric-title">EQUIPAMENTOS</div>
+                <div class="metric-value">{total_equip}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with kpi_col2:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #10b981;">
+                <div class="metric-title">DOAÇÕES</div>
+                <div class="metric-value" style="color: #10b981;">{doados}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with kpi_col3:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #8b5cf6;">
+                <div class="metric-title">REDISTRIBUIÇÕES</div>
+                <div class="metric-value" style="color: #8b5cf6;">{redistribuicoes}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with kpi_col4:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #ef4444;">
+                <div class="metric-title">BAIXAS</div>
+                <div class="metric-value" style="color: #ef4444;">{baixas}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with kpi_col5:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #f59e0b;">
+                <div class="metric-title">GARANTIAS</div>
+                <div class="metric-value" style="color: #f59e0b;">{garantias}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
 
     st.markdown("---")
     
@@ -236,8 +286,14 @@ def render_donations_page():
     st.markdown("---")
     st.subheader("📋 Detalhamento dos Equipamentos")
     
-    st.dataframe(
+    df_page, current_page, total_pages, total_items = paginate_items(
         df_filtered,
+        page_key="redistribuicao",
+        items_per_page=items_per_page
+    )
+
+    st.dataframe(
+        df_page,
         column_config={
             "patrimonio": st.column_config.TextColumn("Patrimônio"),
             "modelo": st.column_config.TextColumn("Modelo"),
@@ -252,3 +308,12 @@ def render_donations_page():
         hide_index=True,
         use_container_width=True
     )
+
+    render_pagination_controls(
+        page_key="redistribuicao",
+        current_page=current_page,
+        total_pages=total_pages,
+        total_items=total_items,
+        items_per_page=items_per_page
+    )
+

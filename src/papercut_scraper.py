@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import shutil
@@ -140,6 +141,107 @@ def is_valid_printer_name(nome: str) -> bool:
     return True
 
 
+def get_canonical_asset_key(nome_raw: str) -> str:
+    """Extrai uma chave canônica única limpa (ex: 'prt-5050') a partir de nomes do PaperCut."""
+    if not nome_raw:
+        return ""
+    s = str(nome_raw).strip()
+    s = re.sub(r'^(device|printer|dispositivo|fila)[\/\\]', '', s, flags=re.IGNORECASE)
+    if '\\' in s:
+        s = s.split('\\')[-1]
+    if '/' in s:
+        s = s.split('/')[-1]
+    return s.strip().lower()
+
+
+def is_valid_ipv4(ip_str: str) -> bool:
+    if not ip_str or pd.isna(ip_str):
+        return False
+    s = str(ip_str).strip()
+    return bool(re.match(r"^(\d{1,3}\.){3}\d{1,3}$", s))
+
+
+def merge_papercut_records(records: list[dict]) -> pd.DataFrame:
+    """
+    Realiza a fusão inteligente entre a lista de impressoras (PrinterList) e dispositivos físicos (DeviceList),
+    unificando pelo nome canônico do ativo (ex: 'prt-5050') e combinando IP, Servidor, Modelo e Localização.
+    """
+    merged_map = {}
+
+    for rec in records:
+        nome_orig = rec.get('nome', '').strip()
+        key = get_canonical_asset_key(nome_orig)
+        if not key:
+            continue
+
+        if key not in merged_map:
+            merged_map[key] = {
+                'nome': key,
+                'servidor': rec.get('servidor', ''),
+                'tipo': rec.get('tipo', ''),
+                'modelo': rec.get('modelo', ''),
+                'localizacao': rec.get('localizacao', ''),
+                'ip_host': rec.get('ip_host', ''),
+                'status': rec.get('status', ''),
+                'total_paginas': rec.get('total_paginas', 0),
+                'filas_relacionadas': rec.get('filas_relacionadas', ''),
+                'detalhes_extra': rec.get('detalhes_extra', '')
+            }
+        else:
+            existing = merged_map[key]
+            
+            # 1. IP / Hostname: prioriza IPv4 válido
+            existing_ip = existing.get('ip_host', '')
+            new_ip = rec.get('ip_host', '')
+            if not is_valid_ipv4(existing_ip) and is_valid_ipv4(new_ip):
+                existing['ip_host'] = new_ip
+            elif not existing_ip and new_ip:
+                existing['ip_host'] = new_ip
+
+            # 2. Servidor: prioriza o servidor de impressão nomeado (ex: srv-1565) sobre IP genérico ou 'PaperCut'
+            existing_srv = existing.get('servidor', '')
+            new_srv = rec.get('servidor', '')
+            if existing_srv in ['', 'PaperCut'] or is_valid_ipv4(existing_srv):
+                if new_srv and new_srv not in ['PaperCut'] and not is_valid_ipv4(new_srv):
+                    existing['servidor'] = new_srv
+                elif not existing_srv and new_srv:
+                    existing['servidor'] = new_srv
+
+            # 3. Localização: se estiver em branco, aproveita do outro registro
+            if not existing.get('localizacao') and rec.get('localizacao'):
+                existing['localizacao'] = rec.get('localizacao')
+
+            # 4. Modelo / Fabricante: prioriza modelo específico sobre genérico (ex: HP OXP)
+            existing_mod = existing.get('modelo', '')
+            new_mod = rec.get('modelo', '')
+            if not existing_mod or existing_mod.lower() in ['hp oxp', 'desconhecido', 'mfd', 'mfd/printer']:
+                if new_mod and new_mod.lower() not in ['hp oxp', 'desconhecido']:
+                    existing['modelo'] = new_mod
+            elif not existing_mod and new_mod:
+                existing['modelo'] = new_mod
+
+            # 5. Tipo: se um dos registros for MFD, classifica como 'Dispositivo Físico (MFD)'
+            if 'MFD' in rec.get('tipo', '') or 'Dispositivo' in rec.get('tipo', ''):
+                existing['tipo'] = 'Dispositivo Físico (MFD)'
+
+            # 6. Status: prioriza status mais longo/detalhado de hardware MFD sobre 'OK'
+            existing_st = existing.get('status', '')
+            new_st = rec.get('status', '')
+            if len(new_st) > len(existing_st) or (existing_st == 'OK' and new_st != 'OK'):
+                existing['status'] = new_st
+
+            # 7. Total Páginas Impressas: mantém a maior contagem observada
+            existing['total_paginas'] = max(existing.get('total_paginas', 0), rec.get('total_paginas', 0))
+
+            # 8. Detalhes extras: indica unificação
+            existing['detalhes_extra'] = f"Unificado: {existing.get('detalhes_extra', '')} + {rec.get('detalhes_extra', '')}"
+
+    if not merged_map:
+        return pd.DataFrame()
+
+    return pd.DataFrame(list(merged_map.values()))
+
+
 def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.DataFrame) -> pd.DataFrame:
     """
     Unifica e normaliza os dados de Impressoras (filas) e Dispositivos Físicos do PaperCut.
@@ -161,7 +263,6 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
             modelo = get_flexible_value(row_dict, ['modelo', 'model', 'tipo/modelo', 'atributos', 'fabricante'])
             ip_host = get_flexible_value(row_dict, ['ip/host', 'nome físico', 'physical name', 'ip address', 'endereço ip', 'hostname', 'ip'], default=servidor)
 
-            # Tenta extrair servidor do nome se vier no formato "servidor\impressora"
             if not servidor and '\\' in nome:
                 parts = nome.split('\\')
                 servidor = parts[0]
@@ -184,12 +285,6 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
                     'filas_relacionadas': '',
                     'detalhes_extra': 'Origem: PrinterList'
                 })
-            else:
-                logger.debug(f"Linha {idx} de PrinterList ignorada por nome inválido/curto: {row_dict}")
-
-        logger.info(f"✅ Extração de PrinterList concluída: {len(records)} registros válidos obtidos.")
-    else:
-        logger.warning("⚠️ DataFrame de Impressoras (PrinterList) está VAZIO.")
 
     printers_count = len(records)
 
@@ -225,28 +320,15 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
                     'filas_relacionadas': '',
                     'detalhes_extra': 'Origem: DeviceList'
                 })
-            else:
-                logger.debug(f"Linha {idx} de DeviceList ignorada por nome inválido/curto: {row_dict}")
-
-        logger.info(f"✅ Extração de DeviceList concluída: {len(records) - printers_count} registros válidos obtidos.")
-    else:
-        logger.warning("⚠️ DataFrame de Dispositivos (DeviceList) está VAZIO.")
 
     if not records:
         logger.warning("❌ Nenhum registro pôde ser montado a partir dos DataFrames informados.")
         return pd.DataFrame()
 
-    df_merged = pd.DataFrame(records)
-    logger.info(f"Total de registros unificados antes de desduplicar: {len(df_merged)}")
-    
-    # Remove duplicatas baseadas no nome, mantendo o primeiro registro válido
-    df_merged.drop_duplicates(subset=['nome'], keep='first', inplace=True)
-    logger.info(f"Total de registros finais após remover duplicatas: {len(df_merged)}")
-
-    if not df_merged.empty:
-        logger.info(f"🔹 Exemplo do 1º registro final: {df_merged.iloc[0].to_dict()}")
-
+    df_merged = merge_papercut_records(records)
+    logger.info(f"Total de registros unificados inteligentes: {len(df_merged)}")
     return df_merged
+
 
 
 def run_papercut_scraper():
@@ -426,5 +508,27 @@ def run_papercut_scraper():
     logger.info("============================================================\n")
 
 
+def reprocess_existing_papercut_csvs() -> bool:
+    """Reprocessa e funde os CSVs existentes na pasta de brutos sem precisar abrir o Selenium."""
+    logger.info("Reprocessando CSVs locais de PaperCut...")
+    p_csv = PAPERCUT_BRUTOS_DIR / "printer_list.csv"
+    d_csv = PAPERCUT_BRUTOS_DIR / "device_list.csv"
+    
+    if not p_csv.exists() and not d_csv.exists():
+        logger.warning("Nenhum CSV bruto do PaperCut encontrado.")
+        return False
+        
+    df_printers = load_csv_safe(p_csv) if p_csv.exists() else pd.DataFrame()
+    df_devices = load_csv_safe(d_csv) if d_csv.exists() else pd.DataFrame()
+    
+    df_merged = merge_and_normalize_papercut_data(df_printers, df_devices)
+    if not df_merged.empty:
+        save_impressoras_to_db(df_merged)
+        logger.info(f"✅ Reprocessamento local concluído: {len(df_merged)} registros unificados gravados no banco.")
+        return True
+    return False
+
+
 if __name__ == "__main__":
     run_papercut_scraper()
+

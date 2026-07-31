@@ -5,13 +5,13 @@ import streamlit as st
 
 def render_items_per_page_selector(
     key_prefix: str,
-    options: list[int] = [6, 10, 20, 50, 100],
+    options: list = [10, 20, 50, 100, "Todos"],
     default_index: int = 1,
     label: str = "📄 Itens por página:"
 ) -> int:
     """
     Renderiza um selectbox no sidebar (ItemsPerPage) para controlar a quantidade de registros por página.
-    Retorna a quantidade selecionada.
+    Suporta números inteiros e a opção 'Todos' (retorna 999999).
     """
     per_page_key = f"{key_prefix}_items_per_page"
     selected = st.sidebar.selectbox(
@@ -20,7 +20,13 @@ def render_items_per_page_selector(
         index=default_index,
         key=per_page_key
     )
-    return selected
+    if str(selected).lower() == "todos":
+        return 999999
+    try:
+        return int(selected)
+    except (ValueError, TypeError):
+        return 10
+
 
 
 def paginate_items(

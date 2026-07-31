@@ -86,12 +86,18 @@ MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
 MASTER_FILE_PATH = USER_HOME / os.getenv("SHAREPOINT_RELATIVE_PATH", "")
 DONATIONS_FILE_PATH = USER_HOME / os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
+WARRANTY_FILE_PATH = USER_HOME / os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", "")
 SHAREPOINT_MATUTINO_URL = os.getenv("SHAREPOINT_MATUTINO_URL", "")
 VIDEO_FAQ_DIR = USER_HOME / os.getenv("VIDEO_FAQ_PATH", "")
+
+# Garantia Logs
+DEBUG_DIR_GARANTIA = BASE_DIR / "debug_logs" / "garantia"
+DEBUG_DIR_GARANTIA.mkdir(parents=True, exist_ok=True)
 
 # Atos e Normas
 ATOS_NORMAS_API_URL = os.getenv("ATOS_NORMAS_API_URL", "")
 ATOS_NORMAS_DOWNLOAD_URL = os.getenv("ATOS_NORMAS_DOWNLOAD_URL", "")
+
 
 
 

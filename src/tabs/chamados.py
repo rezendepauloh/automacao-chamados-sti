@@ -15,6 +15,12 @@ import streamlit.components.v1 as components
 
 from src.components.status_banner import check_orquestrador_running, read_last_log_lines
 from src.database import load_data, get_comments_by_ticket, update_ticket_location_details, update_ticket_tag, update_ticket_andamento
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
+
 
 # Declara o componente customizado do Select Multiple nativo com clique-e-arraste
 custom_select = components.declare_component("custom_select", path=str(custom_select_dir))
@@ -541,8 +547,16 @@ def render_chamados_page():
         key="f_ticket_ids",
         placeholder="Selecione chamados individuais..."
     )
-    
+
+    items_per_page = render_items_per_page_selector(
+        key_prefix="chamados",
+        options=[10, 25, 50, 100, 200, 500, "Todos"],
+        default_index=2,
+        label="📄 Chamados por página:"
+    )
+
     st.sidebar.markdown("---")
+
 
     if selected_tickets:
         selected_ids = [t.split(" - ")[0].strip() for t in selected_tickets]
@@ -553,9 +567,35 @@ def render_chamados_page():
             filtered_df = filtered_df[clean_df_ids.isin(selected_ids)]
         
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total de Chamados", len(filtered_df))
-    col2.metric("Abertos", len(filtered_df[filtered_df['status'] == 'Aberto']))
-    col3.metric("Fechados", len(filtered_df[filtered_df['status'] == 'Fechado']))
+    total_ch = len(filtered_df)
+    abertos_ch = len(filtered_df[filtered_df['status'] == 'Aberto']) if 'status' in filtered_df.columns else 0
+    fechados_ch = len(filtered_df[filtered_df['status'] == 'Fechado']) if 'status' in filtered_df.columns else 0
+
+    with col1:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #3b82f6;">
+                <div class="metric-title">TOTAL DE CHAMADOS</div>
+                <div class="metric-value">{total_ch}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #f59e0b;">
+                <div class="metric-title">ABERTOS</div>
+                <div class="metric-value" style="color: #f59e0b;">{abertos_ch}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #10b981;">
+                <div class="metric-title">FECHADOS</div>
+                <div class="metric-value" style="color: #10b981;">{fechados_ch}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+
     
     # ABAS INTERNAS DE VISUALIZAÇÃO COM QUERY PARAMETERS (?subtab=slug)
     CHAMADOS_SUBTAB_MAP = {
@@ -844,8 +884,14 @@ def render_chamados_page():
                 
             return [style] * len(row)
 
+        df_page, current_page, total_pages, total_items = paginate_items(
+            df_final_display,
+            page_key="chamados",
+            items_per_page=items_per_page
+        )
+
         selection_event = st.dataframe(
-            df_final_display.style.apply(style_dataframe, axis=1),
+            df_page.style.apply(style_dataframe, axis=1),
             column_order=cols_to_show,
             column_config={
                 "id": st.column_config.LinkColumn("Chamado #", display_text=r".*#id:(.*)"),
@@ -874,10 +920,19 @@ def render_chamados_page():
             current_selected = selected_rows[0]
             if st.session_state["last_selected"] != current_selected:
                 st.session_state["last_selected"] = current_selected
-                row_data = filtered_df.iloc[current_selected]
+                row_data = filtered_df.iloc[(current_page - 1) * items_per_page + current_selected]
                 show_ticket_details(row_data)
         else:
             st.session_state["last_selected"] = None
+
+        render_pagination_controls(
+            page_key="chamados",
+            current_page=current_page,
+            total_pages=total_pages,
+            total_items=total_items,
+            items_per_page=items_per_page
+        )
+
 
         st.markdown("---")
         st.subheader("📲 Compartilhar Fila por WhatsApp")

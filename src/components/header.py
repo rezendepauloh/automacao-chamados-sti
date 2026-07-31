@@ -9,11 +9,13 @@ PAGE_TO_SLUG = {
     "📍 Mapa & Localização": "mapa",
     "🖥️ Doação & Redistribuição": "redistribuicao",
     "📜 Fiscalização de Contratos": "fiscalizacao",
+    "🛡️ Controle de Garantia": "garantia",
     "🖨️ Impressoras (PaperCut)": "impressoras",
     "⚡ Scripts de Automação": "scripts-automacao",
     "📚 FAQ & Tutoriais": "faq",
     "🔔 Central de Notificações": "notificacoes",
 }
+
 
 
 SLUG_TO_PAGE = {v: k for k, v in PAGE_TO_SLUG.items()}
@@ -77,8 +79,11 @@ def render_header_navigation() -> str:
             set_page("🖥️ Doação & Redistribuição")
         if st.button("📜 Fiscalização de Contratos", use_container_width=True):
             set_page("📜 Fiscalização de Contratos")
+        if st.button("🛡️ Controle de Garantia", use_container_width=True):
+            set_page("🛡️ Controle de Garantia")
         if st.button("🖨️ Impressoras (PaperCut)", use_container_width=True):
             set_page("🖨️ Impressoras (PaperCut)")
+
         if st.button("⚡ Scripts de Automação", use_container_width=True):
             set_page("⚡ Scripts de Automação")
         if st.button("📚 FAQ & Tutoriais", use_container_width=True):

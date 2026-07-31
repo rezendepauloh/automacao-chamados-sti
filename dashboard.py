@@ -71,6 +71,12 @@ elif selected_page == "📜 Fiscalização de Contratos":
     importlib.reload(src.tabs.fiscalizacao)
     src.tabs.fiscalizacao.render_contracts_page()
 
+elif selected_page == "🛡️ Controle de Garantia":
+    import src.tabs.garantia
+    importlib.reload(src.tabs.garantia)
+    src.tabs.garantia.render_garantia_page()
+
+
 elif selected_page == "📚 FAQ & Tutoriais":
     import src.tabs.links_faqs
     importlib.reload(src.tabs.links_faqs)

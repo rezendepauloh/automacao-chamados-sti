@@ -7,6 +7,11 @@ from datetime import datetime
 from src.database import get_central_telefonica_df
 from src.oxe_scraper import scrape_oxe
 from src.preprocess_oxe import preprocess_oxe
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
 
 
 def get_val(row, *keys, default="-"):
@@ -27,24 +32,8 @@ def render_central_telefonica_page():
     """
     st.markdown("""
         <style>
-            .metric-card-oxe {
-                background-color: #1e222a;
-                border-radius: 8px;
-                padding: 15px;
-                border-left: 4px solid #8b5cf6;
-                margin-bottom: 10px;
-            }
-            .metric-title-oxe {
-                font-size: 0.85rem;
-                color: #9ca3af;
-                margin-bottom: 4px;
-            }
-            .metric-value-oxe {
-                font-size: 1.6rem;
-                font-weight: bold;
-                color: #f3f4f6;
-            }
             .badge-ip {
+
                 background-color: #065f46;
                 color: #34d399;
                 padding: 2px 8px;
@@ -69,10 +58,11 @@ def render_central_telefonica_page():
     # Carrega dados do banco de dados SQLite / Tratados
     df = get_central_telefonica_df()
 
-    # Barra de ações topo
-    col_act1, col_act2, col_act3 = st.columns([1.5, 1.5, 3])
-    
-    with col_act1:
+    # -----------------------------------------------------------------------------
+    # FILTROS LATERAIS (SIDEBAR) & AÇÕES DE COLETA
+    # -----------------------------------------------------------------------------
+    with st.sidebar:
+        st.markdown("## ⚙️ Ações e Coleta")
         if st.button("🚀 Executar Scraper (OXE)", type="primary", use_container_width=True):
             with st.spinner("Conectando à Central Telefônica OXE e coletando ramais..."):
                 if scrape_oxe():
@@ -82,20 +72,15 @@ def render_central_telefonica_page():
                 else:
                     st.error("Erro ao executar o scraper da Central Telefônica. Verifique o log em debug_logs/oxe/oxe_scraper.log.")
 
-    with col_act2:
         if st.button("🔄 Reprocessar Dados", use_container_width=True):
             with st.spinner("Tratando dados brutos do OXE..."):
                 if preprocess_oxe():
                     st.toast("✅ Dados reprocessados com sucesso!", icon="🔄")
                     st.rerun()
 
-    if df.empty:
-        st.info("ℹ️ Nenhum dado da Central Telefônica disponível. Clique no botão acima 'Executar Scraper (OXE)' para realizar a primeira coleta.")
-        return
+        st.markdown("---")
+        st.header("🔍 Filtros de Busca")
 
-    # -----------------------------------------------------------------------------
-    # CARDS DE MÉTRICAS
-    # -----------------------------------------------------------------------------
     total_ramais = len(df)
     
     def is_valid_series(series):
@@ -104,6 +89,9 @@ def render_central_telefonica_page():
     col_mac = 'mac_address' if 'mac_address' in df.columns else None
     col_ip = 'ip_address' if 'ip_address' in df.columns else ('endereco_ip' if 'endereco_ip' in df.columns else None)
     col_tipo = 'tipo_estacao' if 'tipo_estacao' in df.columns else ('tipo_de_estacao' if 'tipo_de_estacao' in df.columns else None)
+    col_grupo = 'grupo_captura' if 'grupo_captura' in df.columns else ('pickup_group_name' if 'pickup_group_name' in df.columns else None)
+    col_cat_pub = 'cat_rede_publica' if 'cat_rede_publica' in df.columns else ('public_network_category_id' if 'public_network_category_id' in df.columns else None)
+    col_role = 'funcao_role' if 'funcao_role' in df.columns else ('set_role' if 'set_role' in df.columns else None)
 
     ramais_com_mac = len(df[is_valid_series(df[col_mac])]) if col_mac and col_mac in df.columns else 0
     ramais_com_ip = len(df[is_valid_series(df[col_ip])]) if col_ip and col_ip in df.columns else 0
@@ -149,13 +137,12 @@ def render_central_telefonica_page():
     # FILTROS LATERAIS (SIDEBAR)
     # -----------------------------------------------------------------------------
     with st.sidebar:
-        st.header("🔍 Filtros de Busca")
-
         search_query = st.text_input(
             "Buscar por Ramal, Nome, IP, MAC ou Login:",
             value="",
             placeholder="Ex: 2153, Jean, 10.111..., 48:7A..."
         ).strip().lower()
+
 
         col_cat = 'categoria_dispositivo' if 'categoria_dispositivo' in df.columns else None
         categorias_disponiveis = sorted(df[col_cat].dropna().unique().tolist()) if col_cat else []
@@ -174,8 +161,37 @@ def render_central_telefonica_page():
             default=[]
         )
 
+        grupos_disponiveis = sorted(df[col_grupo].dropna().astype(str).unique().tolist()) if col_grupo else []
+        sel_grupos = st.multiselect(
+            "👥 Grupo de Captura:",
+            options=[g for g in grupos_disponiveis if g.strip() and g.strip() not in ["-", "None", "nan"]],
+            default=[]
+        )
+
+        cat_pub_disponiveis = sorted(df[col_cat_pub].dropna().astype(str).unique().tolist()) if col_cat_pub else []
+        sel_cat_pub = st.multiselect(
+            "🌐 Categoria Rede Pública:",
+            options=[c for c in cat_pub_disponiveis if c.strip() and c.strip() not in ["-", "None", "nan"]],
+            default=[]
+        )
+
+        roles_disponiveis = sorted(df[col_role].dropna().astype(str).unique().tolist()) if col_role else []
+        sel_roles = st.multiselect(
+            "🎭 Função / Role:",
+            options=[r for r in roles_disponiveis if r.strip() and r.strip() not in ["-", "None", "nan"]],
+            default=[]
+        )
+
         only_with_mac = st.checkbox("Exibir apenas ramais com MAC Address", value=False)
         only_with_ip = st.checkbox("Exibir apenas ramais com Endereço IP", value=False)
+
+        items_per_page = render_items_per_page_selector(
+            key_prefix="central_oxe",
+            options=[10, 25, 50, 100, 200, 500, "Todos"],
+            default_index=2,
+            label="📄 Ramais por página:"
+        )
+
 
     # -----------------------------------------------------------------------------
     # APLICAÇÃO DOS FILTROS
@@ -194,6 +210,15 @@ def render_central_telefonica_page():
 
     if sel_tipos and col_tipo:
         df_filtered = df_filtered[df_filtered[col_tipo].isin(sel_tipos)]
+
+    if sel_grupos and col_grupo:
+        df_filtered = df_filtered[df_filtered[col_grupo].astype(str).isin(sel_grupos)]
+
+    if sel_cat_pub and col_cat_pub:
+        df_filtered = df_filtered[df_filtered[col_cat_pub].astype(str).isin(sel_cat_pub)]
+
+    if sel_roles and col_role:
+        df_filtered = df_filtered[df_filtered[col_role].astype(str).isin(sel_roles)]
 
     if only_with_mac and col_mac:
         df_filtered = df_filtered[is_valid_series(df_filtered[col_mac])]
@@ -289,7 +314,6 @@ def render_central_telefonica_page():
         if st.button("Fechar", key=f"close_ramal_modal_{ramal_num}"):
             st.rerun()
 
-
     # Mapeamento de colunas amigáveis para exibição
     column_rename_map = {
         "ramal": "Ramal",
@@ -323,11 +347,18 @@ def render_central_telefonica_page():
     ]
     existing_cols = [c for c in cols_order if c in df_display.columns]
 
+    # Paginação
+    df_page, current_page, total_pages, total_items = paginate_items(
+        df_display[existing_cols],
+        page_key="central_oxe",
+        items_per_page=items_per_page
+    )
+
     if "last_selected_ramal" not in st.session_state:
         st.session_state["last_selected_ramal"] = None
 
     selection_event = st.dataframe(
-        df_display[existing_cols],
+        df_page,
         use_container_width=True,
         hide_index=True,
         on_select="rerun",
@@ -341,10 +372,19 @@ def render_central_telefonica_page():
         current_selected = selected_rows[0]
         if st.session_state["last_selected_ramal"] != current_selected:
             st.session_state["last_selected_ramal"] = current_selected
-            row_data = df_filtered.iloc[current_selected]
+            row_data = df_filtered.iloc[(current_page - 1) * items_per_page + current_selected]
             show_ramal_details(row_data)
     else:
         st.session_state["last_selected_ramal"] = None
+
+    # Régua de controles de paginação
+    render_pagination_controls(
+        page_key="central_oxe",
+        current_page=current_page,
+        total_pages=total_pages,
+        total_items=total_items,
+        items_per_page=items_per_page
+    )
 
     # -----------------------------------------------------------------------------
     # BOTÃO DE EXPORTAÇÃO
@@ -361,4 +401,5 @@ def render_central_telefonica_page():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
+
 

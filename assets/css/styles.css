@@ -1,74 +1,211 @@
 /* Oculta apenas o botão de Deploy do cabeçalho */
-[data-testid="stAppDeployButton"], .stAppDeployButton {
-    display: none !important;
+[data-testid='stAppDeployButton'],
+.stAppDeployButton {
+  display: none !important;
 }
 /* Remove rodapé padrão */
 footer {
-    display: none !important;
+  display: none !important;
 }
 /* Borda fina vermelha e glow suave para o modal (st.dialog) */
-div[data-testid="stDialog"] > div:first-child,
-div[role="dialog"] {
-    border: 2px solid #ff4b4b !important;
-    box-shadow: 0 0 15px rgba(255, 75, 75, 0.3) !important;
-    border-radius: 8px !important;
+div[data-testid='stDialog'] > div:first-child,
+div[role='dialog'] {
+  border: 2px solid #ff4b4b !important;
+  box-shadow: 0 0 15px rgba(255, 75, 75, 0.3) !important;
+  border-radius: 8px !important;
 }
+
+/* Borda fina vermelha e glow suave para os balões de notificação (st.toast) */
+div[data-testid='stToast'],
+div[data-testid='stToastContainer'] > div,
+.stToast {
+  border: 2px solid #ff4b4b !important;
+  box-shadow: 0 0 15px rgba(255, 75, 75, 0.4) !important;
+  border-radius: 8px !important;
+}
+
 /* Reduz drasticamente o padding superior e ancora o posicionamento absoluto */
-.block-container, div[data-testid="stMainBlockContainer"] {
-    padding-top: 1.5rem !important;
-    padding-bottom: 1rem !important;
-    position: relative !important;
+.block-container,
+div[data-testid='stMainBlockContainer'] {
+  padding-top: 1.5rem !important;
+  padding-bottom: 1rem !important;
+  position: relative !important;
 }
-/* Posiciona o botão Popover de navegação no header nativo do Streamlit, compacto no canto superior direito */
-header[data-testid="stHeader"] {
-    background: transparent !important;
-    pointer-events: none !important;
+/* Header nativo do Streamlit */
+header[data-testid='stHeader'] {
+  background: transparent !important;
+  pointer-events: none !important;
 }
-header[data-testid="stHeader"] * {
-    pointer-events: auto !important;
+header[data-testid='stHeader'] * {
+  pointer-events: auto !important;
 }
-div[data-testid="stMainBlockContainer"] > div:first-child > div[data-testid="stPopover"],
-.main div[data-testid="stPopover"] {
-    position: fixed !important;
-    top: 0.4rem !important;
-    right: 4.5rem !important;
-    width: auto !important;
-    z-index: 999999 !important;
+
+/* ==========================================================================
+   CONTROLE DE SIDEBAR (EXPAND / COLLAPSE)
+   ========================================================================== */
+[data-testid='collapsedControl'],
+[data-testid='stSidebarExpandButton'] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
 }
-div[data-testid="stMainBlockContainer"] > div:first-child > div[data-testid="stPopover"] > button,
-.main div[data-testid="stPopover"] > button {
-    background-color: #1e1f25 !important;
-    border: 1px solid #343541 !important;
-    padding: 4px 12px !important;
-    height: auto !important;
-    min-height: 0px !important;
-    width: auto !important;
-    font-size: 0.85rem !important;
-    color: #ffffff !important;
-    border-radius: 6px !important;
+
+[data-testid='collapsedControl'] button,
+[data-testid='stSidebarExpandButton'] button {
+  background-color: var(
+    --secondary-background-color,
+    rgba(128, 128, 128, 0.15)
+  ) !important;
+  border: 1px solid rgba(128, 128, 128, 0.25) !important;
+  border-radius: 6px !important;
+  color: var(--text-color, currentColor) !important;
 }
-div[data-testid="stPopover"] > button:hover {
-    border-color: #ff4b4b !important;
-    color: #ff4b4b !important;
+
+[data-testid='collapsedControl'] svg,
+[data-testid='stSidebarExpandButton'] svg {
+  fill: var(--text-color, currentColor) !important;
+  color: var(--text-color, currentColor) !important;
 }
+
+/* Empurra o contêiner nativo dos 3 pontinhos e toolbar do Streamlit 7.5rem para a esquerda */
+header[data-testid='stHeader'] div:has(> [data-testid='stMainMenu']),
+header[data-testid='stHeader'] div:has(> [data-testid='stStatusWidget']),
+header[data-testid='stHeader'] .e1yxiy6j6,
+header[data-testid='stHeader'] > div:first-child > div:last-child {
+  transform: translateX(-2.8rem) !important;
+}
+
+/* Posiciona o botão Popover de navegação no EXTREMO canto direito (à direita dos 3 pontinhos) */
+div[data-testid='stMainBlockContainer']
+  > div:first-child
+  > div[data-testid='stPopover'],
+.main div[data-testid='stPopover'],
+div[data-testid='stPopover'] {
+  position: fixed !important;
+  top: 0.5rem !important;
+  right: 0.75rem !important;
+  width: auto !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
+}
+
+button[data-testid='stExpandSidebarButton'] {
+  left: 30px;
+  position: relative;
+}
+
+div[data-testid='stMainBlockContainer']
+  > div:first-child
+  > div[data-testid='stPopover']
+  > button,
+.main div[data-testid='stPopover'] > button {
+  background-color: #1e1f25 !important;
+  border: 1px solid #343541 !important;
+  padding: 5px 14px !important;
+  height: auto !important;
+  min-height: 0px !important;
+  width: auto !important;
+  font-size: 0.85rem !important;
+  color: #ffffff !important;
+  border-radius: 6px !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+div[data-testid='stPopover'] > button:hover {
+  border-color: #ff4b4b !important;
+  color: #ff4b4b !important;
+}
+
 /* Ajusta a altura máxima do menu popover de acordo com a tela para evitar barra de rolagem */
-div[data-testid="stPopoverBody"] {
-    max-height: calc(100vh - 70px) !important;
-    overflow-y: auto !important;
+div[data-testid='stPopoverBody'] {
+  max-height: calc(100vh - 70px) !important;
+  overflow-y: auto !important;
 }
-div[data-testid="stPopoverBody"] > div {
-    max-height: none !important;
+div[data-testid='stPopoverBody'] > div {
+  max-height: none !important;
 }
 
 /* Garante que o dataframe ocupe 100% da tela quando entrar no modo Tela Cheia (Fullscreen) */
-div[data-testid="stDataFrame"][data-st-mode="fullscreen"],
-div[data-testid="stElementContainer"]:aria-modal,
-:fullscreen div[data-testid="stDataFrame"],
-:fullscreen div[data-testid="stDataFrame"] > div,
-[data-testid="stDataFrame"]:fullscreen,
-[data-testid="stDataFrame"]:fullscreen iframe {
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: 100vw !important;
-    max-height: 100vh !important;
+div[data-testid='stDataFrame'][data-st-mode='fullscreen'],
+div[data-testid='stElementContainer']:aria-modal,
+:fullscreen div[data-testid='stDataFrame'],
+:fullscreen div[data-testid='stDataFrame'] > div,
+[data-testid='stDataFrame']:fullscreen,
+[data-testid='stDataFrame']:fullscreen iframe {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+}
+
+/* ==========================================================================
+   CARDS DE MÉTRICAS (KPIs) - TEMA CLARO (LIGHT) E TEMA ESCURO (DARK)
+   ========================================================================== */
+:root {
+  --metric-bg: #1e222a;
+  --metric-border: #2d3139;
+  --metric-title-color: #9ca3af;
+  --metric-value-color: #ffffff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root,
+  body,
+  .stApp {
+    --metric-bg: #f8fafc;
+    --metric-border: #e2e8f0;
+    --metric-title-color: #475569;
+    --metric-value-color: #0f172a;
+  }
+}
+
+[data-theme='light'],
+.stApp[data-theme='light'],
+body[data-theme='light'] {
+  --metric-bg: #f8fafc !important;
+  --metric-border: #e2e8f0 !important;
+  --metric-title-color: #475569 !important;
+  --metric-value-color: #0f172a !important;
+}
+
+[data-theme='dark'],
+.stApp[data-theme='dark'],
+body[data-theme='dark'] {
+  --metric-bg: #1e222a !important;
+  --metric-border: #2d3139 !important;
+  --metric-title-color: #9ca3af !important;
+  --metric-value-color: #ffffff !important;
+}
+
+.metric-card,
+.metric-card-oxe {
+  background-color: var(--metric-bg, #1e222a) !important;
+  border-radius: 8px !important;
+  padding: 15px !important;
+  border-left: 4px solid #3b82f6;
+  margin-bottom: 10px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+  border-top: 1px solid var(--metric-border, #2d3139) !important;
+  border-right: 1px solid var(--metric-border, #2d3139) !important;
+  border-bottom: 1px solid var(--metric-border, #2d3139) !important;
+}
+
+.metric-title,
+.metric-title-oxe {
+  font-size: 0.85rem !important;
+  color: var(--metric-title-color, #9ca3af) !important;
+  margin-bottom: 4px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+.metric-value,
+.metric-value-oxe {
+  font-size: 1.6rem !important;
+  font-weight: bold !important;
+  color: var(--metric-value-color, #ffffff) !important;
 }

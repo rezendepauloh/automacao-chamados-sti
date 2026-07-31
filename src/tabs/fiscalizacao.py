@@ -6,6 +6,12 @@ import pandas as pd
 import requests
 import streamlit as st
 from src.config import ATOS_NORMAS_API_URL, ATOS_NORMAS_DOWNLOAD_URL
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
+
 
 def _formatar_texto_portaria(texto: str, nomes_destacar: list[str] | None = None) -> str:
     """Formata o texto bruto da portaria retornado pela API do MPMS para exibição legível."""
@@ -209,22 +215,16 @@ def render_contracts_page():
 
         with kpi_cols[i % 3]:
             st.markdown(f"""
-            <div style="
-                background-color: #1e1f25;
-                border: 1px solid #343541;
-                border-radius: 8px;
-                padding: 16px;
-                text-align: center;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            ">
-                <h4 style="margin:0; color:#ff4b4b; font-size:1.1rem;">👤 {primeiro_nome}</h4>
-                <h2 style="margin: 8px 0; color:#ffffff; font-size:2rem;">{total_fiscal} <span style="font-size:0.9rem; color:#a0a0a0;">processos</span></h2>
-                <div style="display:flex; justify-content:space-around; margin-top:8px; font-size:0.8rem; color:#cccccc;">
+            <div class="metric-card" style="border-left-color: #ff4b4b; text-align: center;">
+                <div class="metric-title" style="color:#ff4b4b;">👤 {primeiro_nome}</div>
+                <div class="metric-value">{total_fiscal} <span style="font-size:0.9rem; opacity: 0.7;">processos</span></div>
+                <div style="display:flex; justify-content:space-around; margin-top:8px; font-size:0.8rem;">
                     <span>📌 Titular: <b>{count_titular}</b></span>
                     <span>🔄 Suplente: <b>{count_suplente}</b></span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -234,6 +234,14 @@ def render_contracts_page():
     selected_fiscal_filter = st.sidebar.selectbox("👤 Filtrar por Fiscal:", opcoes_fiscais)
     
     search_text = st.sidebar.text_input("🔍 Buscar por Nº SAJ, Objeto ou Contrato:", "")
+
+    items_per_page = render_items_per_page_selector(
+        key_prefix="fiscalizacao",
+        options=[10, 25, 50, 100, "Todos"],
+        default_index=1,
+        label="📄 Contratos por página:"
+    )
+
 
     df_filtered_ind = df_indicacoes.copy()
     
@@ -298,8 +306,14 @@ def render_contracts_page():
                 )
 
         if not df_filtered_ind.empty:
-            st.dataframe(
+            df_page_ind, current_page, total_pages, total_items = paginate_items(
                 df_filtered_ind,
+                page_key="fiscal_ind",
+                items_per_page=items_per_page
+            )
+
+            st.dataframe(
+                df_page_ind,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
@@ -310,6 +324,15 @@ def render_contracts_page():
                     "Contrato": st.column_config.TextColumn("Contrato / Empenho"),
                 }
             )
+
+            render_pagination_controls(
+                page_key="fiscal_ind",
+                current_page=current_page,
+                total_pages=total_pages,
+                total_items=total_items,
+                items_per_page=items_per_page
+            )
+
         else:
             st.info("Nenhum registro encontrado para os filtros selecionados.")
 
@@ -405,8 +428,14 @@ def render_contracts_page():
             if "pub_last_selected" not in st.session_state:
                 st.session_state["pub_last_selected"] = None
 
-            selection_pub = st.dataframe(
+            df_page_pub, current_page_pub, total_pages_pub, total_items_pub = paginate_items(
                 df_filtered_pub,
+                page_key="fiscal_pub",
+                items_per_page=items_per_page
+            )
+
+            selection_pub = st.dataframe(
+                df_page_pub,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
@@ -428,7 +457,7 @@ def render_contracts_page():
                 current_pub_selected = selected_pub_rows[0]
                 if st.session_state["pub_last_selected"] != current_pub_selected:
                     st.session_state["pub_last_selected"] = current_pub_selected
-                    row_pub = df_filtered_pub.iloc[current_pub_selected]
+                    row_pub = df_filtered_pub.iloc[(current_page_pub - 1) * items_per_page + current_pub_selected]
                     portaria_valor = str(row_pub.get("Portaria", "")).strip() if "Portaria" in df_filtered_pub.columns else ""
                     fiscal_t = str(row_pub.get("Fiscal titular", "")).strip() if "Fiscal titular" in df_filtered_pub.columns else ""
                     fiscal_s = str(row_pub.get("Fiscal suplente", "")).strip() if "Fiscal suplente" in df_filtered_pub.columns else ""
@@ -438,6 +467,15 @@ def render_contracts_page():
                         st.toast("⚠️ Essa linha não possui uma portaria para consultar.", icon="⚠️")
             else:
                 st.session_state["pub_last_selected"] = None
+
+            render_pagination_controls(
+                page_key="fiscal_pub",
+                current_page=current_page_pub,
+                total_pages=total_pages_pub,
+                total_items=total_items_pub,
+                items_per_page=items_per_page
+            )
+
         else:
             st.info("Nenhuma publicação/portaria encontrada.")
 

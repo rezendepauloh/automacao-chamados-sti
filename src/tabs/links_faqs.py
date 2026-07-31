@@ -145,27 +145,28 @@ def render_faq_page():
         display: flex !important;
         flex-direction: row !important;
         gap: 10px !important;
-        border-bottom: 2px solid #2a2b36 !important;
+        border-bottom: 2px solid var(--metric-border, #2a2b36) !important;
         padding-bottom: 12px !important;
         margin-bottom: 20px !important;
     }
     /* Estilização padrão dos botões de abas */
     div[data-testid="stRadio"] > div[role="radiogroup"] > label {
-        background-color: #1e1f29 !important;
-        border: 1px solid #343541 !important;
+        background-color: var(--metric-bg, #1e1f29) !important;
+        border: 1px solid var(--metric-border, #343541) !important;
         border-radius: 8px !important;
         padding: 10px 22px !important;
-        color: #b0b0b0 !important;
+        color: var(--metric-title-color, #b0b0b0) !important;
         cursor: pointer !important;
         transition: all 0.2s ease-in-out !important;
         margin: 0 !important;
     }
-    /* Efeito ao passar o mouse */
+    /* Efeito ao passar o mouse (Hover) adaptável */
     div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
-        background-color: #2a2b36 !important;
-        color: #ffffff !important;
+        background-color: rgba(255, 75, 75, 0.12) !important;
+        color: #ff4b4b !important;
         border-color: #ff4b4b !important;
     }
+
     /* Estilo para a aba ativa / selecionada */
     div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
         background-color: #ff4b4b !important;
@@ -176,6 +177,7 @@ def render_faq_page():
     }
     </style>
     """, unsafe_allow_html=True)
+
 
     # Navegação superior estilo Abas com suporte a query parameter (?subtab=slug)
     FAQ_SUBTAB_MAP = {
@@ -307,7 +309,8 @@ def render_faq_page():
                             if st.button("📖 Ler Tutorial", key=f"btn_read_{row['id']}", use_container_width=True):
                                 open_faq_modal(row['id'])
                         with c_btn2:
-                            st.markdown(f'<a href="{row["url"]}" target="_blank" style="display: block; text-align: center; background-color: #2a2b36; border: 1px solid #343541; color: white; text-decoration: none; font-size: 0.85rem; padding: 6px; border-radius: 6px; font-weight: bold;">🔗 SharePoint ↗</a>', unsafe_allow_html=True)
+                            st.link_button("🔗 SharePoint ↗", url=row["url"], use_container_width=True)
+
 
             render_pagination_controls("faq_sp", cur_p_faq, tot_p_faq, tot_i_faq, items_per_page_faq)
 
