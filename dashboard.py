@@ -45,7 +45,13 @@ importlib.reload(src.components.header)
 selected_page = src.components.header.render_header_navigation()
 
 # Roteamento centralizado do Dashboard (Orquestrador) com Hot-Reload habilitado
-if selected_page == "📅 Plantões da Bancada":
+if selected_page == "📞 Central Telefônica (OXE)":
+    import src.tabs.central_telefonica
+    importlib.reload(src.tabs.central_telefonica)
+    src.tabs.central_telefonica.render_central_telefonica_page()
+
+elif selected_page == "📅 Plantões da Bancada":
+
     import src.tabs.plantoes
     importlib.reload(src.tabs.plantoes)
     src.tabs.plantoes.render_plantoes_page()

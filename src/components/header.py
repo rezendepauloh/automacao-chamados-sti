@@ -3,6 +3,7 @@ from src.database import get_unread_notifications_count, get_notifications
 
 PAGE_TO_SLUG = {
     "📋 Painel de Chamados": "chamados",
+    "📞 Central Telefônica (OXE)": "central-telefonica",
     "📅 Plantões da Bancada": "plantoes",
     "📜 Portarias da Bancada": "portarias",
     "📍 Mapa & Localização": "mapa",
@@ -13,6 +14,7 @@ PAGE_TO_SLUG = {
     "📚 FAQ & Tutoriais": "faq",
     "🔔 Central de Notificações": "notificacoes",
 }
+
 
 SLUG_TO_PAGE = {v: k for k, v in PAGE_TO_SLUG.items()}
 
@@ -62,6 +64,9 @@ def render_header_navigation() -> str:
         st.markdown("### 📌 Sistemas / Páginas")
         if st.button("📋 Painel de Chamados", use_container_width=True):
             set_page("📋 Painel de Chamados")
+        if st.button("📞 Central Telefônica (OXE)", use_container_width=True):
+            set_page("📞 Central Telefônica (OXE)")
+
         if st.button("📅 Plantões da Bancada", use_container_width=True):
             set_page("📅 Plantões da Bancada")
         if st.button("📜 Portarias da Bancada", use_container_width=True):

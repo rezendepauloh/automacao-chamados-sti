@@ -21,7 +21,8 @@ if str(root_dir / "src") not in sys.path:
 from src.config import (
     PAPERCUT_URL, PAPERCUT_PRINTER_LIST_URL, PAPERCUT_DEVICE_LIST_URL,
     PAPERCUT_USER, PAPERCUT_PASS, DEBUG_DIR_PAPERCUT, HEADLESS,
-    setup_logging, get_chrome_driver, USER_HOME, INPUT_DIR_BRUTOS
+    setup_logging, get_chrome_driver, USER_HOME, INPUT_DIR_BRUTOS,
+    cleanup_old_files
 )
 from src.database import save_impressoras_to_db
 
@@ -30,6 +31,7 @@ logger = setup_logging(DEBUG_DIR_PAPERCUT / "papercut_scraper.log", __name__)
 DOWNLOAD_DIR = USER_HOME / "Downloads"
 PAPERCUT_BRUTOS_DIR = INPUT_DIR_BRUTOS / "papercut"
 PAPERCUT_BRUTOS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 
 def cleanup_old_papercut_downloads():
@@ -379,20 +381,28 @@ def run_papercut_scraper():
     df_printers = load_csv_safe(printer_csv_file)
     df_devices = load_csv_safe(device_csv_file)
 
-    # Copia backups para a pasta de dados brutos do projeto
+    # Copia backups com timestamp para a pasta de dados brutos do projeto
+    ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     if printer_csv_file.exists() and printer_csv_file.parent == DOWNLOAD_DIR:
         try:
+            shutil.copy2(printer_csv_file, PAPERCUT_BRUTOS_DIR / f"printer_list_{ts}.csv")
             shutil.copy2(printer_csv_file, PAPERCUT_BRUTOS_DIR / "printer_list.csv")
-            logger.info(f"Cópia de backup salva em: {PAPERCUT_BRUTOS_DIR / 'printer_list.csv'}")
+            logger.info(f"Cópia de backup salva em: {PAPERCUT_BRUTOS_DIR / f'printer_list_{ts}.csv'}")
         except Exception as e:
             logger.warning(f"Não foi possível salvar backup de printer_list: {e}")
 
     if device_csv_file.exists() and device_csv_file.parent == DOWNLOAD_DIR:
         try:
+            shutil.copy2(device_csv_file, PAPERCUT_BRUTOS_DIR / f"device_list_{ts}.csv")
             shutil.copy2(device_csv_file, PAPERCUT_BRUTOS_DIR / "device_list.csv")
-            logger.info(f"Cópia de backup salva em: {PAPERCUT_BRUTOS_DIR / 'device_list.csv'}")
+            logger.info(f"Cópia de backup salva em: {PAPERCUT_BRUTOS_DIR / f'device_list_{ts}.csv'}")
         except Exception as e:
             logger.warning(f"Não foi possível salvar backup de device_list: {e}")
+
+    # Mantém até 10 backups rotativos históricos do PaperCut
+    cleanup_old_files(PAPERCUT_BRUTOS_DIR, "printer_list_*.csv", keep_count=10)
+    cleanup_old_files(PAPERCUT_BRUTOS_DIR, "device_list_*.csv", keep_count=10)
+
 
     # Unifica e trata os dados
     df_merged = merge_and_normalize_papercut_data(df_printers, df_devices)

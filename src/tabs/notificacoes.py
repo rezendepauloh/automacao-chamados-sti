@@ -6,6 +6,12 @@ from src.database import (
     mark_all_notifications_as_read,
     get_unread_notifications_count
 )
+from src.components.pagination import (
+    render_items_per_page_selector,
+    paginate_items,
+    render_pagination_controls
+)
+
 
 
 def render_notificacoes_page():
@@ -51,9 +57,15 @@ def render_notificacoes_page():
         key="filter_notif_sort"
     )
 
+    items_per_page = render_items_per_page_selector(
+        key_prefix="notificacoes",
+        options=[5, 10, 20, 50, 100],
+        default_index=1,
+        label="📄 Notificações por página:"
+    )
+
     # Carrega notificações do banco
-    only_unread = (filter_status == "Não Lidas")
-    df_notif = get_notifications(only_unread=False, limit=200)
+    df_notif = get_notifications(only_unread=False, limit=500)
 
     if df_notif.empty:
         st.info("Nenhuma notificação registrada no momento.")
@@ -74,16 +86,22 @@ def render_notificacoes_page():
     else:
         df_notif = df_notif.sort_values(by="id", ascending=False)
 
-
-    st.markdown(f"**Exibindo {len(df_notif)} notificação(ões)**")
-    st.markdown("<br>", unsafe_allow_html=True)
-
     if df_notif.empty:
         st.info("Nenhuma notificação encontrada para os filtros selecionados.")
         return
 
+    # Aplicação da Paginação
+    df_page, current_page, total_pages, total_items = paginate_items(
+        df_notif,
+        page_key="notificacoes",
+        items_per_page=items_per_page
+    )
+
+    st.markdown(f"**Exibindo {len(df_page)} de {total_items} notificação(ões) filtrada(s)**")
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # Lista de Notificações
-    for _, row in df_notif.iterrows():
+    for _, row in df_page.iterrows():
         notif_id = int(row['id'])
         tipo = str(row['tipo'])
         titulo = str(row['titulo'])
@@ -104,7 +122,6 @@ def render_notificacoes_page():
             badge_color = "#8e44ad"
 
         status_badge = "🟢 Lida" if is_read else "🔴 Nova / Não Lida"
-        bg_card = "#1a1c24" if is_read else "#262936"
 
         with st.container(border=True):
             col_b, col_txt, col_btns = st.columns([1, 4, 2])
@@ -135,3 +152,13 @@ def render_notificacoes_page():
                         mark_notification_as_read(notif_id)
                         st.toast("Notificação marcada como lida!", icon="✅")
                         st.rerun()
+
+    # Controles de Paginação no Rodapé
+    render_pagination_controls(
+        page_key="notificacoes",
+        current_page=current_page,
+        total_pages=total_pages,
+        total_items=total_items,
+        items_per_page=items_per_page
+    )
+

@@ -15,7 +15,7 @@ from config import (
     OXE_URL, OXE_USER, OXE_PASS,
     HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OXE,
     setup_logging, save_df_to_excel_formatted,
-    setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
+    get_chrome_driver, cleanup_old_files
 )
 
 # ---------------------------
@@ -159,10 +159,7 @@ def realizar_login_oxe(driver, wait):
         time.sleep(0.5)
 
     if not token_capturado:
-        # Tira screenshot do estado atual se falhar
         salvar_screenshot(driver, "falha_login_token")
-        
-        # Loga todo o conteúdo do sessionStorage e localStorage para diagnóstico
         storage_dump = driver.execute_script("""
             var res = { session: {}, local: {} };
             try {
@@ -180,7 +177,6 @@ def realizar_login_oxe(driver, wait):
             return res;
         """)
         logger.warning(f"⚠️ Token não encontrado. Conteúdo atual dos Storages: {storage_dump}")
-
 
     # Interage com elementos do menu se necessário para disparar chamadas do Angular
     try:
@@ -204,7 +200,6 @@ def fetch_oxe_api_js(driver, api_endpoint: str):
         var idToken = sessionStorage.getItem('id_token') || localStorage.getItem('id_token') || window.__captured_auth_token__;
 
         if (!idToken) {{
-            // Varredura de fallback por qualquer chave contendo 'token'
             for (var s of [sessionStorage, localStorage]) {{
                 if (!s) continue;
                 for (var i = 0; i < s.length; i++) {{
@@ -236,7 +231,6 @@ def fetch_oxe_api_js(driver, api_endpoint: str):
             }})
             .then(function(response) {{
                 if (response.status === 401 && !isRetry) {{
-                    // Tenta novamente alternando entre formato Raw e Bearer
                     var nextToken = (authHeaderValue === tokenBearer) ? tokenRaw : tokenBearer;
                     tryFetch(nextToken, true);
                 }} else if (!response.ok) {{
@@ -263,13 +257,54 @@ def fetch_oxe_api_js(driver, api_endpoint: str):
         return None
 
 
+def fetch_oxe_batch_subscriber_details_js(driver, ramais_list: list) -> dict:
+    """
+    Executa requisições em lote paralelo via Promise.all no contexto do navegador
+    para obter os detalhes avançados de cada Subscriber (Grupo de Captura, Categoria Rede Pública, etc).
+    """
+    if not ramais_list:
+        return {}
+
+    js_code = """
+        var callback = arguments[arguments.length - 1];
+        var ramais = arguments[0];
+        var idToken = sessionStorage.getItem('id_token') || localStorage.getItem('id_token') || window.__captured_auth_token__ || '';
+        var tokenBearer = idToken.startsWith('Bearer ') ? idToken : (idToken ? 'Bearer ' + idToken : '');
+
+        var results = {};
+        var promises = ramais.map(function(num_ramal) {
+            var url = '/api/mgt/1.0/Node/1/Subscriber/' + num_ramal;
+            return fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json, text/plain, */*',
+                    'Authorization': tokenBearer
+                }
+            })
+            .then(function(res) {
+                if (res.ok) return res.json();
+                return null;
+            })
+            .then(function(data) {
+                if (data) results[num_ramal] = data;
+            })
+            .catch(function(e) {});
+        });
+
+        Promise.all(promises).then(function() {
+            callback({ status: 'success', data: results });
+        });
+    """
+    res = driver.execute_async_script(js_code, ramais_list)
+    if res and res.get("status") == "success":
+        return res.get("data", {})
+    return {}
 
 
 def fetch_oxe_batch_tsc_ip_js(driver, ramais_list: list) -> dict:
     """
     Executa requisições em lote paralelo via Promise.all no contexto do navegador
     para obter os detalhes dos telefones IP (IP e MAC Address).
-    Acelera a coleta de ~10 minutos para menos de 10 segundos.
     """
     if not ramais_list:
         return {}
@@ -312,8 +347,9 @@ def fetch_oxe_batch_tsc_ip_js(driver, ramais_list: list) -> dict:
 
 def extrair_dados_assinantes(driver):
     """
-    Busca a lista completa de utilizadores/assinantes via API do OXE
-    e recupera os detalhes dos telefones IP (IP e Endereço MAC).
+    Busca a lista completa de utilizadores/assinantes via API do OXE,
+    recupera os detalhes estendidos do ramal (Grupo de Captura, Categoria Rede Pública)
+    e os detalhes dos telefones IP (IP e Endereço MAC).
     """
     subscribers_endpoint = (
         "/api/mgt/1.0/Node/1/Subscriber?attributes="
@@ -332,42 +368,44 @@ def extrair_dados_assinantes(driver):
 
     logger.info(f"Total de {len(subscribers)} assinantes retornados pela API principal.")
 
-    # 1. Filtra os ramais potenciais para consulta de detalhes IP
+    todos_ramais = [str(s.get("Directory_Number", "")).strip() for s in subscribers if s.get("Directory_Number")]
+
+    # 1. Consulta paralela em lote para Detalhes do Ramal (/Subscriber/{num_ramal})
+    logger.info(f"⚡ Disparando consulta paralela em lote de detalhes avançados para {len(todos_ramais)} ramais...")
+    subscriber_details_map = {}
+    chunk_size = 100
+    for i in range(0, len(todos_ramais), chunk_size):
+        chunk = todos_ramais[i:i + chunk_size]
+        res_chunk = fetch_oxe_batch_subscriber_details_js(driver, chunk)
+        if res_chunk:
+            subscriber_details_map.update(res_chunk)
+        logger.info(f"⚡ Lote Detalhes {i + len(chunk)}/{len(todos_ramais)} processado.")
+
+    logger.info(f"✅ Detalhes avançados (Grupo de Captura, Categoria) obtidos para {len(subscriber_details_map)} ramais.")
+
+    # 2. Consulta paralela em lote para Detalhes IP (/Tsc_IP_subscriber/{num_ramal})
     ramais_ip_candidatos = []
     for sub in subscribers:
         num_ramal = str(sub.get("Directory_Number", "")).strip()
         station_type = str(sub.get("Station_Type", "")).upper()
         station_sub_type = str(sub.get("Station_Sub_Type", "")).upper()
         
-        # Se for terminal IP / SIP ou NOE_
         if num_ramal and ("IP" in station_type or "SIP" in station_sub_type or "NOE" in station_type):
             ramais_ip_candidatos.append(num_ramal)
 
     logger.info(f"⚡ Disparando consulta paralela em lote para {len(ramais_ip_candidatos)} ramais IP...")
 
-    # Executa consulta paralela em lotes de 100 ramais por vez para máxima velocidade
     tsc_ip_map = {}
-    chunk_size = 100
     for i in range(0, len(ramais_ip_candidatos), chunk_size):
         chunk = ramais_ip_candidatos[i:i + chunk_size]
         res_chunk = fetch_oxe_batch_tsc_ip_js(driver, chunk)
         if res_chunk:
             tsc_ip_map.update(res_chunk)
-        logger.info(f"⚡ Lote IP {i + len(chunk)}/{len(ramais_ip_candidatos)} processado em milissegundos.")
+        logger.info(f"⚡ Lote IP {i + len(chunk)}/{len(ramais_ip_candidatos)} processado.")
 
-    logger.info(f"✅ Sucesso! Detalhes IP/MAC coletados para {len(tsc_ip_map)} telefones IP.")
-
-    # Conexão opcional com Active Directory
-    ad_conn = None
-    try:
-        ad_conn = setup_ad_connection()
-        if ad_conn:
-            logger.info("Conexão com Active Directory estabelecida para busca de Unidades.")
-    except Exception as ad_err:
-        logger.warning(f"Active Directory não disponível para busca de setor: {ad_err}")
+    logger.info(f"✅ Detalhes IP/MAC coletados para {len(tsc_ip_map)} telefones IP.")
 
     registros_finais = []
-    total = len(subscribers)
 
     for idx, sub in enumerate(subscribers, start=1):
         try:
@@ -380,7 +418,6 @@ def extrair_dados_assinantes(driver):
             utf8_name = str(sub.get("UTF8_Phone_Book_Name", "")).strip()
             utf8_first = str(sub.get("UTF8_Phone_Book_First_Name", "")).strip()
             
-            # Formatação de Nome Completo e Nome Exibido
             nome_completo = f"{name} {first_name}".strip()
             if not nome_completo and utf8_first:
                 nome_completo = utf8_first
@@ -395,7 +432,34 @@ def extrair_dados_assinantes(driver):
             board = sub.get("Equipment_Address_Board", "")
             terminal = sub.get("Equipment_Address_Terminal", "")
 
-            # Recupera dados IP do lote pré-consultado
+            registro = {}
+
+            # 1. Traz TODOS os atributos brutos retornados pela API /Subscriber/{num_ramal}
+            detalhes_ramal = subscriber_details_map.get(num_ramal, {})
+            if isinstance(detalhes_ramal, dict):
+                for k, v in detalhes_ramal.items():
+                    if isinstance(v, (dict, list)):
+                        registro[k] = json.dumps(v, ensure_ascii=False)
+                    else:
+                        registro[k] = v
+
+            # 2. Insere/Padroniza as colunas principais tratadas no dicionário
+            registro["Ramal"] = num_ramal
+            registro["Nome / Titular"] = name
+            registro["Complemento"] = first_name or utf8_first
+            registro["Tipo de Estação"] = station_type
+            registro["Subtipo"] = station_sub_type
+            registro["Função / Role"] = set_role
+            registro["Grupo de Captura"] = str(detalhes_ramal.get("Pickup_Group_Name", "")).strip()
+            cat_pub = detalhes_ramal.get("Public_Network_Category_Id", "")
+            registro["Cat. Rede Pública"] = cat_pub if cat_pub != 255 else "-"
+            registro["Login Externo"] = ext_login
+            registro["E-mail"] = mail
+            registro["Rack"] = rack if rack != 255 else "-"
+            registro["Placa"] = board if board != 255 else "-"
+            registro["Terminal"] = terminal if terminal != 255 else "-"
+
+            # Detalhes IP da rota /Tsc_IP_subscriber/{num_ramal}
             ip_address = ""
             mac_address = ""
             
@@ -404,33 +468,9 @@ def extrair_dados_assinantes(driver):
                 ip_address = tsc_data.get("IP_Address") or tsc_data.get("IPv6_address") or ""
                 mac_address = str(tsc_data.get("Ethernet_Address", "")).upper()
 
-            # Busca de departamento / Unidade no AD
-            unidade_ad = "Não consultado no AD"
-            if ad_conn:
-                if ext_login:
-                    unidade_ad = fetch_ad_department(ad_conn, ext_login, is_username=True)
-                elif mail and "@" in mail:
-                    usr_part = mail.split("@")[0].strip()
-                    unidade_ad = fetch_ad_department(ad_conn, usr_part, is_username=True)
-                elif nome_completo:
-                    unidade_ad = fetch_ad_department(ad_conn, nome_completo, is_username=False)
+            registro["Endereço IP"] = ip_address
+            registro["MAC Address"] = mac_address
 
-            registro = {
-                "Ramal": num_ramal,
-                "Nome / Titular": name,
-                "Complemento": first_name or utf8_first,
-                "Tipo de Estação": station_type,
-                "Subtipo": station_sub_type,
-                "Função / Role": set_role,
-                "Login Externo": ext_login,
-                "E-mail": mail,
-                "Rack": rack if rack != 255 else "-",
-                "Placa": board if board != 255 else "-",
-                "Terminal": terminal if terminal != 255 else "-",
-                "Endereço IP": ip_address,
-                "MAC Address": mac_address,
-                "Unidade AD": unidade_ad
-            }
 
             registros_finais.append(registro)
 
@@ -439,7 +479,6 @@ def extrair_dados_assinantes(driver):
             continue
 
     return registros_finais
-
 
 
 def scrape_oxe():
@@ -477,14 +516,17 @@ def scrape_oxe():
             "Tipo de Estação": 25,
             "Subtipo": 18,
             "Função / Role": 20,
+            "Grupo de Captura": 18,
+            "Cat. Rede Pública": 18,
             "Login Externo": 18,
             "E-mail": 30,
+            "Centro de Custo": 18,
+            "Função Adm": 20,
             "Rack": 10,
             "Placa": 10,
             "Terminal": 10,
             "Endereço IP": 18,
-            "MAC Address": 20,
-            "Unidade AD": 35
+            "MAC Address": 20
         }
 
         save_df_to_excel_formatted(
@@ -494,7 +536,6 @@ def scrape_oxe():
 
         logger.info(f"✅ SUCESSO! Total de {len(dados)} ramais salvos em: {excel_file}")
 
-        # Mantém até 10 arquivos recentes de backup
         cleanup_old_files(out_dir, "Central_Telefonica_OXE_*.xlsx", keep_count=10)
         return True
 
