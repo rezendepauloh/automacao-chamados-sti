@@ -9,6 +9,53 @@ def get_connection():
     """Retorna uma conexão com o banco de dados SQLite."""
     return sqlite3.connect(DB_PATH)
 
+def setup_ramais_table():
+    """Cria a tabela ramais_mpms se não existir."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS ramais_mpms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        localidade TEXT,
+        setor_nome TEXT,
+        telefone_ramal TEXT,
+        tipo TEXT,
+        data_atualizacao TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+def save_ramais_to_db(df: pd.DataFrame):
+    """Limpa a tabela ramais_mpms e insere os dados do DataFrame recebido."""
+    setup_ramais_table()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM ramais_mpms")
+    conn.commit()
+    
+    if not df.empty:
+        df_to_save = df.copy()
+        if "data_atualizacao" not in df_to_save.columns:
+            df_to_save["data_atualizacao"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+        cols = ["localidade", "setor_nome", "telefone_ramal", "tipo", "data_atualizacao"]
+        cols_present = [c for c in cols if c in df_to_save.columns]
+        df_to_save[cols_present].to_sql("ramais_mpms", conn, if_exists="append", index=False)
+        conn.commit()
+    conn.close()
+
+def get_ramais_df() -> pd.DataFrame:
+    """Retorna os dados da tabela ramais_mpms em um DataFrame."""
+    setup_ramais_table()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT id, localidade, setor_nome, telefone_ramal, tipo, data_atualizacao FROM ramais_mpms", conn)
+    except Exception:
+        df = pd.DataFrame(columns=["id", "localidade", "setor_nome", "telefone_ramal", "tipo", "data_atualizacao"])
+    conn.close()
+    return df
+
 def setup_database():
     """Cria a tabela de chamados se não existir e garante as colunas."""
     conn = get_connection()
@@ -1449,11 +1496,28 @@ def save_unidades_to_db(df: pd.DataFrame):
 
 
 def get_unidades_df() -> pd.DataFrame:
-    """Retorna o DataFrame de todas as unidades (Promotorias, Procuradorias e Setores Manuais) salvas no SQLite."""
+    """Retorna o DataFrame de todas as unidades (Promotorias, Procuradorias e Setores Manuais) salvas no SQLite com identificador de origem."""
     setup_unidades_tables()
     conn = get_connection()
     try:
-        df = pd.read_sql_query("SELECT cidade AS Cidade, tipo AS Tipo, setor AS Setor, sigla AS Sigla, titular AS Titular, unidade_predio AS 'Unidade (Prédio)', telefone AS Telefone, url AS URL FROM unidades ORDER BY cidade ASC, setor ASC", conn)
+        query = """
+        SELECT 
+            u.id,
+            u.cidade AS Cidade, 
+            u.tipo AS Tipo, 
+            u.setor AS Setor, 
+            u.sigla AS Sigla, 
+            u.titular AS Titular, 
+            u.unidade_predio AS 'Unidade (Prédio)', 
+            u.telefone AS Telefone, 
+            u.url AS URL,
+            um.id AS manual_id,
+            CASE WHEN um.id IS NOT NULL THEN '📌 Manual' ELSE '🌐 Portal Web' END AS Origem
+        FROM unidades u
+        LEFT JOIN unidades_manuais um ON u.cidade = um.cidade AND u.tipo = um.tipo AND u.setor = um.setor
+        ORDER BY u.cidade ASC, u.setor ASC
+        """
+        df = pd.read_sql_query(query, conn)
         conn.close()
         return df
     except Exception:
@@ -1498,6 +1562,33 @@ def add_unidade_manual(cidade: str, tipo: str, setor: str, sigla: str = "", titu
         INSERT INTO unidades (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, data_atualizacao)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, now_str))
+
+    conn.commit()
+    conn.close()
+
+
+def update_unidade_manual_by_id(manual_id: int, cidade: str, tipo: str, setor: str, sigla: str = "", titular: str = "", unidade_predio: str = "", telefone: str = "", url: str = ""):
+    """Atualiza uma unidade manual pelo seu manual_id no SQLite nas duas tabelas."""
+    setup_unidades_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute("SELECT cidade, tipo, setor FROM unidades_manuais WHERE id = ?", (manual_id,))
+    old_row = cursor.fetchone()
+    if old_row:
+        old_cidade, old_tipo, old_setor = old_row[0], old_row[1], old_row[2]
+        cursor.execute("""
+        UPDATE unidades
+        SET cidade = ?, tipo = ?, setor = ?, sigla = ?, titular = ?, unidade_predio = ?, telefone = ?, url = ?, data_atualizacao = ?
+        WHERE cidade = ? AND tipo = ? AND setor = ?
+        """, (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, now_str, old_cidade, old_tipo, old_setor))
+
+    cursor.execute("""
+    UPDATE unidades_manuais 
+    SET cidade = ?, tipo = ?, setor = ?, sigla = ?, titular = ?, unidade_predio = ?, telefone = ?, url = ?, data_atualizacao = ?
+    WHERE id = ?
+    """, (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, now_str, manual_id))
 
     conn.commit()
     conn.close()

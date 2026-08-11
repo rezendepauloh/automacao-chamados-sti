@@ -209,3 +209,67 @@ body[data-theme='dark'] {
   font-weight: bold !important;
   color: var(--metric-value-color, #ffffff) !important;
 }
+
+/* =========================================
+   COMPONENTE: SUBTABS (Navegação em Abas)
+   ========================================= */
+
+/* Container horizontal das abas */
+div[data-testid='stRadio'] > div[role='radiogroup'],
+div[data-testid='stRadioGroup'] {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 24px !important;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2) !important;
+  padding-bottom: 0px !important;
+  margin-bottom: 20px !important;
+}
+
+/* Oculta as bolinhas nativas do radio (divs com classe etak9234 e etak9235) */
+div[class*="etak9234"],
+div[class*="etak9235"],
+div[data-testid="stRadio"] input[type="radio"],
+div[data-testid="stRadioGroup"] input[type="radio"] {
+    display: none !important;
+}
+
+/* Estilo do texto inativo (simulando a aba não selecionada) */
+div[data-testid="stRadio"] > div[role="radiogroup"] > label,
+div[data-testid="stRadioGroup"] > label,
+label[data-testid="stRadioOption"] {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    padding: 8px 4px !important;
+    color: #b0b0b0 !important;
+    cursor: pointer !important;
+    margin: 0 !important;
+}
+
+div[data-testid="stRadio"] div[data-testid="stMarkdownContainer"] p,
+div[data-testid="stRadioGroup"] div[data-testid="stMarkdownContainer"] p {
+    font-size: 1rem !important;
+    margin: 0 !important;
+    color: inherit !important;
+}
+
+/* Hover leve */
+div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover,
+div[data-testid="stRadioGroup"] > label:hover,
+label[data-testid="stRadioOption"]:hover {
+    color: #ff4b4b !important;
+}
+
+/* Aba Ativa (Linha vermelha indicadora) */
+label[data-testid="stRadioOption"]:has(input:checked),
+label[data-testid="stRadioOption"][data-selected="true"],
+label[data-testid="stRadioOption"][aria-checked="true"],
+label[data-testid="stRadioOption"]:has(input[checked]),
+div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked),
+div[data-testid="stRadioGroup"] > label:has(input:checked) {
+    color: #ff4b4b !important;
+    border-bottom: 2px solid #ff4b4b !important;
+    font-weight: 600 !important;
+}
+

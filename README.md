@@ -104,7 +104,21 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Background Task Persistence (Execução Assíncrona):** Dispara o script em uma thread/processo em segundo plano desacoplada do navegador. Permite que o usuário navegue por outras abas do dashboard ou pressione **F5** sem interromper o script no Windows.
 - **Detecção Dinâmica do PowerShell Engine:** Detecta automaticamente a presença do `pwsh.exe` (PowerShell Core 7+) no sistema; caso contrário, faz o fallback seguro para o `powershell.exe` (Windows PowerShell 5.1).
 - **Auto-Fix de Credenciais DPAPI (`cred_admin.xml`):** Identifica falhas de criptografia DPAPI e regenera automaticamente os arquivos de credenciais usando as credenciais administrativas do `SCCM_ADMIN_USER` salvas no Keyring do Windows.
-- **Streaming de Logs & Visualizador de Relatórios HTML:** Captura e sanitização de logs em tempo real (remoção de códigos de cores ANSI e correção de codificação UTF-8), com botões para download do relatório HTML, abertura no navegador nativo e iframe de pré-visualização.
+
+### 14. Catálogo Unificado de Unidades, Ramais (PDF / Intranet) & Monitoramento de Robôs
+
+- **Extrator de Ramais Telefônicos da Intranet (`ramais_scraper.py`):** Autenticação automatizada via `requests.Session()` com credenciais do sistema (`USERNAME` / `PASSWORD`), busca dinâmica das URLs e download em memória dos PDFs oficiais de ramais (Comarcas do Interior e Capital/PGJ).
+- **Processamento Inteligente de PDF (`pdfplumber`):** Varredura linha a linha e extração estruturada de tabelas relacionando comarcas, prédios, setores, membros e seus respectivos números telefônicos na tabela relacional `ramais_mpms` do SQLite.
+- **Relação Unificada com Gestão Interativa (`unidades.py`):** Consolidação da lista oficial do Portal Web com as Unidades Manuais locais (badges de origem `📌 Manual` e `🌐 Portal Web`).
+- **Modal Interativo (`@st.dialog`) & Edição por Seleção de Linha:** Ao clicar em qualquer linha da tabela (`on_select="rerun"`):
+  - _Registro Manual_: Abre formulário preenchido permitindo edição em tempo real de todos os atributos com salvamento ou exclusão direta.
+  - _Registro do Portal_: Exibe a ficha completa formatada em modo de leitura.
+- **Acompanhamento de Robôs em Segundo Plano (Accordions & Logs):** Indicadores no sidebar com botões desabilitados durante a execução, acompanhamento do progresso através de `st.expander` com leitor de logs em tempo real e notificação em balão `st.toast` ao concluir.
+
+### 15. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
+
+- **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
+- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro e estilização vermelha `#ff4b4b` para abas ativas (Mês/Semana/Dia/Lista).
 
 ---
 
@@ -114,6 +128,7 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Bibliotecas Principais:**
   - `selenium`: Navegação web automatizada para logins e sistemas dinâmicos.
   - `playwright`: Raspagem em lote em alta performance de tutoriais e artigos do SharePoint em headless mode.
+  - `pdfplumber`: Leitura profunda e extração tabular de documentos PDF em memória.
   - `requests` & `beautifulsoup4`: Varredura estática ultra-veloz de portais institucionais públicos e sanitização de HTML.
   - `pandas`: Análise, manipulação e alinhamento inteligente de DataFrames.
   - `scikit-learn`: Treinamento pesado, tuning de hiperparâmetros e classificação.
@@ -130,7 +145,7 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 ```text
 automated-OTRS-and-CitSmart/
 ├── assets/
-│   └── css/styles.css                # Estilos CSS globais da aplicação (com ajuste responsivo do menu popover)
+│   └── css/styles.css                # Estilos CSS globais da aplicação (com ajuste responsivo de menus e abas subtabs)
 ├── debug_logs/
 │   ├── citsmart/                     # Logs e screenshots do CitSmart
 │   ├── otrs/                         # Logs e screenshots do OTRS
@@ -139,12 +154,15 @@ automated-OTRS-and-CitSmart/
 │   ├── plantoes/                     # Logs de escalas de plantão
 │   ├── preprocessamento/             # Logs de tratamento de dados
 │   └── scripts/                      # Logs centralizados de execução dos scripts de automação PowerShell
+├── debug/                            # Logs de execução em background dos scrapers (unidades, ramais)
 ├── src/
 │   ├── components/                   # Componentes reutilizáveis do frontend
 │   │   ├── header.py                 # Menu popover de navegação rápida com query parameters e notificações
+│   │   ├── subtabs.py                # Componente de sub-abas sincronizadas com query parameters na URL
+│   │   ├── calendar.py               # Componente mestre FullCalendar v6 com modal dinâmico inteligente
 │   │   ├── pagination.py             # Componente de paginação e seletor de registros por página
 │   │   └── status_banner.py          # Checagem de status e leitor de logs do robô
-│   ├── database.py                   # Interface DAO SQLite (chamados, OXE, doações, plantões, notificações, impressoras)
+│   ├── database.py                   # Interface DAO SQLite (chamados, OXE, doações, plantões, notificações, impressoras, unidades, ramais)
 │   ├── tabs/                         # Módulos isolados por página
 │   │   ├── chamados.py               # Aba 1: Painel Geral de Chamados (?tab=chamados&subtab=...)
 │   │   ├── central_telefonica.py     # Aba 2: Central Telefônica OXE & Modal Ficha Técnica (?tab=central-telefonica)
@@ -156,15 +174,18 @@ automated-OTRS-and-CitSmart/
 │   │   ├── links_faqs.py             # Aba 8: FAQs, Tutoriais (SharePoint) & Vídeos FAQ (?tab=faq&subtab=...)
 │   │   ├── fiscalizacao.py           # Aba 9: Fiscalização de Contratos SAJ (?tab=fiscalizacao&subtab=...)
 │   │   ├── impressoras.py            # Aba 10: Gestão de Impressoras & Dispositivos PaperCut (?tab=impressoras&subtab=...)
-│   │   └── scripts_automacao.py      # Aba 11: Scripts de Automação PowerShell (?tab=scripts-automacao&subtab=...)
+│   │   ├── scripts_automacao.py      # Aba 11: Scripts de Automação PowerShell (?tab=scripts-automacao&subtab=...)
+│   │   ├── calendario_geral.py       # Aba 12: Calendário Geral Unificado (FullCalendar v6, Modal Inteligente & Pesquisa) (?tab=calendario-geral)
+│   │   └── unidades.py               # Aba 13: Catálogo Unificado de Unidades & Lista de Ramais Telefônicos (?tab=unidades&subtab=...)
 │   ├── citsmart_scraper.py           # Bot de extração do CitSmart
 │   ├── otrs_scraper.py               # Bot de extração do OTRS
 │   ├── oxe_scraper.py                # Bot de extração em lote paralelo (Promise.all) da Central Telefônica OXE
 │   ├── papercut_scraper.py           # Bot de extração de impressoras e dispositivos do PaperCut
 │   ├── plantoes_scraper.py           # Bot de extração dos plantões PGJ e SIMP
+│   ├── ramais_scraper.py             # Extrator em PDF da Lista Oficial de Ramais da Intranet do MPMS
 │   ├── sync_portarias.py             # Sincronizador de portarias para o orquestrador
 │   ├── sync_plantoes_alerts.py       # Verificador de alertas de plantão para o orquestrador
-│   ├── unidades_scraper.py           # Raspador de unidades/promotorias
+│   ├── unidades_scraper.py           # Raspador de unidades/promotorias no portal do MPMS
 │   ├── faq_scraper.py                # Bot Playwright para FAQs do SharePoint
 │   ├── preprocess_chamados.py        # Limpeza e padronização de chamados
 │   ├── preprocess_oxe.py             # Pré-processamento e classificação de ramais do OXE
@@ -172,7 +193,6 @@ automated-OTRS-and-CitSmart/
 │   ├── sync_master.py                # Sincronizador Append-Only na Planilha Master
 │   └── salvar_senha.py               # Utilitário de segurança e credenciais (Keyring)
 ├── tests/                            # Suíte de testes unitários automatizados
-
 │   ├── test_app.py                   # Testes de NLP, scrapers e regras de negócio
 │   └── test_tabs_and_components.py   # Testes dos módulos do dashboard
 ├── .env.example                      # Template de variáveis de ambiente e caminhos dos scripts

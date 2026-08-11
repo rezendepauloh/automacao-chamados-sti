@@ -15,11 +15,65 @@ import pandas as pd
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
+import os
+import ctypes
+import tempfile
+import logging
 import urllib3
+
+root_dir = Path(__file__).parent.parent
 from database import get_unidades_manuais
 from config import *
 
 urllib3.disable_warnings()
+
+# Configuração de Logging para o scraper de unidades
+log_dir = Path(root_dir) / "debug"
+log_dir.mkdir(exist_ok=True)
+logging.basicConfig(
+    filename=log_dir / "unidades_scraper.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    encoding="utf-8"
+)
+logger = logging.getLogger("unidades_scraper")
+
+
+def check_unidades_sync_running() -> bool:
+    """Verifica se o processo de sincronização de unidades está ativo analisando o arquivo de lock."""
+    lock_file = Path(tempfile.gettempdir()) / "automated_unidades_sync.lock"
+    if not lock_file.exists():
+        return False
+        
+    try:
+        with open(lock_file, "r") as f:
+            pid = int(f.read().strip())
+            
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if handle:
+            exit_code = ctypes.c_ulong()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                kernel32.CloseHandle(handle)
+                return exit_code.value == 259  # STILL_ACTIVE
+            kernel32.CloseHandle(handle)
+    except Exception:
+        pass
+    return False
+
+
+def read_unidades_last_log_lines(n: int = 15) -> str:
+    """Lê as últimas N linhas do arquivo de log do scraper de unidades."""
+    log_path = Path("debug") / "unidades_scraper.log"
+    if not log_path.exists():
+        return "Nenhum log gerado ainda. Aguardando início..."
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+            return "".join(lines[-n:])
+    except Exception as e:
+        return f"Erro ao ler arquivo de log: {e}"
 
 BASE_DOMAIN = "https://www.mpms.mp.br"
 
@@ -414,4 +468,16 @@ def main():
     save_final_excel(df, out_file)
 
 if __name__ == "__main__":
-    main()
+    lock_file = Path(tempfile.gettempdir()) / "automated_unidades_sync.lock"
+    with open(lock_file, "w") as f:
+        f.write(str(os.getpid()))
+    try:
+        logger.info("Iniciando execução do unidades_scraper.py...")
+        main()
+        logger.info("Execução do unidades_scraper.py concluída com sucesso!")
+    finally:
+        if lock_file.exists():
+            try:
+                lock_file.unlink()
+            except Exception:
+                pass

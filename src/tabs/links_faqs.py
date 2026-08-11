@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 from bs4 import BeautifulSoup
 from src.config import setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR
+from src.components.subtabs import render_subtabs
 from src.components.pagination import (
     render_items_per_page_selector,
     paginate_items,
@@ -201,82 +202,14 @@ def render_faq_page():
     # Varre vídeos FAQ
     videos_list = scan_video_faqs(VIDEO_FAQ_DIR)
 
-    # Injeção de CSS para transformar o st.radio em botões de abas estilizados (sem bolinhas)
-    st.markdown("""
-    <style>
-    /* Oculta os círculos/bolinhas do radio input */
-    div[data-testid="stRadio"] input[type="radio"] {
-        display: none !important;
-    }
-    div[data-testid="stRadio"] div[data-testid="stMarkdownContainer"] p {
-        font-size: 0.95rem !important;
-        font-weight: 600 !important;
-        margin: 0 !important;
-    }
-    /* Container horizontal flex de abas */
-    div[data-testid="stRadio"] > div[role="radiogroup"] {
-        display: flex !important;
-        flex-direction: row !important;
-        gap: 10px !important;
-        border-bottom: 2px solid var(--metric-border, #2a2b36) !important;
-        padding-bottom: 12px !important;
-        margin-bottom: 20px !important;
-    }
-    /* Estilização padrão dos botões de abas */
-    div[data-testid="stRadio"] > div[role="radiogroup"] > label {
-        background-color: var(--metric-bg, #1e1f29) !important;
-        border: 1px solid var(--metric-border, #343541) !important;
-        border-radius: 8px !important;
-        padding: 10px 22px !important;
-        color: var(--metric-title-color, #b0b0b0) !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease-in-out !important;
-        margin: 0 !important;
-    }
-    /* Efeito ao passar o mouse (Hover) adaptável */
-    div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
-        background-color: rgba(255, 75, 75, 0.12) !important;
-        color: #ff4b4b !important;
-        border-color: #ff4b4b !important;
-    }
-
-    /* Estilo para a aba ativa / selecionada */
-    div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
-        background-color: #ff4b4b !important;
-        color: #ffffff !important;
-        border-color: #ff4b4b !important;
-        font-weight: bold !important;
-        box-shadow: 0 4px 12px rgba(255, 75, 75, 0.35) !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-
     # Navegação superior estilo Abas com suporte a query parameter (?subtab=slug)
     FAQ_SUBTAB_MAP = {
         "sharepoint": "📚 FAQs & Tutoriais (SharePoint)",
         "videos": "🎥 Vídeos FAQ (Tutoriais)",
         "links": "🔗 Links Úteis da Bancada"
     }
-    FAQ_SUBTAB_REVERSE = {v: k for k, v in FAQ_SUBTAB_MAP.items()}
 
-    url_subtab = st.query_params.get("subtab", "sharepoint")
-    default_title = FAQ_SUBTAB_MAP.get(url_subtab, "📚 FAQs & Tutoriais (SharePoint)")
-    options = list(FAQ_SUBTAB_MAP.values())
-    default_idx = options.index(default_title) if default_title in options else 0
-
-    active_tab = st.radio(
-        "Navegação:",
-        options=options,
-        index=default_idx,
-        horizontal=True,
-        label_visibility="collapsed",
-        key="faq_nav_radio"
-    )
-
-    new_slug = FAQ_SUBTAB_REVERSE.get(active_tab, "sharepoint")
-    if st.query_params.get("subtab") != new_slug:
-        st.query_params["subtab"] = new_slug
+    active_tab = render_subtabs(FAQ_SUBTAB_MAP, default_slug="sharepoint", key="faq_nav_radio")
 
     st.markdown("<br>", unsafe_allow_html=True)
 

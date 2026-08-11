@@ -4,6 +4,8 @@ import streamlit.components.v1 as components
 import pandas as pd
 from datetime import datetime
 from src.database import get_garantia_contratos_df, get_garantia_chamados_df, sync_garantia_from_excel
+from src.components.subtabs import render_subtabs
+from src.components.calendar import render_master_calendar
 from src.components.pagination import (
     render_items_per_page_selector,
     paginate_items,
@@ -24,340 +26,7 @@ def parse_date_to_iso_and_br(date_val):
         return None, None
 
 
-def render_garantia_calendar(events: list[dict]):
-    """Renderiza o componente interativo FullCalendar (v6) para a aba de Garantia com suporte a Tema Claro e Escuro."""
-    import json
-    events_json = json.dumps(events, ensure_ascii=False)
 
-    calendar_html = f"""
-    <!DOCTYPE html>
-    <html lang="pt-br">
-    <head>
-      <meta charset="utf-8"/>
-      <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
-      <style>
-        html, body {{
-          margin: 0;
-          padding: 0;
-          height: 100%;
-          overflow: hidden;
-          font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-          transition: background-color 0.3s ease, color 0.3s ease;
-        }}
-
-        /* TEMA ESCURO (DARK MODE) */
-        body, body.dark-mode {{
-          background-color: #0e1117;
-          color: #fafafa;
-        }}
-        body.dark-mode .fc {{
-          --fc-border-color: #31333f;
-          --fc-page-bg-color: #0e1117;
-          --fc-neutral-bg-color: #1a1c24;
-          --fc-list-event-hover-bg-color: #262730;
-          --fc-today-bg-color: rgba(230, 126, 34, 0.15);
-        }}
-        body.dark-mode .fc-toolbar-title {{ color: #ffffff !important; }}
-        body.dark-mode .fc-col-header-cell-cushion,
-        body.dark-mode .fc-daygrid-day-number {{ color: #ffffff !important; }}
-        body.dark-mode .fc-button-primary {{
-          background-color: #262730 !important;
-          border-color: #41444c !important;
-          color: #ffffff !important;
-        }}
-        body.dark-mode .fc-button-primary:hover {{
-          background-color: #31333f !important;
-        }}
-        body.dark-mode .fc-list-day-cushion {{
-          background-color: #2a2b36 !important;
-          color: #ffffff !important;
-        }}
-        body.dark-mode .modal-content {{
-          background: #1e2129;
-          border: 1px solid #363945;
-          color: #ffffff;
-        }}
-
-        /* TEMA CLARO (LIGHT MODE) */
-        body.light-mode {{
-          background-color: #ffffff;
-          color: #0f172a;
-        }}
-        body.light-mode .fc {{
-          --fc-border-color: #e2e8f0;
-          --fc-page-bg-color: #ffffff;
-          --fc-neutral-bg-color: #f8fafc;
-          --fc-list-event-hover-bg-color: #f1f5f9;
-          --fc-today-bg-color: rgba(230, 126, 34, 0.15);
-        }}
-        body.light-mode .fc-toolbar-title {{ color: #0f172a !important; }}
-        body.light-mode .fc-col-header-cell-cushion,
-        body.light-mode .fc-daygrid-day-number {{ color: #0f172a !important; }}
-        body.light-mode .fc-button-primary {{
-          background-color: #f1f5f9 !important;
-          border-color: #cbd5e1 !important;
-          color: #0f172a !important;
-        }}
-        body.light-mode .fc-button-primary:hover {{
-          background-color: #e2e8f0 !important;
-          color: #0f172a !important;
-        }}
-        body.light-mode .fc-button-active {{
-          background-color: #ff4b4b !important;
-          border-color: #ff4b4b !important;
-          color: #ffffff !important;
-        }}
-        body.light-mode .fc-list-day-cushion {{
-          background-color: #f1f5f9 !important;
-          color: #0f172a !important;
-        }}
-        body.light-mode .modal-content {{
-          background: #ffffff;
-          border: 1px solid #cbd5e1;
-          color: #0f172a;
-        }}
-        body.light-mode .modal-body p {{ color: #334155; }}
-        body.light-mode .modal-body strong {{ color: #0f172a; }}
-        body.light-mode .close-btn {{ color: #64748b; }}
-
-        #calendar {{
-          max-width: 100%;
-          height: 100%;
-          box-sizing: border-box;
-          padding: 10px;
-        }}
-        .fc-scroller {{
-          overflow-y: auto !important;
-        }}
-        .fc-event {{
-          cursor: pointer;
-          border-radius: 4px;
-          padding: 2px 4px;
-          font-size: 0.85rem;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-          transition: transform 0.1s ease;
-        }}
-        .fc-event:hover {{
-          transform: scale(1.02);
-        }}
-
-        /* GLASSMORPHISM MODAL OVERLAY */
-        .modal-overlay {{
-          display: none;
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: rgba(0, 0, 0, 0.75);
-          backdrop-filter: blur(5px);
-          z-index: 9999;
-          justify-content: center;
-          align-items: center;
-        }}
-        .modal-content {{
-          border-radius: 12px;
-          width: 90%;
-          max-width: 520px;
-          padding: 24px;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-          animation: fadeIn 0.2s ease-out;
-        }}
-        @keyframes fadeIn {{
-          from {{ opacity: 0; transform: translateY(-10px); }}
-          to {{ opacity: 1; transform: translateY(0); }}
-        }}
-        .modal-header {{
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          border-bottom: 1px solid rgba(128,128,128,0.3);
-          padding-bottom: 12px;
-          margin-bottom: 16px;
-        }}
-        .modal-title {{
-          margin: 0;
-          font-size: 1.15rem;
-          font-weight: 600;
-          color: #ff4b4b;
-        }}
-        .close-btn {{
-          background: transparent;
-          border: none;
-          font-size: 1.5rem;
-          cursor: pointer;
-          line-height: 1;
-        }}
-        .modal-body p {{
-          margin: 10px 0;
-          font-size: 0.95rem;
-          line-height: 1.5;
-        }}
-        .modal-badge {{
-          display: inline-block;
-          padding: 4px 10px;
-          border-radius: 12px;
-          font-size: 0.75rem;
-          font-weight: 600;
-          margin-bottom: 12px;
-        }}
-        .modal-footer {{
-          margin-top: 20px;
-          text-align: right;
-        }}
-        .btn-dismiss {{
-          background: #ff4b4b;
-          color: #fff;
-          border: none;
-          padding: 8px 16px;
-          border-radius: 6px;
-          cursor: pointer;
-          font-weight: 500;
-        }}
-        .btn-dismiss:hover {{
-          background: #e03e3e;
-        }}
-      </style>
-    </head>
-    <body>
-      <div id="calendar"></div>
-
-      <!-- COMPONENTE MODAL CUSTOMIZADO -->
-      <div id="garantiaModal" class="modal-overlay">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3 id="mTitle" class="modal-title">Detalhes da Garantia</h3>
-            <button class="close-btn" onclick="closeModal()">&times;</button>
-          </div>
-          <div class="modal-body">
-            <span id="mBadge" class="modal-badge"></span>
-            <p><strong>📜 Contrato:</strong> <span id="mContrato"></span></p>
-            <p><strong>📂 PU SAJ:</strong> <span id="mPuSaj"></span></p>
-            <p><strong>💻 Item / Equipamento:</strong> <span id="mItem"></span></p>
-            <p><strong>🏢 Fornecedor:</strong> <span id="mFornecedor"></span></p>
-            <p><strong>📅 Data do Evento:</strong> <span id="mData"></span></p>
-            <p><strong>🛡️ Status Vigência:</strong> <span id="mStatus"></span></p>
-            <p id="pNota"><strong>📄 Nota Fiscal:</strong> <span id="mNota"></span></p>
-            <p id="pLink"><strong>🌐 Suporte:</strong> <a id="mLink" href="#" target="_blank" style="color: #3b82f6; text-decoration: underline;">Abrir Chamado / Suporte ↗</a></p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-dismiss" onclick="closeModal()">Fechar</button>
-          </div>
-        </div>
-      </div>
-
-      <script>
-        function updateThemeFromParent() {{
-          var isLight = false;
-          try {{
-            var parentBody = window.parent.document.body;
-            var parentApp = window.parent.document.querySelector('.stApp');
-            var themeAttr = (parentBody && parentBody.getAttribute('data-theme')) || 
-                            (parentApp && parentApp.getAttribute('data-theme'));
-            
-            if (themeAttr === 'light') {{
-              isLight = true;
-            }} else if (themeAttr === 'dark') {{
-              isLight = false;
-            }} else {{
-              isLight = window.parent.matchMedia('(prefers-color-scheme: light)').matches;
-            }}
-          }} catch(e) {{
-            isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-          }}
-
-          if (isLight) {{
-            document.body.className = 'light-mode';
-          }} else {{
-            document.body.className = 'dark-mode';
-          }}
-        }}
-
-        function closeModal() {{
-          document.getElementById('garantiaModal').style.display = 'none';
-        }}
-
-        window.onclick = function(event) {{
-          var modal = document.getElementById('garantiaModal');
-          if (event.target == modal) {{
-            modal.display = 'none';
-          }}
-        }};
-
-        document.addEventListener('DOMContentLoaded', function() {{
-          updateThemeFromParent();
-          setInterval(updateThemeFromParent, 1000);
-
-          var calendarEl = document.getElementById('calendar');
-          var calendar = new FullCalendar.Calendar(calendarEl, {{
-            initialView: 'dayGridMonth',
-            height: '100%',
-            locale: 'pt-br',
-
-            headerToolbar: {{
-              left: 'prev,next today',
-              center: 'title',
-              right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
-            }},
-            buttonText: {{
-              today:    'Hoje',
-              month:    'Mês',
-              week:     'Semana',
-              day:      'Dia',
-              list:     'Lista'
-            }},
-            events: {events_json},
-            eventClick: function(info) {{
-              var props = info.event.extendedProps;
-              
-              document.getElementById('mTitle').innerText = info.event.title;
-              document.getElementById('mContrato').innerText = props.contrato || 'N/A';
-              document.getElementById('mPuSaj').innerText = props.pu_saj || 'N/A';
-              document.getElementById('mItem').innerText = props.item || 'N/A';
-              document.getElementById('mFornecedor').innerText = props.fornecedor || 'N/A';
-              document.getElementById('mData').innerText = props.data_formatada || 'N/A';
-              document.getElementById('mStatus').innerText = props.status_garantia || 'N/A';
-
-              var mNota = document.getElementById('mNota');
-              var pNota = document.getElementById('pNota');
-              if (props.nota_fiscal) {{
-                mNota.innerText = props.nota_fiscal;
-                pNota.style.display = 'block';
-              }} else {{
-                pNota.style.display = 'none';
-              }}
-
-              var mLink = document.getElementById('mLink');
-              var pLink = document.getElementById('pLink');
-              if (props.link_suporte) {{
-                mLink.href = props.link_suporte;
-                pLink.style.display = 'block';
-              }} else {{
-                pLink.style.display = 'none';
-              }}
-              
-              var badge = document.getElementById('mBadge');
-              badge.innerText = props.tipo || 'Garantia';
-              if (props.tipo && props.tipo.includes('Início')) {{
-                badge.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
-                badge.style.color = '#10b981';
-                badge.style.border = '1px solid #10b981';
-              }} else {{
-                badge.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
-                badge.style.color = '#ef4444';
-                badge.style.border = '1px solid #ef4444';
-              }}
-
-              document.getElementById('garantiaModal').style.display = 'flex';
-            }}
-          }});
-          calendar.render();
-        }});
-      </script>
-    </body>
-    </html>
-    """
-    components.html(calendar_html, height=750, scrolling=False)
 
 
 def render_garantia_page():
@@ -390,25 +59,8 @@ def render_garantia_page():
         "calendario": "📅 Calendário de Garantias",
         "graficos": "📊 Gráficos & Estatísticas"
     }
-    GARANTIA_SUBTAB_REVERSE = {v: k for k, v in GARANTIA_SUBTAB_MAP.items()}
 
-    url_subtab = st.query_params.get("subtab", "contratos")
-    default_title = GARANTIA_SUBTAB_MAP.get(url_subtab, "📜 Contratos de Garantia")
-    options = list(GARANTIA_SUBTAB_MAP.values())
-    default_idx = options.index(default_title) if default_title in options else 0
-
-    selected_subtab = st.radio(
-        "Navegação da Garantia:",
-        options=options,
-        index=default_idx,
-        horizontal=True,
-        label_visibility="collapsed",
-        key="garantia_subtab_radio"
-    )
-
-    new_slug = GARANTIA_SUBTAB_REVERSE.get(selected_subtab, "contratos")
-    if st.query_params.get("subtab") != new_slug:
-        st.query_params["subtab"] = new_slug
+    selected_subtab = render_subtabs(GARANTIA_SUBTAB_MAP, default_slug="contratos", key="garantia_subtab_radio")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -715,6 +367,7 @@ def render_garantia_page():
                         "borderColor": "#059669",
                         "textColor": "#ffffff",
                         "extendedProps": {
+                            "categoria_evento": "garantia",
                             "tipo": "🟢 Início da Garantia",
                             "contrato": contrato,
                             "pu_saj": pu_saj,
@@ -740,6 +393,7 @@ def render_garantia_page():
                         "borderColor": bg_col,
                         "textColor": "#ffffff",
                         "extendedProps": {
+                            "categoria_evento": "garantia",
                             "tipo": "🔴 Fim / Vencimento da Garantia",
                             "contrato": contrato,
                             "pu_saj": pu_saj,
@@ -753,7 +407,7 @@ def render_garantia_page():
                     })
 
         st.subheader(f"📅 Agenda de Vigências de Garantia ({len(events)} eventos mapeados)")
-        render_garantia_calendar(events)
+        render_master_calendar(events, height_px=750, scrolling_enabled=False)
 
     # -------------------------------------------------------------------------
     # ABA 4: GRÁFICOS & ESTATÍSTICAS
