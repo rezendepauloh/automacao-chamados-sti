@@ -1312,3 +1312,213 @@ def get_garantia_chamados_df() -> pd.DataFrame:
         conn.close()
         return pd.DataFrame()
 
+
+def setup_eventos_manuais_table():
+    """Cria a tabela de eventos manuais no banco de dados SQLite se não existir."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS eventos_manuais (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        titulo TEXT NOT NULL,
+        data_inicio TEXT NOT NULL,
+        data_fim TEXT,
+        descricao TEXT,
+        autor TEXT,
+        data_criacao TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_evento_manual(titulo: str, data_inicio: str, data_fim: str = "", descricao: str = "", autor: str = "Bancada STI"):
+    """Insere um novo evento manual na tabela eventos_manuais."""
+    setup_eventos_manuais_table()
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+    INSERT INTO eventos_manuais (titulo, data_inicio, data_fim, descricao, autor, data_criacao)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (titulo, data_inicio, data_fim, descricao, autor, now_str))
+    conn.commit()
+    conn.close()
+
+
+def get_eventos_manuais() -> pd.DataFrame:
+    """Retorna um DataFrame com todos os eventos manuais cadastrados no SQLite."""
+    setup_eventos_manuais_table()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT * FROM eventos_manuais ORDER BY id DESC", conn)
+        conn.close()
+        return df
+    except Exception:
+        conn.close()
+        return pd.DataFrame()
+
+
+def setup_unidades_tables():
+    """Cria as tabelas de unidades unificadas e unidades manuais no SQLite se não existirem."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS unidades_manuais (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cidade TEXT,
+        tipo TEXT,
+        setor TEXT,
+        sigla TEXT,
+        titular TEXT,
+        unidade_predio TEXT,
+        telefone TEXT,
+        url TEXT,
+        data_atualizacao TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS unidades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cidade TEXT,
+        tipo TEXT,
+        setor TEXT,
+        sigla TEXT,
+        titular TEXT,
+        unidade_predio TEXT,
+        telefone TEXT,
+        url TEXT,
+        origem TEXT DEFAULT 'web',
+        data_atualizacao TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def setup_unidades_manuais_table():
+    """Cria a tabela de unidades manuais no SQLite se não existir."""
+    setup_unidades_tables()
+
+
+def get_unidades_manuais() -> pd.DataFrame:
+    """Retorna todas as unidades manuais cadastradas no SQLite."""
+    setup_unidades_tables()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT * FROM unidades_manuais ORDER BY id ASC", conn)
+        conn.close()
+        return df
+    except Exception:
+        conn.close()
+        return pd.DataFrame()
+
+
+def save_unidades_to_db(df: pd.DataFrame):
+    """Salva a lista completa unificada de unidades (Web + Manuais) na tabela 'unidades' do SQLite."""
+    setup_unidades_tables()
+    if df is None or df.empty:
+        return
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute("DELETE FROM unidades")
+
+    for _, row in df.iterrows():
+        cidade = str(row.get('Cidade', row.get('cidade', ''))).strip()
+        tipo = str(row.get('Tipo', row.get('tipo', ''))).strip()
+        setor = str(row.get('Setor', row.get('setor', ''))).strip()
+        sigla = str(row.get('Sigla', row.get('sigla', ''))).strip()
+        titular = str(row.get('Titular', row.get('titular', ''))).strip()
+        u_predio = str(row.get('Unidade (Prédio)', row.get('unidade_predio', ''))).strip()
+        telefone = str(row.get('Telefone', row.get('telefone', ''))).strip()
+        url = str(row.get('URL', row.get('url', ''))).strip()
+
+        if not setor and not cidade:
+            continue
+
+        cursor.execute("""
+        INSERT INTO unidades (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, data_atualizacao)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (cidade, tipo, setor, sigla, titular, u_predio, telefone, url, now_str))
+
+    conn.commit()
+    conn.close()
+
+
+def get_unidades_df() -> pd.DataFrame:
+    """Retorna o DataFrame de todas as unidades (Promotorias, Procuradorias e Setores Manuais) salvas no SQLite."""
+    setup_unidades_tables()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT cidade AS Cidade, tipo AS Tipo, setor AS Setor, sigla AS Sigla, titular AS Titular, unidade_predio AS 'Unidade (Prédio)', telefone AS Telefone, url AS URL FROM unidades ORDER BY cidade ASC, setor ASC", conn)
+        conn.close()
+        return df
+    except Exception:
+        conn.close()
+        return pd.DataFrame()
+
+
+def add_unidade_manual(cidade: str, tipo: str, setor: str, sigla: str = "", titular: str = "", unidade_predio: str = "", telefone: str = "", url: str = ""):
+    """Insere ou atualiza uma unidade manual no SQLite e sincroniza a tabela unificada 'unidades'."""
+    setup_unidades_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. Atualiza tabela unidades_manuais
+    cursor.execute("SELECT id FROM unidades_manuais WHERE cidade = ? AND tipo = ? AND setor = ?", (cidade, tipo, setor))
+    existing = cursor.fetchone()
+
+    if existing:
+        cursor.execute("""
+        UPDATE unidades_manuais 
+        SET sigla = ?, titular = ?, unidade_predio = ?, telefone = ?, url = ?, data_atualizacao = ?
+        WHERE id = ?
+        """, (sigla, titular, unidade_predio, telefone, url, now_str, existing[0]))
+    else:
+        cursor.execute("""
+        INSERT INTO unidades_manuais (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, data_atualizacao)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, now_str))
+
+    # 2. Insere/Atualiza também na tabela unificada 'unidades'
+    cursor.execute("SELECT id FROM unidades WHERE cidade = ? AND tipo = ? AND setor = ?", (cidade, tipo, setor))
+    existing_uni = cursor.fetchone()
+    if existing_uni:
+        cursor.execute("""
+        UPDATE unidades 
+        SET sigla = ?, titular = ?, unidade_predio = ?, telefone = ?, url = ?, data_atualizacao = ?
+        WHERE id = ?
+        """, (sigla, titular, unidade_predio, telefone, url, now_str, existing_uni[0]))
+    else:
+        cursor.execute("""
+        INSERT INTO unidades (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, data_atualizacao)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (cidade, tipo, setor, sigla, titular, unidade_predio, telefone, url, now_str))
+
+    conn.commit()
+    conn.close()
+
+
+def delete_unidade_manual(unit_id: int):
+    """Deleta uma unidade manual do SQLite (das duas tabelas) pelo ID."""
+    setup_unidades_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT cidade, tipo, setor FROM unidades_manuais WHERE id = ?", (unit_id,))
+    row = cursor.fetchone()
+    if row:
+        cidade, tipo, setor = row[0], row[1], row[2]
+        cursor.execute("DELETE FROM unidades WHERE cidade = ? AND tipo = ? AND setor = ?", (cidade, tipo, setor))
+
+    cursor.execute("DELETE FROM unidades_manuais WHERE id = ?", (unit_id,))
+    conn.commit()
+    conn.close()
+
+
+
+

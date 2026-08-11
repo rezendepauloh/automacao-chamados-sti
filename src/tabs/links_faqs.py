@@ -1,9 +1,11 @@
 import os
+import re
 import json
 import sqlite3
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+from bs4 import BeautifulSoup
 from src.config import setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR
 from src.components.pagination import (
     render_items_per_page_selector,
@@ -12,6 +14,77 @@ from src.components.pagination import (
 )
 
 logger = setup_logging(DEBUG_DIR_FAQ / "faq.log", "faq")
+
+
+def parse_sharepoint_content(html_str: str) -> str:
+    """
+    Traduz elementos de imagens e vídeos do SharePoint, remove bloco de autoria e ícones quebrados.
+    """
+    if not html_str or not isinstance(html_str, str):
+        return ""
+
+    # 1. Limpeza do Bloco de Autoria via Regex
+    html_str = re.sub(r'Paulo Henrique.*?Published \d{2}/\d{2}/\d{4}', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+
+    soup = BeautifulSoup(html_str, "html.parser")
+
+    # 2. Remoção de Ícones Quebrados (tags <i>)
+    for tag in soup.find_all("i"):
+        tag.decompose()
+
+    # 3. Processamento de Imagens (<div class="imagePlugin" data-imageurl="...">)
+    image_divs = soup.find_all("div", class_="imagePlugin")
+    for div in image_divs:
+        img_url = div.get("data-imageurl")
+        if img_url:
+            if img_url.startswith("/"):
+                img_url = f"https://ministeriopublicoms.sharepoint.com{img_url}"
+            new_img = soup.new_tag("img", src=img_url, attrs={"class": "sp-image"})
+            div.replace_with(new_img)
+
+    # 4. Restauração de Vídeos do SharePoint (data-sp-controldata ou DocumentEmbedWebPart)
+    controldata_divs = soup.find_all(lambda t: t.name == "div" and any(k.endswith("controldata") for k in t.attrs))
+    for div in controldata_divs:
+        raw_control = None
+        for k, v in div.attrs.items():
+            if k.endswith("controldata"):
+                raw_control = v
+                break
+
+        if not raw_control:
+            continue
+
+        try:
+            cdata = json.loads(raw_control)
+            file_url = None
+            
+            # Tenta buscar em properties.file ou properties.serverRelativeUrl
+            props = cdata.get("properties", {})
+            if isinstance(props, dict):
+                file_url = props.get("file") or props.get("serverRelativeUrl") or props.get("url")
+
+            # Tenta buscar em serverProcessedContent.links.serverRelativeUrl se não encontrou
+            if not file_url:
+                sp_content = cdata.get("serverProcessedContent", {})
+                if isinstance(sp_content, dict):
+                    links = sp_content.get("links", {})
+                    if isinstance(links, dict):
+                        file_url = links.get("serverRelativeUrl") or links.get("baseUrl")
+
+            if file_url and any(str(file_url).lower().endswith(ext) for ext in [".mp4", ".mov", ".webm", ".avi"]):
+                if str(file_url).startswith("/"):
+                    file_url = f"https://ministeriopublicoms.sharepoint.com{file_url}"
+                new_video = soup.new_tag(
+                    "video",
+                    controls="",
+                    src=file_url,
+                    style="width: 100%; max-height: 500px; border-radius: 8px; margin: 20px 0;"
+                )
+                div.replace_with(new_video)
+        except Exception:
+            pass
+
+    return str(soup)
 
 
 
@@ -230,7 +303,8 @@ def render_faq_page():
                 .faq-container {
                     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
                     color: #e0e0e0;
-                    line-height: 1.6;
+                    line-height: 1.8;
+                    font-size: 1.05rem;
                 }
                 .faq-container h1, .faq-container h2, .faq-container h3, .faq-container h4 {
                     color: #ffffff !important;
@@ -240,29 +314,36 @@ def render_faq_page():
                 }
                 .faq-container p {
                     margin-bottom: 1rem;
-                    font-size: 0.95rem;
+                    font-size: 1.05rem;
+                    line-height: 1.8;
                 }
-                .faq-container img {
-                    max-width: 100% !important;
-                    height: auto !important;
-                    border-radius: 8px !important;
-                    margin: 16px 0 !important;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
-                    border: 1px solid #343541 !important;
+                .faq-container img, .faq-container .sp-image {
+                    display: block;
+                    margin: 20px auto;
+                    max-width: 100%;
+                    height: auto;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    border: 1px solid #343541;
                 }
                 .faq-container ol, .faq-container ul {
                     padding-left: 1.5rem;
-                    margin-bottom: 1rem;
+                    margin-bottom: 1.5rem;
                 }
                 .faq-container li {
-                    margin-bottom: 0.4rem;
+                    margin-bottom: 0.6rem;
+                    line-height: 1.8;
+                }
+                .faq-container strong, .faq-container b {
+                    color: #f8f9fa !important;
+                    font-weight: 700;
                 }
                 .faq-container code {
                     background-color: #2a2b36;
                     color: #ff4b4b;
                     padding: 2px 6px;
                     border-radius: 4px;
-                    font-size: 0.9rem;
+                    font-size: 0.95rem;
                 }
                 </style>
                 """, unsafe_allow_html=True)
@@ -272,7 +353,8 @@ def render_faq_page():
                 st.markdown("---")
                 
                 if faq_item['conteudo'] and str(faq_item['conteudo']).strip():
-                    st.markdown(f'<div class="faq-container">{faq_item["conteudo"]}</div>', unsafe_allow_html=True)
+                    parsed_html = parse_sharepoint_content(faq_item['conteudo'])
+                    st.markdown(f'<div class="faq-container">{parsed_html}</div>', unsafe_allow_html=True)
                 else:
                     st.info("O conteúdo detalhado deste FAQ ainda não foi sincronizado localmente.")
                     st.write("Você pode visualizar o tutorial completo diretamente no SharePoint pelo botão abaixo.")

@@ -44,17 +44,25 @@ import src.components.header
 importlib.reload(src.components.header)
 selected_page = src.components.header.render_header_navigation()
 
-# Roteamento centralizado do Dashboard (Orquestrador) com Hot-Reload habilitado
-if selected_page == "📞 Central Telefônica (OXE)":
+if selected_page == "🏢 Catálogo de Unidades":
+    import src.tabs.unidades
+    importlib.reload(src.tabs.unidades)
+    src.tabs.unidades.render_unidades_page()
+
+elif selected_page == "📞 Central Telefônica (OXE)":
     import src.tabs.central_telefonica
     importlib.reload(src.tabs.central_telefonica)
     src.tabs.central_telefonica.render_central_telefonica_page()
 
 elif selected_page == "📅 Plantões da Bancada":
-
     import src.tabs.plantoes
     importlib.reload(src.tabs.plantoes)
     src.tabs.plantoes.render_plantoes_page()
+
+elif selected_page == "📅 Calendário Geral":
+    import src.tabs.calendario_geral
+    importlib.reload(src.tabs.calendario_geral)
+    src.tabs.calendario_geral.render_calendario_geral_page()
 
 elif selected_page == "📍 Mapa & Localização":
     import src.tabs.mapas

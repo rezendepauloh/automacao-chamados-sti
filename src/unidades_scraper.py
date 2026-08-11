@@ -16,7 +16,7 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 import urllib3
-from manual_entries import get_manual_entries, set_city_into_unidade
+from database import get_unidades_manuais
 from config import *
 
 urllib3.disable_warnings()
@@ -33,6 +33,30 @@ def clean_url(url):
     if url.startswith("/"):
         return BASE_DOMAIN + url
     return url
+
+def load_manual_entries_from_db():
+    """Busca as unidades manuais do SQLite e formata para o padrão exportado no Excel."""
+    df_db = get_unidades_manuais()
+    if df_db.empty:
+        return []
+    
+    entries = []
+    for _, row in df_db.iterrows():
+        cidade = str(row.get('cidade', '')).strip()
+        u_predio = str(row.get('unidade_predio', '')).strip()
+        unidade_formatada = f"{cidade} - {u_predio}" if cidade and u_predio and not u_predio.startswith(cidade) else u_predio
+
+        entries.append({
+            "Cidade": cidade,
+            "Tipo": str(row.get('tipo', '')).strip(),
+            "Setor": str(row.get('setor', '')).strip(),
+            "Sigla": str(row.get('sigla', '')).strip(),
+            "Titular": str(row.get('titular', '')).strip(),
+            "Unidade (Prédio)": unidade_formatada if unidade_formatada else cidade,
+            "Telefone": str(row.get('telefone', '')).strip(),
+            "URL": str(row.get('url', '')).strip()
+        })
+    return entries
 
 # ----------------------------------------
 # SLUG
@@ -255,9 +279,11 @@ def make_sigla(row: pd.Series) -> str:
 # ----------------------------------------
 # FUNÇÃO AUXILIAR: SALVAR EXCEL (Para não repetir código)
 # ----------------------------------------
+from database import get_unidades_manuais, save_unidades_to_db
+
 def save_final_excel(df: pd.DataFrame, output_path: Path):
     """
-    Recebe o DataFrame pronto e salva com a formatação correta.
+    Recebe o DataFrame pronto e salva com a formatação correta e persiste no banco SQLite.
     """
     # Reordenar as colunas para garantir consistência
     colunas_desejadas = [
@@ -268,7 +294,14 @@ def save_final_excel(df: pd.DataFrame, output_path: Path):
     cols_to_use = [c for c in colunas_desejadas if c in df.columns]
     df = df.reindex(columns=cols_to_use)
 
-    print(f"Salvando arquivo em: {output_path}...")
+    # Persiste na tabela unificada 'unidades' do SQLite
+    try:
+        save_unidades_to_db(df)
+        print("[OK] Dados de unidades atualizados com sucesso no banco de dados SQLite!")
+    except Exception as e:
+        print(f"Erro ao salvar unidades no SQLite: {e}")
+
+    print(f"Salvando arquivo de legado Excel em: {output_path}...")
     
     widths = {
         'Cidade':20, 'Tipo':15, 'Setor':50, 'Titular':40,
@@ -325,9 +358,8 @@ def main():
         
         print(f"Mantendo {len(df_web)} registros obtidos via Web (Promotorias/Procuradorias).")
 
-        # Carrega as novas entradas manuais
-        manual = get_manual_entries()
-        manual = set_city_into_unidade(manual)
+        # Carrega as novas entradas manuais do SQLite
+        manual = load_manual_entries_from_db()
         df_manual = pd.DataFrame(manual)
         
         # Junta Web Antigo + Manual Novo
@@ -371,9 +403,8 @@ def main():
     # Calcula sigla para os dados da Web
     df["Sigla"] = df.apply(make_sigla, axis=1)
 
-    # 4) Adiciona manuais
-    manual = get_manual_entries()
-    manual = set_city_into_unidade(manual)
+    # 4) Adiciona manuais do SQLite
+    manual = load_manual_entries_from_db()
     df_manual = pd.DataFrame(manual)
     
     # Unifica

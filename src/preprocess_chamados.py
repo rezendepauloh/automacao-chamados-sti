@@ -102,11 +102,22 @@ def normalize_text(text: str) -> str:
 
 
 def prepare_unidades_lookup():
-    units_file = INPUT_DIR_BRUTOS / "Unidades_MPMS.xlsx"
-    if not units_file.exists():
-        logger.error(f"Erro: não encontrei {units_file}")
-        sys.exit(1)
-    units_df = pd.read_excel(units_file)
+    """Carrega o DataFrame de unidades preferencialmente do SQLite, utilizando o Excel como fallback."""
+    units_df = pd.DataFrame()
+    try:
+        from database import get_unidades_df
+        units_df = get_unidades_df()
+    except Exception as e:
+        logger.warning(f"Não foi possível carregar unidades do SQLite: {e}")
+
+    if units_df.empty:
+        units_file = INPUT_DIR_BRUTOS / "Unidades_MPMS.xlsx"
+        if units_file.exists():
+            units_df = pd.read_excel(units_file)
+        else:
+            logger.error(f"Erro: não foi possível carregar unidades do SQLite nem do arquivo {units_file}")
+            sys.exit(1)
+
     # Limpa linhas com valores nulos para evitar casamentos falsos de nulos
     units_df = units_df.dropna(subset=['Setor', 'Unidade (Prédio)'])
     units_df['setor_normalizado'] = units_df['Setor'].apply(normalize_text)
