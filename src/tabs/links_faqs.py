@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from bs4 import BeautifulSoup
-from src.config import setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR
+from src.config import setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR, IMAGE_FAQ_DIR
 from src.components.subtabs import render_subtabs
 from src.components.pagination import (
     render_items_per_page_selector,
@@ -138,6 +138,45 @@ def scan_video_faqs(dir_path: Path):
     return sorted(videos, key=lambda x: (x["categoria"], x["titulo"]))
 
 
+def scan_image_faqs(dir_path: Path):
+    """Varre recursivamente o diretório em busca de imagens e organiza por subpastas."""
+    if not dir_path or not dir_path.exists():
+        return []
+
+    valid_extensions = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+    imagens = []
+
+    try:
+        for file in dir_path.rglob("*"):
+            if file.is_file() and file.suffix.lower() in valid_extensions:
+                try:
+                    relative_parent = file.parent.relative_to(dir_path)
+                    categoria = str(relative_parent).replace("\\", " > ").replace("/", " > ")
+                    if categoria == ".":
+                        categoria = "Geral"
+                except Exception:
+                    categoria = "Geral"
+
+                try:
+                    size_bytes = file.stat().st_size
+                    tamanho_fmt = format_file_size(size_bytes)
+                except Exception:
+                    tamanho_fmt = "N/A"
+
+                imagens.append({
+                    "titulo": file.stem,
+                    "nome_arquivo": file.name,
+                    "categoria": categoria,
+                    "caminho": file,
+                    "tamanho": tamanho_fmt,
+                    "extensao": file.suffix.lower()
+                })
+    except Exception as e:
+        logger.error(f"Erro ao varrer diretório de imagens FAQ: {e}")
+
+    return sorted(imagens, key=lambda x: (x["categoria"], x["titulo"]))
+
+
 def render_faq_page():
     """Renderiza a página de FAQs, Tutoriais do SharePoint, Vídeos FAQ e Links Úteis da Bancada."""
     st.title("📚 FAQ, Tutoriais & Links Úteis da Bancada")
@@ -199,13 +238,15 @@ def render_faq_page():
         except Exception as e:
             logger.error(f"Erro ao ler links_uteis_template.json: {e}")
 
-    # Varre vídeos FAQ
+    # Varre vídeos e imagens FAQ
     videos_list = scan_video_faqs(VIDEO_FAQ_DIR)
+    imagens_list = scan_image_faqs(IMAGE_FAQ_DIR)
 
     # Navegação superior estilo Abas com suporte a query parameter (?subtab=slug)
     FAQ_SUBTAB_MAP = {
         "sharepoint": "📚 FAQs & Tutoriais (SharePoint)",
         "videos": "🎥 Vídeos FAQ (Tutoriais)",
+        "imagens": "🖼️ Imagens FAQ (Galeria)",
         "links": "🔗 Links Úteis da Bancada"
     }
 
@@ -435,6 +476,158 @@ def render_faq_page():
                                 open_video_modal(vid)
 
                 render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
+
+    elif active_tab == "🖼️ Imagens FAQ (Galeria)":
+        st.sidebar.markdown("## 🔍 Filtros de Imagens FAQ")
+        search_img = st.sidebar.text_input("Pesquisar por palavra-chave:", "", key="search_img_input")
+
+        # Agrupa imagens por pasta/categoria
+        folders_dict = {}
+        for img in imagens_list:
+            cat = img['categoria']
+            if cat not in folders_dict:
+                folders_dict[cat] = []
+            folders_dict[cat].append(img)
+
+        folders_list = [
+            {
+                "categoria": cat,
+                "imagens": sorted(imgs, key=lambda x: x["titulo"]),
+                "total": len(imgs)
+            }
+            for cat, imgs in folders_dict.items()
+        ]
+        folders_list.sort(key=lambda x: x["categoria"])
+
+        categorias_img = ["Todas"] + [f["categoria"] for f in folders_list]
+        selected_cat_img = st.sidebar.selectbox("📂 Categoria / Pasta:", categorias_img, key="select_cat_img")
+        items_per_page_img = render_items_per_page_selector("faq_img", options=[6, 12, 24, 50], default_index=1)
+
+        st.subheader("🖼️ Galeria de Imagens de FAQ (Tutoriais)")
+        st.write("Pastas de tutoriais com capturas de tela e diagramas armazenados localmente e sincronizados via SharePoint.")
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if not IMAGE_FAQ_DIR.exists():
+            st.warning(f"⚠️ O diretório de Imagens FAQ não foi encontrado em:\n`{IMAGE_FAQ_DIR}`\n\nVerifique se a pasta existe ou ajuste a variável `IMAGE_FAQ_PATH` no seu arquivo `.env`.")
+        elif not imagens_list:
+            st.info(f"Nenhuma imagem de FAQ encontrada na pasta:\n`{IMAGE_FAQ_DIR}`")
+        else:
+            filtered_folders = folders_list
+            if search_img:
+                s_lower = search_img.lower()
+                filtered_folders = [
+                    f for f in filtered_folders
+                    if s_lower in f['categoria'].lower()
+                    or any(s_lower in img['titulo'].lower() for img in f['imagens'])
+                ]
+            if selected_cat_img != "Todas":
+                filtered_folders = [f for f in filtered_folders if f['categoria'] == selected_cat_img]
+
+            st.markdown(f"**Exibindo {len(filtered_folders)} de {len(folders_list)} pasta(s) de tutoriais**")
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            @st.dialog("🖼️ Visualizador de Galeria de Fotos", width="large")
+            def open_image_modal():
+                folder_name = st.session_state.get('active_img_folder', '')
+                matching_folder = next((f for f in folders_list if f['categoria'] == folder_name), None)
+
+                if not matching_folder or not matching_folder['imagens']:
+                    st.info("Nenhuma imagem encontrada para esta pasta.")
+                    return
+
+                folder_imgs = matching_folder['imagens']
+                idx = st.session_state.get('current_img_idx', 0)
+                if idx < 0 or idx >= len(folder_imgs):
+                    idx = 0
+                    st.session_state['current_img_idx'] = 0
+
+                img_item = folder_imgs[idx]
+
+                st.subheader(f"📂 {folder_name}")
+                st.markdown(f"**{img_item['titulo']}**  *(Imagem {idx + 1} de {len(folder_imgs)})*")
+                st.markdown("---")
+
+                st.markdown("""
+                <style>
+                div[data-testid="stDialog"] img {
+                    max-height: 480px !important;
+                    max-width: 100% !important;
+                    object-fit: contain !important;
+                    margin: 0 auto !important;
+                    display: block !important;
+                    border-radius: 8px !important;
+                    box-shadow: 0 4px 14px rgba(0,0,0,0.4) !important;
+                }
+                div[data-testid="stDialog"] div[data-testid="stHorizontalBlock"] {
+                    align-items: center !important;
+                }
+                div[data-testid="stDialog"] div[data-testid="stColumn"] {
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                # Navegação do Carrossel de Fotos
+                c_prev, c_img, c_next = st.columns([1, 6, 1])
+                with c_prev:
+                    if st.button("⬅️", key="btn_prev_img", use_container_width=True, disabled=(idx == 0)):
+                        st.session_state['current_img_idx'] = idx - 1
+                        st.rerun()
+
+                with c_img:
+                    try:
+                        st.image(str(img_item['caminho']), use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Erro ao carregar a imagem: {e}")
+
+                with c_next:
+                    if st.button("➡️", key="btn_next_img", use_container_width=True, disabled=(idx == len(folder_imgs) - 1)):
+                        st.session_state['current_img_idx'] = idx + 1
+                        st.rerun()
+
+                st.markdown("---")
+                c_info, c_act = st.columns([3, 1])
+                with c_info:
+                    st.caption(f"💾 **Tamanho:** `{img_item['tamanho']}`")
+                    st.caption(f"📁 **Arquivo:** `{img_item['caminho']}`")
+                with c_act:
+                    if st.button("🖥️ Abrir no Windows", key=f"btn_win_img_{idx}_{hash(folder_name)}", use_container_width=True):
+                        try:
+                            os.startfile(str(img_item['caminho']))
+                            st.toast("Imagem aberta no visualizador nativo!", icon="🖼️")
+                        except Exception as e_start:
+                            st.error(f"Erro ao abrir arquivo: {e_start}")
+
+            if st.session_state.get('active_img_folder'):
+                open_image_modal()
+
+            if not filtered_folders:
+                st.info("Nenhuma pasta corresponde aos filtros selecionados.")
+            else:
+                page_folders, cur_p_img, tot_p_img, tot_i_img = paginate_items(
+                    filtered_folders,
+                    page_key="faq_img",
+                    items_per_page=items_per_page_img
+                )
+
+                img_cols = st.columns(3)
+                for idx, folder in enumerate(page_folders):
+                    col_target = img_cols[idx % 3]
+                    with col_target:
+                        with st.container(border=True):
+                            st.caption("📂 Pasta de Tutorial")
+                            st.markdown(f"#### 📁 {folder['categoria']}")
+                            st.caption(f"🖼️ **{folder['total']}** imagem(ns) nesta pasta")
+                            st.markdown("<br>", unsafe_allow_html=True)
+
+                            if st.button("👁️ Abrir Pasta", key=f"btn_folder_view_{idx}_{hash(folder['categoria'])}", use_container_width=True):
+                                st.session_state['active_img_folder'] = folder['categoria']
+                                st.session_state['current_img_idx'] = 0
+                                st.rerun()
+
+                render_pagination_controls("faq_img", cur_p_img, tot_p_img, tot_i_img, items_per_page_img)
 
     elif active_tab == "🔗 Links Úteis da Bancada":
         st.sidebar.markdown("## 🔍 Filtros de Links")

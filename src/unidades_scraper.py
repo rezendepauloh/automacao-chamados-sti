@@ -25,19 +25,20 @@ root_dir = Path(__file__).parent.parent
 from database import get_unidades_manuais
 from config import *
 
+# ---------------------------
+# Utilitários e Log
+# ---------------------------
+# --- Configuração de logging ---
+
 urllib3.disable_warnings()
 
 # Configuração de Logging para o scraper de unidades
-log_dir = Path(root_dir) / "debug"
-log_dir.mkdir(exist_ok=True)
-logging.basicConfig(
-    filename=log_dir / "unidades_scraper.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    encoding="utf-8"
-)
-logger = logging.getLogger("unidades_scraper")
+logger = setup_logging(DEBUG_DIR_UNIDADES / "unidades_scraper.log", __name__)
 
+# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
+logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+# -----------------------------------------------------------------
 
 def check_unidades_sync_running() -> bool:
     """Verifica se o processo de sincronização de unidades está ativo analisando o arquivo de lock."""
@@ -65,7 +66,7 @@ def check_unidades_sync_running() -> bool:
 
 def read_unidades_last_log_lines(n: int = 15) -> str:
     """Lê as últimas N linhas do arquivo de log do scraper de unidades."""
-    log_path = Path("debug") / "unidades_scraper.log"
+    log_path = DEBUG_DIR_UNIDADES / "unidades_scraper.log"
     if not log_path.exists():
         return "Nenhum log gerado ainda. Aguardando início..."
     try:
@@ -351,11 +352,11 @@ def save_final_excel(df: pd.DataFrame, output_path: Path):
     # Persiste na tabela unificada 'unidades' do SQLite
     try:
         save_unidades_to_db(df)
-        print("[OK] Dados de unidades atualizados com sucesso no banco de dados SQLite!")
+        logger.info("[OK] Dados de unidades atualizados com sucesso no banco de dados SQLite!")
     except Exception as e:
-        print(f"Erro ao salvar unidades no SQLite: {e}")
+        logger.error(f"Erro ao salvar unidades no SQLite: {e}")
 
-    print(f"Salvando arquivo de legado Excel em: {output_path}...")
+    logger.info(f"Salvando arquivo de legado Excel em: {output_path}...")
     
     widths = {
         'Cidade':20, 'Tipo':15, 'Setor':50, 'Titular':40,
@@ -366,7 +367,7 @@ def save_final_excel(df: pd.DataFrame, output_path: Path):
         widths=widths, wrap_cols=['Setor','URL'], height_col='Setor'
     )
     
-    print("Concluído!")
+    logger.info("Concluído!")
 
 # ----------------------------------------
 # FLUXO PRINCIPAL
@@ -388,21 +389,21 @@ def main():
     # MODO 1: ATUALIZAÇÃO RÁPIDA (SÓ MANUAIS)
     # =========================================================
     if args.only_manual:
-        print("\n=== MODO RÁPIDO: ATUALIZANDO APENAS ENTRADAS MANUAIS ===")
+        logger.info("\n=== MODO RÁPIDO: ATUALIZANDO APENAS ENTRADAS MANUAIS ===")
         
         if not out_file.exists():
-            print(f"ERRO: O arquivo {out_file} não existe.")
-            print("Execute o script sem parâmetros primeiro para criar a base.")
+            logger.error(f"ERRO: O arquivo {out_file} não existe.")
+            logger.error("Execute o script sem parâmetros primeiro para criar a base.")
             return
 
         # Carrega o Excel existente
         try:
             df_existing = pd.read_excel(out_file, sheet_name="Unidades")
         except Exception as e:
-            print(f"Erro ao ler o Excel existente: {e}")
+            logger.error(f"Erro ao ler o Excel existente: {e}")
             return
 
-        print(f"Lidos {len(df_existing)} registros do arquivo atual.")
+        logger.info(f"Lidos {len(df_existing)} registros do arquivo atual.")
 
         # Filtra para manter APENAS o que veio do Selenium
         # Lógica: O Selenium traz apenas 'Promotoria' e 'Procuradoria'.
@@ -410,7 +411,7 @@ def main():
         tipos_selenium = ["Promotoria", "Procuradoria"]
         df_web = df_existing[df_existing["Tipo"].isin(tipos_selenium)].copy()
         
-        print(f"Mantendo {len(df_web)} registros obtidos via Web (Promotorias/Procuradorias).")
+        logger.info(f"Mantendo {len(df_web)} registros obtidos via Web (Promotorias/Procuradorias).")
 
         # Carrega as novas entradas manuais do SQLite
         manual = load_manual_entries_from_db()
@@ -426,30 +427,30 @@ def main():
     # =========================================================
     # MODO 2: COMPLETO (REAL-TIME VIA REQUESTS)
     # =========================================================
-    print("\n=== MODO COMPLETO: INICIANDO SCRAPER (WEB REQUESTS EM TEMPO REAL) ===")
+    logger.info("\n=== MODO COMPLETO: INICIANDO SCRAPER (WEB REQUESTS EM TEMPO REAL) ===")
     
     all_data = []
 
     # 1) Promotorias
     cities = get_cities()
-    print(f"Encontradas {len(cities)} comarcas.")
+    logger.info(f"Encontradas {len(cities)} comarcas.")
     
     for city, link, slug in cities:
         urls = get_promotoria_urls(link, slug)
         label = "promotoria" if len(urls)==1 else "promotorias"
-        print(f"  {city}: {len(urls)} {label}")
+        logger.info(f"  {city}: {len(urls)} {label}")
         for u in urls:
             all_data.append(scrape_promotoria(city, u))
-            print(f"    [OK] {all_data[-1]['Setor']}")
+            logger.info(f"    [OK] {all_data[-1]['Setor']}")
             time.sleep(0.05)
         
     # 2) Procuradorias
     proc_urls = get_procuradorias()
-    print(f"\nEncontradas {len(proc_urls)} procuradorias.")
+    logger.info(f"\nEncontradas {len(proc_urls)} procuradorias.")
     
     for u in proc_urls:
         all_data.append(scrape_procuradoria(u))
-        print(f"    [OK] {all_data[-1]['Setor']}")
+        logger.info(f"    [OK] {all_data[-1]['Setor']}")
         time.sleep(0.05)    
 
     # 3) Processa dados da Web

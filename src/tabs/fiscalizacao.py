@@ -11,6 +11,13 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.status_banner import render_log_expander
+from src.sync_fiscalizacao import check_fiscalizacao_sync_running, read_fiscalizacao_last_log_lines
+from src.database import (
+    get_fiscalizacao_indicacoes_df,
+    get_fiscalizacao_publicacoes_df,
+    get_fiscalizacao_contador_df
+)
 
 
 def _formatar_texto_portaria(texto: str, nomes_destacar: list[str] | None = None) -> str:
@@ -157,33 +164,30 @@ def render_contracts_page():
     st.write("Acompanhamento das indicações de fiscais titulares, suplentes, processos SAJ e portarias publicadas.")
     st.markdown("---")
 
-    relative_path = os.getenv("FISCAL_EXCEL_RELATIVE_PATH", "")
-    excel_file = Path.home() / relative_path if relative_path else None
+    fiscalizacao_ativo = check_fiscalizacao_sync_running()
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.info("Os dados exibidos abaixo são lidos em tempo real da planilha oficial sincronizada via OneDrive/SharePoint.")
-    with col2:
-        if st.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True):
-            st.cache_data.clear()
-            st.toast("✅ Dados da planilha recarregados!", icon="🔄")
-            st.rerun()
+    if "was_fiscalizacao_syncing" not in st.session_state:
+        st.session_state["was_fiscalizacao_syncing"] = False
 
-    if not excel_file or not excel_file.exists():
-        st.warning(f"⚠️ Planilha de Fiscais não localizada no caminho:\n`{excel_file}`")
-        st.info("Verifique se o OneDrive está sincronizado e o arquivo 'Indicação para atuar como fiscal.xlsx' está disponível.")
-        return
+    if st.session_state["was_fiscalizacao_syncing"] and not fiscalizacao_ativo:
+        st.session_state["was_fiscalizacao_syncing"] = False
+        st.toast("🎉 Sincronização de fiscais concluída com sucesso!", icon="✅")
+        st.rerun()
 
-    try:
-        excel_data = pd.ExcelFile(excel_file)
-        
-        df_indicacoes = pd.read_excel(excel_data, sheet_name="Indicações") if "Indicações" in excel_data.sheet_names else pd.DataFrame()
-        df_publicacoes = pd.read_excel(excel_data, sheet_name="Publicações") if "Publicações" in excel_data.sheet_names else pd.DataFrame()
-        df_contador = pd.read_excel(excel_data, sheet_name="Contador") if "Contador" in excel_data.sheet_names else pd.DataFrame()
-        
-    except Exception as e:
-        st.error(f"Erro ao ler a planilha de Fiscais: {e}")
-        return
+    if fiscalizacao_ativo:
+        st.session_state["was_fiscalizacao_syncing"] = True
+
+    render_log_expander(
+        "🤖 Sincronização de Fiscais em Segundo Plano",
+        fiscalizacao_ativo,
+        read_fiscalizacao_last_log_lines,
+        check_fiscalizacao_sync_running,
+        "O robô está realizando a leitura segura da planilha no OneDrive. O painel permanece livre para uso!"
+    )
+
+    df_indicacoes = get_fiscalizacao_indicacoes_df()
+    df_publicacoes = get_fiscalizacao_publicacoes_df()
+    df_contador = get_fiscalizacao_contador_df()
 
     if not df_indicacoes.empty:
         df_indicacoes.columns = [str(col).strip() for col in df_indicacoes.columns]
@@ -234,6 +238,20 @@ def render_contracts_page():
     selected_fiscal_filter = st.sidebar.selectbox("👤 Filtrar por Fiscal:", opcoes_fiscais)
     
     search_text = st.sidebar.text_input("🔍 Buscar por Nº SAJ, Objeto ou Contrato:", "")
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## ⚙️ Ações e Sincronização")
+    if fiscalizacao_ativo:
+        st.sidebar.button("🤖 Sincronizando...", use_container_width=True, disabled=True)
+    else:
+        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True, help="Busca atualizações na planilha do SharePoint em segundo plano."):
+            import sys, subprocess, time
+            subprocess.Popen([sys.executable, "src/sync_fiscalizacao.py"])
+            time.sleep(0.5)
+            st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+            st.rerun()
+
+    st.sidebar.markdown("---")
 
     items_per_page = render_items_per_page_selector(
         key_prefix="fiscalizacao",

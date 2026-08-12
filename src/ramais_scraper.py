@@ -17,21 +17,22 @@ root_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(root_dir))
 
 from src.database import save_ramais_to_db
-from src.config import USERNAME, PASSWORD
+from src.config import USERNAME, PASSWORD, setup_logging, DEBUG_DIR_RAMAIS
+
+# ---------------------------
+# Utilitários e Log
+# ---------------------------
+# --- Configuração de logging ---
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configuração de Logging
-log_dir = root_dir / "debug"
-log_dir.mkdir(exist_ok=True)
-logging.basicConfig(
-    filename=log_dir / "ramais_scraper.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    encoding="utf-8"
-)
-logger = logging.getLogger("ramais_scraper")
+logger = setup_logging(DEBUG_DIR_RAMAIS / "ramais_scraper.log", __name__)
 
+# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
+logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+# -----------------------------------------------------------------
 
 def check_ramais_sync_running() -> bool:
     """Verifica se o processo de sincronização de ramais está ativo analisando o arquivo de lock."""
@@ -61,7 +62,7 @@ def check_ramais_sync_running() -> bool:
 
 def read_ramais_last_log_lines(n: int = 15) -> str:
     """Lê as últimas N linhas do arquivo de log do scraper de ramais."""
-    log_path = Path("debug") / "ramais_scraper.log"
+    log_path = DEBUG_DIR_RAMAIS / "ramais_scraper.log"
     if not log_path.exists():
         return "Nenhum log gerado ainda. Aguardando início..."
     try:
@@ -205,7 +206,6 @@ def run_ramais_scraper():
 
     if not otrs_user or not otrs_pass:
         logger.error("Credenciais USERNAME / PASSWORD não encontradas no config.py ou .env!")
-        print("❌ Credenciais não configuradas no config.py / .env!")
         return
 
     session = requests.Session()
@@ -214,8 +214,7 @@ def run_ramais_scraper():
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
     })
 
-    logger.info("Iniciando autenticação na Intranet MPMS...")
-    print("🔑 Efetuando login na Intranet MPMS...")
+    logger.info("🔑 Efetuando login na Intranet MPMS...")
 
     login_url = "https://www.mpms.mp.br/intranet/login"
     login_data = {
@@ -229,7 +228,6 @@ def run_ramais_scraper():
         logger.info("Login efetuado com sucesso!")
     except Exception as e:
         logger.error(f"Falha ao realizar login na intranet: {e}")
-        print(f"⚠️ Erro no login da Intranet: {e}")
 
     # Fazer GET na página principal da intranet
     intranet_url = "https://www.mpms.mp.br/intranet"
@@ -269,7 +267,6 @@ def run_ramais_scraper():
         full_url = path_or_url if path_or_url.startswith("http") else f"https://www.mpms.mp.br{path_or_url if path_or_url.startswith('/') else '/' + path_or_url}"
         
         logger.info(f"Baixando PDF de ramais ({tipo}): {full_url}")
-        print(f"📥 Baixando PDF de ramais [{tipo}]...")
 
         try:
             resp_pdf = session.get(full_url, verify=False, timeout=30)
@@ -288,10 +285,8 @@ def run_ramais_scraper():
         df_ramais.drop_duplicates(subset=["localidade", "setor_nome", "telefone_ramal"], inplace=True)
         save_ramais_to_db(df_ramais)
         logger.info(f"Sincronização concluída com {len(df_ramais)} ramais salvos no SQLite!")
-        print(f"🎉 Sincronização concluída! {len(df_ramais)} ramais salvos no banco de dados SQLite.")
     else:
         logger.warning("Nenhum registro de ramal foi extraído dos PDFs!")
-        print("⚠️ Nenhum ramal foi extraído dos PDFs.")
 
 
 if __name__ == "__main__":

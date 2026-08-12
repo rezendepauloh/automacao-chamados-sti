@@ -107,7 +107,10 @@ def render_notificacoes_page():
         tipo = str(row['tipo'])
         titulo = str(row['titulo'])
         mensagem = str(row['mensagem'])
-        data_criacao = str(row['data_criacao'])
+        try:
+            data_criacao = pd.to_datetime(row['data_criacao']).strftime('%d/%m/%Y %H:%M:%S')
+        except Exception:
+            data_criacao = str(row['data_criacao'])
         link_pagina = str(row.get('link_pagina', ''))
         is_read = int(row['lida']) == 1
 

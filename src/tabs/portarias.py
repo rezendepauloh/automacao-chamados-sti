@@ -10,6 +10,8 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.status_banner import render_log_expander
+from src.sync_portarias import check_portarias_sync_running, read_portarias_last_log_lines
 
 logger = setup_logging(DEBUG_DIR_FAQ / "portarias.log", "portarias")
 
@@ -124,6 +126,28 @@ def render_portarias_page():
     st.write("Consulta unificada de atos e portarias publicados no diário oficial do MPMS referente aos membros da equipe.")
     st.markdown("---")
 
+    portarias_ativo = check_portarias_sync_running()
+
+    if "was_portarias_syncing" not in st.session_state:
+        st.session_state["was_portarias_syncing"] = False
+
+    if st.session_state["was_portarias_syncing"] and not portarias_ativo:
+        st.session_state["was_portarias_syncing"] = False
+        st.cache_data.clear() # Limpa o cache para forçar a releitura da API
+        st.toast("🎉 Sincronização de portarias concluída com sucesso!", icon="✅")
+        st.rerun()
+
+    if portarias_ativo:
+        st.session_state["was_portarias_syncing"] = True
+
+    render_log_expander(
+        "🤖 Sincronização de Portarias em Segundo Plano",
+        portarias_ativo,
+        read_portarias_last_log_lines,
+        check_portarias_sync_running,
+        "O robô está consultando a API do Diário Oficial neste momento. O painel permanece livre para uso!"
+    )
+
     with st.sidebar:
         st.markdown("## 🔍 Filtros de Portarias")
         
@@ -163,9 +187,15 @@ def render_portarias_page():
         items_per_page = render_items_per_page_selector("portarias", options=[6, 10, 20, 50, 100, "Todos"], default_index=1)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 Atualizar Dados (API)", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+        if portarias_ativo:
+            st.button("🤖 Atualizando...", use_container_width=True, disabled=True)
+        else:
+            if st.button("🔄 Atualizar Dados (API)", use_container_width=True, help="Busca novas portarias em segundo plano."):
+                import sys, subprocess, time
+                subprocess.Popen([sys.executable, "src/sync_portarias.py"])
+                time.sleep(0.8)
+                st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+                st.rerun()
 
     # Aplicação dos filtros
     filtered_portarias = all_portarias.copy()

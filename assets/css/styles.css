@@ -273,3 +273,43 @@ div[data-testid="stRadioGroup"] > label:has(input:checked) {
     font-weight: 600 !important;
 }
 
+/* ==========================================================================
+   ESTILIZAÇÃO DE BARRAS DE ROLAGEM (SCROLLBARS) CUSTOMIZADAS
+   ========================================================================== */
+/* WebKit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4) !important;
+  border-radius: 4px !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 75, 75, 0.4) !important;
+  border-radius: 4px !important;
+  border: 1px solid rgba(255, 75, 75, 0.2) !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 75, 75, 0.8) !important;
+  box-shadow: 0 0 10px rgba(255, 75, 75, 0.6) !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 75, 75, 0.4) rgba(15, 23, 42, 0.4) !important;
+}
+
+/* Expande a altura máxima de menus dropdown (selectbox) para exibir todas as opções de paginação */
+div[data-baseweb="popover"] ul,
+div[data-baseweb="menu"] {
+  max-height: 480px !important;
+}

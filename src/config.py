@@ -89,6 +89,7 @@ DONATIONS_FILE_PATH = USER_HOME / os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
 WARRANTY_FILE_PATH = USER_HOME / os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", "")
 SHAREPOINT_MATUTINO_URL = os.getenv("SHAREPOINT_MATUTINO_URL", "")
 VIDEO_FAQ_DIR = USER_HOME / os.getenv("VIDEO_FAQ_PATH", "")
+IMAGE_FAQ_DIR = USER_HOME / os.getenv("IMAGE_FAQ_PATH", "")
 
 # Garantia Logs
 DEBUG_DIR_GARANTIA = BASE_DIR / "debug_logs" / "garantia"
@@ -139,6 +140,13 @@ DEBUG_DIR_DONATIONS.mkdir(parents=True, exist_ok=True)
 DEBUG_DIR_ORQUESTRADOR = BASE_DIR / "debug_logs" / "orquestrador"
 DEBUG_DIR_ORQUESTRADOR.mkdir(parents=True, exist_ok=True)
 
+# Unidades & Ramais
+DEBUG_DIR_UNIDADES = BASE_DIR / "debug_logs" / "unidades"
+DEBUG_DIR_UNIDADES.mkdir(parents=True, exist_ok=True)
+
+DEBUG_DIR_RAMAIS = BASE_DIR / "debug_logs" / "ramais"
+DEBUG_DIR_RAMAIS.mkdir(parents=True, exist_ok=True)
+
 # Leaflet Map Logs
 DEBUG_DIR_LEAFLET = BASE_DIR / "debug_logs" / "leaflet"
 DEBUG_DIR_LEAFLET.mkdir(parents=True, exist_ok=True)
@@ -162,6 +170,10 @@ DEBUG_DIR_OXE.mkdir(parents=True, exist_ok=True)
 # Scripts Logs
 DEBUG_DIR_SCRIPTS = BASE_DIR / "debug_logs" / "scripts"
 DEBUG_DIR_SCRIPTS.mkdir(parents=True, exist_ok=True)
+
+# Fiscalizacao Logs
+DEBUG_DIR_FISCALIZACAO = BASE_DIR / "debug_logs" / "fiscalizacao"
+DEBUG_DIR_FISCALIZACAO.mkdir(parents=True, exist_ok=True)
 
 
 

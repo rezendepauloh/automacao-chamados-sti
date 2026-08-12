@@ -89,11 +89,8 @@ def main():
     scripts = [
         ("src/otrs_scraper.py", "Coleta OTRS"),
         ("src/citsmart_scraper.py", "Coleta CitSmart"),
-        ("src/papercut_scraper.py", "Coleta PaperCut Impressoras"),
         ("src/preprocess_chamados.py", "Pré-processamento"),
-        ("src/tag_classifier.py", "Classificação de TAGs por IA"),
-        ("src/sync_portarias.py", "Sincronização de Portarias MPMS"),
-        ("src/sync_plantoes_alerts.py", "Verificação de Lembretes de Plantão")
+        ("src/tag_classifier.py", "Classificação de TAGs por IA")
     ]
 
 

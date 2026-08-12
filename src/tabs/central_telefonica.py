@@ -1,12 +1,16 @@
-# -*- coding: utf-8 -*-
+import sys
 import io
 import pandas as pd
 import streamlit as st
 from datetime import datetime
+from pathlib import Path
+
+root_dir = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(root_dir))
 
 from src.database import get_central_telefonica_df
-from src.oxe_scraper import scrape_oxe
-from src.preprocess_oxe import preprocess_oxe
+from src.oxe_scraper import check_oxe_sync_running, read_oxe_last_log_lines
+from src.components.status_banner import render_log_expander
 from src.components.pagination import (
     render_items_per_page_selector,
     paginate_items,
@@ -55,6 +59,16 @@ def render_central_telefonica_page():
     st.title("📞 Central Telefônica (OXE)")
     st.caption("Consulta unificada de ramais, utilizadores, endereços IP e MAC Addresses de hardware.")
 
+    oxe_ativo = check_oxe_sync_running()
+
+    render_log_expander(
+        "🤖 Robô do OXE Rodando em Segundo Plano – Acompanhar Progresso",
+        oxe_ativo,
+        read_oxe_last_log_lines,
+        check_oxe_sync_running,
+        "O robô está conectando à central Alcatel e pré-processando os dados neste momento. O painel permanece livre para uso!"
+    )
+
     # Carrega dados do banco de dados SQLite / Tratados
     df = get_central_telefonica_df()
 
@@ -63,20 +77,15 @@ def render_central_telefonica_page():
     # -----------------------------------------------------------------------------
     with st.sidebar:
         st.markdown("## ⚙️ Ações e Coleta")
-        if st.button("🚀 Executar Scraper (OXE)", type="primary", use_container_width=True):
-            with st.spinner("Conectando à Central Telefônica OXE e coletando ramais..."):
-                if scrape_oxe():
-                    preprocess_oxe()
-                    st.toast("✅ Coleta e pré-processamento concluídos com sucesso!", icon="🎉")
-                    st.rerun()
-                else:
-                    st.error("Erro ao executar o scraper da Central Telefônica. Verifique o log em debug_logs/oxe/oxe_scraper.log.")
-
-        if st.button("🔄 Reprocessar Dados", use_container_width=True):
-            with st.spinner("Tratando dados brutos do OXE..."):
-                if preprocess_oxe():
-                    st.toast("✅ Dados reprocessados com sucesso!", icon="🔄")
-                    st.rerun()
+        if oxe_ativo:
+            st.button("🤖 Sincronizando OXE...", use_container_width=True, disabled=True)
+        else:
+            if st.button("🔄 Sincronizar Ramais (OXE)", type="primary", use_container_width=True, help="Executa o scraper e o pré-processamento em segundo plano."):
+                import subprocess, time
+                subprocess.Popen([sys.executable, "src/oxe_scraper.py"])
+                time.sleep(1.0)
+                st.toast("🚀 Scraper do OXE iniciado em segundo plano!", icon="🤖")
+                st.rerun()
 
         st.markdown("---")
         st.header("🔍 Filtros de Busca")
@@ -184,6 +193,8 @@ def render_central_telefonica_page():
 
         only_with_mac = st.checkbox("Exibir apenas ramais com MAC Address", value=False)
         only_with_ip = st.checkbox("Exibir apenas ramais com Endereço IP", value=False)
+        only_without_mac = st.checkbox("Exibir apenas ramais sem MAC Address", value=False)
+        only_without_ip = st.checkbox("Exibir apenas ramais sem Endereço IP", value=False)
 
         items_per_page = render_items_per_page_selector(
             key_prefix="central_oxe",
@@ -225,6 +236,12 @@ def render_central_telefonica_page():
 
     if only_with_ip and col_ip:
         df_filtered = df_filtered[is_valid_series(df_filtered[col_ip])]
+
+    if only_without_mac and col_mac:
+        df_filtered = df_filtered[~is_valid_series(df_filtered[col_mac])]
+
+    if only_without_ip and col_ip:
+        df_filtered = df_filtered[~is_valid_series(df_filtered[col_ip])]
 
     # -----------------------------------------------------------------------------
     # EXIBIÇÃO DA TABELA & MODAL DE DETALHES (@st.dialog)

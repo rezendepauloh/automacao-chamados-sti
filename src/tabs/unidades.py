@@ -18,6 +18,7 @@ from src.database import (
 )
 from src.unidades_scraper import check_unidades_sync_running, read_unidades_last_log_lines
 from src.ramais_scraper import check_ramais_sync_running, read_ramais_last_log_lines
+from src.components.status_banner import render_log_expander
 from src.components.subtabs import render_subtabs
 from src.components.pagination import (
     render_items_per_page_selector,
@@ -129,6 +130,33 @@ def modal_novo_setor_manual():
         st.rerun()
 
 
+@st.dialog("📞 Detalhes do Ramal Telefônico")
+def modal_detalhes_ramal(row_data: dict):
+    st.markdown(f"### 👤/🏢 {row_data.get('setor_nome', 'N/A')}")
+    st.caption("Informação de ramal extraída da Intranet do MPMS.")
+    st.markdown("---")
+    m1, m2 = st.columns(2)
+    with m1:
+        st.markdown(f"**📍 Localidade:** {row_data.get('localidade', 'N/A')}")
+        st.markdown(f"**🌐 Abrangência:** {row_data.get('tipo', 'N/A')}")
+    with m2:
+        st.markdown(f"**📞 Telefone / Ramal:** {row_data.get('telefone_ramal', 'N/A')}")
+
+        # Formatação segura da data para o modal
+        dt_raw = row_data.get('data_atualizacao')
+        dt_formatada = "N/A"
+        if pd.notna(dt_raw):
+            try:
+                dt_formatada = pd.to_datetime(dt_raw).strftime('%d/%m/%Y')
+            except:
+                dt_formatada = str(dt_raw)
+        st.markdown(f"**🔄 Atualizado em:** {dt_formatada}")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Fechar", use_container_width=True):
+        st.rerun()
+
+
 def render_unidades_page():
     """Renderiza a página Catálogo de Unidades do MPMS."""
     st.title("🏢 Catálogo de Unidades do MPMS")
@@ -156,53 +184,13 @@ def render_unidades_page():
     if ramais_ativo:
         st.session_state["was_ramais_syncing"] = True
 
-    # --- SIDEBAR: BOTÕES DE AÇÃO ---
-    st.sidebar.markdown("## ⚙️ Ações e Gestão")
+    # --- 1. ELEVAÇÃO DAS SUBTABS DE NAVEGAÇÃO DA PÁGINA ---
+    UNIDADES_SUBTAB_MAP = {
+        "geral": "🏢 Relação Unificada de Unidades",
+        "ramais": "📞 Lista de Ramais (Telefonia)"
+    }
 
-    if st.sidebar.button("➕ Novo Setor Interno", type="primary", use_container_width=True):
-        modal_novo_setor_manual()
-
-    st.sidebar.markdown("<br>", unsafe_allow_html=True)
-
-    if unidades_ativo:
-        st.sidebar.button("🤖 Unidades em Atualização...", use_container_width=True, disabled=True)
-    else:
-        if st.sidebar.button("🔄 Rodar Scraper Completo (Web)", use_container_width=True, help="Executa o scraper completo buscando dados atualizados no portal do MPMS em segundo plano."):
-            subprocess.Popen([sys.executable, "src/unidades_scraper.py"])
-            st.toast("🚀 Scraper Completo de Unidades iniciado em segundo plano!", icon="🤖")
-            st.rerun()
-
-        if st.sidebar.button("⚡ Atualização Rápida (Só Manuais)", use_container_width=True, help="Atualiza a base unificada de unidades com as unidades manuais do banco."):
-            subprocess.Popen([sys.executable, "src/unidades_scraper.py", "--only-manual"])
-            st.toast("⚡ Sincronização rápida de manuais iniciada!", icon="⚡")
-            st.rerun()
-
-    if ramais_ativo:
-        st.sidebar.button("🤖 Ramais em Sincronização...", use_container_width=True, disabled=True)
-    else:
-        if st.sidebar.button("🔄 Atualizar Ramais (Intranet)", use_container_width=True, help="Executa o robô de extração de ramais em PDF da Intranet do MPMS em segundo plano."):
-            subprocess.Popen([sys.executable, "src/ramais_scraper.py"])
-            st.toast("🚀 Sincronização de ramais iniciada em segundo plano!", icon="📞")
-            st.rerun()
-
-    st.sidebar.markdown("---")
-
-    # --- ACCORDIONS DE LOGS E PROGRESSO EM SEGUNDO PLANO ---
-    if unidades_ativo:
-        with st.expander("🤖 Robô de Unidades Rodando em Segundo Plano – Acompanhar Progresso", expanded=True):
-            st.info("O robô de unidades está coletando dados no portal do MPMS neste momento. Você pode continuar navegando normalmente!")
-            logs_u = read_unidades_last_log_lines(15)
-            st.code(logs_u, language="text")
-            if st.button("🔄 Atualizar Log de Unidades", key="btn_update_unidades_log"):
-                st.rerun()
-
-    if ramais_ativo:
-        with st.expander("📞 Robô de Ramais Rodando em Segundo Plano – Acompanhar Progresso", expanded=True):
-            st.info("O robô de ramais está baixando os PDFs da Intranet e processando a telefonia neste momento. O uso da aplicação permanece livre!")
-            logs_r = read_ramais_last_log_lines(15)
-            st.code(logs_r, language="text")
-            if st.button("🔄 Atualizar Log de Ramais", key="btn_update_ramais_log"):
-                st.rerun()
+    selected_tab = render_subtabs(UNIDADES_SUBTAB_MAP, default_slug="geral", key="unidades_subtab_radio")
 
     # --- CARREGA DADOS DIRETO DO SQLite ---
     df_unidades = get_unidades_df()
@@ -216,39 +204,116 @@ def render_unidades_page():
         except Exception:
             pass
 
-    # --- FILTROS SIDEBAR ---
+    # --- 2. SIDEBAR: SEGREGAÇÃO DO MENU "AÇÕES E GESTÃO" ---
+    st.sidebar.markdown("## ⚙️ Ações e Gestão")
+
+    if selected_tab == "🏢 Relação Unificada de Unidades":
+        if st.sidebar.button("➕ Novo Setor Interno", type="primary", use_container_width=True):
+            modal_novo_setor_manual()
+
+        st.sidebar.markdown("<br>", unsafe_allow_html=True)
+
+        if unidades_ativo:
+            st.sidebar.button("🤖 Unidades em Atualização...", use_container_width=True, disabled=True)
+        else:
+            if st.sidebar.button("🔄 Rodar Scraper Completo (Web)", use_container_width=True, help="Executa o scraper completo buscando dados atualizados no portal do MPMS em segundo plano."):
+                import time
+                subprocess.Popen([sys.executable, "src/unidades_scraper.py"])
+                time.sleep(0.8)
+                st.toast("🚀 Scraper Completo de Unidades iniciado em segundo plano!", icon="🤖")
+                st.rerun()
+
+            if st.sidebar.button("⚡ Atualização Rápida (Só Manuais)", use_container_width=True, help="Atualiza a base unificada de unidades com as unidades manuais do banco."):
+                import time
+                subprocess.Popen([sys.executable, "src/unidades_scraper.py", "--only-manual"])
+                time.sleep(0.8)
+                st.toast("⚡ Sincronização rápida de manuais iniciada!", icon="⚡")
+                st.rerun()
+
+    elif selected_tab == "📞 Lista de Ramais (Telefonia)":
+        if ramais_ativo:
+            st.sidebar.button("🤖 Ramais em Sincronização...", use_container_width=True, disabled=True)
+        else:
+            if st.sidebar.button("🔄 Atualizar Ramais (Intranet)", use_container_width=True, help="Executa o robô de extração de ramais em PDF da Intranet do MPMS em segundo plano."):
+                import time
+                subprocess.Popen([sys.executable, "src/ramais_scraper.py"])
+                time.sleep(0.5)
+                st.toast("🚀 Sincronização de ramais iniciada em segundo plano!", icon="📞")
+                st.rerun()
+
+    st.sidebar.markdown("---")
+
+    # --- 3 & 4. SIDEBAR: SEGREGAÇÃO DE FILTROS DE BUSCA E PAGINAÇÃO ---
     st.sidebar.markdown("## 🔍 Filtros de Busca")
 
-    cidades_opts = ["Todas"]
-    tipos_opts = ["Todos"]
-    origem_opts = ["Todas", "📌 Manual", "🌐 Portal Web"]
+    if selected_tab == "🏢 Relação Unificada de Unidades":
+        cidades_opts = ["Todas"]
+        tipos_opts = ["Todos"]
+        origem_opts = ["Todas", "📌 Manual", "🌐 Portal Web"]
 
-    if not df_unidades.empty:
-        if "Cidade" in df_unidades.columns:
-            cidades_opts += sorted([str(c).strip() for c in df_unidades["Cidade"].unique() if str(c).strip()])
-        if "Tipo" in df_unidades.columns:
-            tipos_opts += sorted([str(t).strip() for t in df_unidades["Tipo"].unique() if str(t).strip()])
+        if not df_unidades.empty:
+            if "Cidade" in df_unidades.columns:
+                cidades_opts += sorted([str(c).strip() for c in df_unidades["Cidade"].unique() if str(c).strip()])
+            if "Tipo" in df_unidades.columns:
+                tipos_opts += sorted([str(t).strip() for t in df_unidades["Tipo"].unique() if str(t).strip()])
 
-    selected_cidade = st.sidebar.selectbox("🏙️ Filtrar por Cidade:", cidades_opts)
-    selected_tipo = st.sidebar.selectbox("🏷️ Filtrar por Tipo de Unidade:", tipos_opts)
-    selected_origem = st.sidebar.selectbox("📌 Origem do Registro:", origem_opts)
-    search_query = st.sidebar.text_input("🔎 Buscar (Setor, Sigla, Titular, Prédio):", "").strip().lower()
+        selected_cidade = st.sidebar.selectbox("🏙️ Filtrar por Cidade:", cidades_opts)
+        selected_tipo = st.sidebar.selectbox("🏷️ Filtrar por Tipo de Unidade:", tipos_opts)
+        selected_origem = st.sidebar.selectbox("📌 Origem do Registro:", origem_opts)
+        search_query = st.sidebar.text_input("🔎 Buscar (Setor, Sigla, Titular, Prédio):", "").strip().lower()
 
-    items_per_page = render_items_per_page_selector(
-        key_prefix="unidades_mp",
-        options=[10, 20, 50, 100, "Todos"],
-        default_index=1,
-        label="📄 Registros por página:"
+        items_per_page = render_items_per_page_selector(
+            key_prefix="unidades_mp",
+            options=[10, 20, 50, 100, "Todos"],
+            default_index=1,
+            label="📄 Registros por página:"
+        )
+
+    elif selected_tab == "📞 Lista de Ramais (Telefonia)":
+        df_ramais_sb = get_ramais_df()
+
+        localidade_opts = ["Todas"]
+        setor_opts = ["Todos"]
+        abrangencia_opts = ["Todas"]
+
+        if not df_ramais_sb.empty:
+            if "localidade" in df_ramais_sb.columns:
+                localidade_opts += sorted([str(x).strip() for x in df_ramais_sb['localidade'].dropna().unique() if str(x).strip()])
+            if "setor_nome" in df_ramais_sb.columns:
+                setor_opts += sorted([str(x).strip() for x in df_ramais_sb['setor_nome'].dropna().unique() if str(x).strip()])
+            if "tipo" in df_ramais_sb.columns:
+                abrangencia_opts += sorted([str(x).strip() for x in df_ramais_sb['tipo'].dropna().unique() if str(x).strip()])
+
+        selected_localidade_r = st.sidebar.selectbox("📍 Filtrar por Localidade:", localidade_opts)
+        selected_setor_r = st.sidebar.selectbox("🏢 Filtrar por Setor / Membro:", setor_opts)
+        selected_abrangencia_r = st.sidebar.selectbox("🌐 Filtrar por Abrangência:", abrangencia_opts)
+        st.sidebar.text_input("🔎 Pesquisar Ramal (Setor, Localidade, Nome, Número):", "", key="search_ramais_input")
+
+        items_per_page = render_items_per_page_selector(
+            key_prefix="ramais_telefonia",
+            options=[10, 20, 50, 100, "Todos"],
+            default_index=1,
+            label="📄 Registros por página:"
+        )
+
+    # --- ACCORDIONS DE LOGS E PROGRESSO EM SEGUNDO PLANO (NO CORPO PRINCIPAL) ---
+    render_log_expander(
+        "🤖 Robô de Unidades Rodando em Segundo Plano – Acompanhar Progresso",
+        unidades_ativo,
+        read_unidades_last_log_lines,
+        check_unidades_sync_running,
+        "O robô de unidades está coletando dados no portal do MPMS neste momento. Você pode continuar navegando normalmente!"
     )
 
-    # --- SUBTABS DE NAVEGAÇÃO DA PÁGINA ---
-    UNIDADES_SUBTAB_MAP = {
-        "geral": "🏢 Relação Unificada de Unidades",
-        "ramais": "📞 Lista de Ramais (Telefonia)"
-    }
+    render_log_expander(
+        "📞 Robô de Ramais Rodando em Segundo Plano – Acompanhar Progresso",
+        ramais_ativo,
+        read_ramais_last_log_lines,
+        check_ramais_sync_running,
+        "O robô de ramais está baixando os PDFs da Intranet e processando a telefonia neste momento. O uso da aplicação permanece livre!"
+    )
 
-    selected_tab = render_subtabs(UNIDADES_SUBTAB_MAP, default_slug="geral", key="unidades_subtab_radio")
-
+    # --- RENDERIZAÇÃO DAS SUBTABS ---
     if selected_tab == "🏢 Relação Unificada de Unidades":
         if df_unidades.empty:
             st.warning("⚠️ Nenhuma unidade cadastrada no banco SQLite. Clique em 'Rodar Scraper Completo (Web)' ou 'Atualização Rápida (Só Manuais)' na barra lateral para gerar.")
@@ -319,16 +384,26 @@ def render_unidades_page():
 
     elif selected_tab == "📞 Lista de Ramais (Telefonia)":
         st.markdown("### 📞 Lista Oficial de Ramais Telefônicos do MPMS")
-        st.caption("Dados extraídos dos documentos oficiais de telefonia da Intranet do MPMS.")
+        st.caption("Dados extraídos dos documentos oficiais de telefonia da Intranet do MPMS. Clique em qualquer linha para abrir a ficha de detalhes.")
 
         df_ramais = get_ramais_df()
 
         if df_ramais.empty:
             st.info("Nenhum ramal cadastrado no banco de dados local. Clique no botão '🔄 Atualizar Ramais (Intranet)' na barra lateral para sincronizar.")
         else:
-            search_ramal = st.text_input("🔎 Pesquisar Ramal (Setor, Localidade, Nome, Número):", "", key="search_ramais_input").strip().lower()
+            search_ramal = st.session_state.get("search_ramais_input", "").strip().lower()
 
             df_filtered_r = df_ramais.copy()
+
+            if 'selected_localidade_r' in locals() and selected_localidade_r != "Todas":
+                df_filtered_r = df_filtered_r[df_filtered_r["localidade"] == selected_localidade_r]
+
+            if 'selected_setor_r' in locals() and selected_setor_r != "Todos":
+                df_filtered_r = df_filtered_r[df_filtered_r["setor_nome"] == selected_setor_r]
+
+            if 'selected_abrangencia_r' in locals() and selected_abrangencia_r != "Todas":
+                df_filtered_r = df_filtered_r[df_filtered_r["tipo"] == selected_abrangencia_r]
+
             if search_ramal:
                 mask_r = (
                     df_filtered_r["localidade"].astype(str).str.lower().str.contains(search_ramal, na=False) |
@@ -338,6 +413,8 @@ def render_unidades_page():
                 )
                 df_filtered_r = df_filtered_r[mask_r]
 
+            df_filtered_r['data_atualizacao'] = pd.to_datetime(df_filtered_r['data_atualizacao'], errors='coerce')
+
             st.markdown(f"**Exibindo {len(df_filtered_r)} de {len(df_ramais)} ramais**")
 
             df_page_r, current_page_r, total_pages_r, total_items_r = paginate_items(
@@ -346,7 +423,7 @@ def render_unidades_page():
                 items_per_page=items_per_page
             )
 
-            st.dataframe(
+            selection_r = st.dataframe(
                 df_page_r,
                 column_config={
                     "id": st.column_config.NumberColumn("ID"),
@@ -354,11 +431,19 @@ def render_unidades_page():
                     "setor_nome": st.column_config.TextColumn("Setor / Cargo / Membro"),
                     "telefone_ramal": st.column_config.TextColumn("Telefone / Ramal"),
                     "tipo": st.column_config.TextColumn("Abrangência"),
-                    "data_atualizacao": st.column_config.TextColumn("Última Atualização"),
+                    "data_atualizacao": st.column_config.DatetimeColumn("Última Atualização", format="DD/MM/YYYY HH:mm"),
                 },
                 hide_index=True,
-                use_container_width=True
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single-row"
             )
+
+            if selection_r and selection_r.get("selection") and selection_r["selection"].get("rows"):
+                selected_row_idx_r = selection_r["selection"]["rows"][0]
+                if selected_row_idx_r < len(df_page_r):
+                    row_selected_r = df_page_r.iloc[selected_row_idx_r].to_dict()
+                    modal_detalhes_ramal(row_selected_r)
 
             render_pagination_controls(
                 page_key="ramais_telefonia",

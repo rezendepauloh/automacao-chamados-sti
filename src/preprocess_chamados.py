@@ -207,6 +207,22 @@ def process_otrs(ts: str) -> pd.DataFrame:
     # Adiciona fallback para Título caso não exista por algum motivo
     df['Título'] = df.get('Título', '').fillna('')
     
+    if 'Data Criação' in df.columns:
+        def parse_date_safely(v):
+            if pd.isna(v) or not str(v).strip():
+                return v
+            s = str(v).strip()
+            # Se for formato BR DD/MM/YYYY
+            if re.match(r'^\d{1,2}/\d{1,2}/\d{4}', s):
+                dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+            else:
+                dt = pd.to_datetime(s, errors='coerce')
+            if pd.isna(dt):
+                return s
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        df['Data Criação'] = df['Data Criação'].apply(parse_date_safely)
+    
     if 'Comentários' not in df.columns:
         df['Comentários'] = '[]'
     if 'IP_Origem' not in df.columns:
@@ -236,6 +252,19 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     
     df = safe_read_excel(path)
     df['Data Criação'] = df['Data Criação'].astype(str)
+    def parse_date_safely(v):
+        if pd.isna(v) or not str(v).strip():
+            return v
+        s = str(v).strip()
+        if re.match(r'^\d{1,2}/\d{1,2}/\d{4}', s):
+            dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+        else:
+            dt = pd.to_datetime(s, errors='coerce')
+        if pd.isna(dt):
+            return s
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    df['Data Criação'] = df['Data Criação'].apply(parse_date_safely)
     df['Base'] = 'CitSmart'
     df = enrich_with_unidades(df, base='CitSmart')
     
@@ -290,14 +319,9 @@ def main():
     if tamanho_antes != tamanho_depois:
         logger.info(f"⚠️ {tamanho_antes - tamanho_depois} chamados duplicados foram removidos!")
     
-    # 2. Padroniza a Data de Criação (Preserva o fuso local de Campo Grande/MS capturado dos portais)
+    # 2. Padroniza a Data de Criação em formato ISO (YYYY-MM-DD HH:MM:SS) sem sobrescrever com parsing ambíguo
     if 'Data Criação' in combined.columns:
-        dt_col = pd.to_datetime(
-            combined['Data Criação'], 
-            errors='coerce', 
-            dayfirst=True
-        )
-        combined['Data Criação'] = dt_col.dt.strftime('%Y-%m-%d %H:%M:%S').fillna(combined['Data Criação'])
+        combined['Data Criação'] = combined['Data Criação'].apply(parse_date_safely)
 
     # 3. Limpa espaços extras no começo e no fim dos IDs e Nomes
     #if 'Chamado#' in combined.columns:

@@ -10,6 +10,7 @@ import keyring
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
+from src.components.status_banner import render_log_expander
 
 from src.config import (
     PS_SCRIPT_ANALISADOR,
@@ -190,6 +191,11 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
         "end_time": None,
         "return_code": None
     }
+    # Limita o histórico de robôs/scripts a no máximo 3 itens (remove o mais antigo ao adicionar o 4º)
+    while len(_BACKGROUND_JOBS) >= 3:
+        oldest_key = next(iter(_BACKGROUND_JOBS))
+        _BACKGROUND_JOBS.pop(oldest_key, None)
+
     _BACKGROUND_JOBS[job_id] = job_data
 
     def _worker():
@@ -247,14 +253,18 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
 
 def render_background_jobs_widget():
     """
-    Renderiza o widget expansível com o status e logs de scripts rodando em segundo plano.
+    Renderiza o widget expansível com o status e logs de scripts rodando em segundo plano (máximo 3).
     """
+    # Garante limite máximo de 3 accordions ativas, removendo a mais antiga se houver excedente
+    while len(_BACKGROUND_JOBS) > 3:
+        oldest_key = next(iter(_BACKGROUND_JOBS))
+        _BACKGROUND_JOBS.pop(oldest_key, None)
+
     if not _BACKGROUND_JOBS:
         return
 
     st.markdown("### 🤖 Robôs & Scripts em Segundo Plano")
 
-    # Itera sobre cópia dos itens do dicionário
     for job_id, job in list(_BACKGROUND_JOBS.items()):
         status = job["status"]
         script_name = job["script_name"]
@@ -273,17 +283,26 @@ def render_background_jobs_widget():
 
         with st.expander(header_label, expanded=exp_state):
             if status == "running":
-                st.info("⚡ O script está sendo executado em segundo plano. Você pode continuar usando o painel normalmente ou recarregar a página!")
-            elif status == "complete":
-                st.success("🎉 Execução finalizada com sucesso!")
+                st.info("⚡ O script está sendo executado em segundo plano. Você pode continuar usando o painel normalmente!")
 
-            displayed_logs = "\n".join(job["logs"][-150:])
-            st.code(displayed_logs, language="powershell")
+                # Fragmento de auto-atualização para scripts em execução
+                @st.fragment(run_every="3s")
+                def auto_refresh_job_logs():
+                    displayed_logs = "\n".join(job["logs"][-150:])
+                    st.code(displayed_logs, language="powershell")
+                    if st.button("🔄 Atualizar Logs", key=f"btn_refresh_{job_id}"):
+                        st.rerun()
+                auto_refresh_job_logs()
+            else:
+                if status == "complete":
+                    st.success("🎉 Execução finalizada com sucesso!")
+                else:
+                    st.error("⚠️ O script foi finalizado com erros.")
+
+                displayed_logs = "\n".join(job["logs"][-150:])
+                st.code(displayed_logs, language="powershell")
 
             col_actions, col_clear = st.columns([3, 1])
-            with col_actions:
-                if st.button("🔄 Atualizar Logs", key=f"btn_refresh_{job_id}"):
-                    st.rerun()
             with col_clear:
                 if st.button("🗑️ Limpar / Dispensar", key=f"btn_clear_{job_id}"):
                     _BACKGROUND_JOBS.pop(job_id, None)

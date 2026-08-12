@@ -1,19 +1,19 @@
 import io
 import re
+import sys
 import platform
 import subprocess
 import pandas as pd
 import streamlit as st
 from datetime import datetime
 from src.database import get_impressoras_df
-from src.papercut_scraper import run_papercut_scraper, reprocess_existing_papercut_csvs
+from src.papercut_scraper import check_papercut_sync_running, read_papercut_last_log_lines, run_papercut_scraper
+from src.components.status_banner import render_log_expander
 from src.components.pagination import (
     render_items_per_page_selector,
     paginate_items,
     render_pagination_controls
 )
-
-
 
 def get_printer_url(ip_raw: str) -> str:
     """Retorna URL formatada caso o valor seja um endereço IPv4 válido."""
@@ -111,7 +111,6 @@ def show_printer_details(row_data):
         st.caption("⚠️ Este dispositivo não possui endereço IP IPv4 configurado para teste de conectividade.")
 
 
-
 def render_impressoras_page():
     """
     Renderiza a página principal de gestão de impressoras e dispositivos do PaperCut.
@@ -119,16 +118,20 @@ def render_impressoras_page():
     st.title("🖨️ Gestão de Impressoras & Dispositivos (PaperCut)")
     st.caption("Visualização unificada e controle de filas de impressão e dispositivos multifuncionais (MFDs).")
 
+    papercut_ativo = check_papercut_sync_running()
+
+    render_log_expander(
+        "🤖 Robô do PaperCut Rodando em Segundo Plano – Acompanhar Progresso",
+        papercut_ativo,
+        read_papercut_last_log_lines,
+        check_papercut_sync_running,
+        "O robô está conectando ao PaperCut, baixando e cruzando os relatórios neste momento. O painel permanece livre para uso!"
+    )
 
     df = get_impressoras_df()
 
     if df.empty:
-        st.info("Nenhuma impressora encontrada no banco de dados. Clique abaixo para executar a coleta.")
-        if st.button("🔄 Executar Coleta do PaperCut Agora", type="primary"):
-            with st.spinner("Sincronizando com o PaperCut..."):
-                run_papercut_scraper()
-                st.success("Coleta finalizada!")
-                st.rerun()
+        st.info("Nenhuma impressora encontrada no banco de dados local. Utilize o botão '🔄 Sincronizar Impressoras' na barra lateral para iniciar a coleta.")
         return
 
     # -----------------------------------------------------------------------------
@@ -136,18 +139,14 @@ def render_impressoras_page():
     # -----------------------------------------------------------------------------
     with st.sidebar:
         st.markdown("## ⚙️ Ações e Coleta")
-        if st.button("🔄 Unificar & Reprocessar CSVs", type="primary", use_container_width=True, help="Mescla e desduplica os relatórios PrinterList e DeviceList locais."):
-            with st.spinner("Unificando ativos e desduplicando registros..."):
-                if reprocess_existing_papercut_csvs():
-                    st.toast("✅ Impressoras unificadas e atualizadas no banco!", icon="🎉")
-                    st.rerun()
-                else:
-                    st.error("Erro ao reprocessar os CSVs do PaperCut.")
-
-        if st.button("🌐 Executar Scraper PaperCut", use_container_width=True, help="Baixa novos CSVs atualizados direto do PaperCut."):
-            with st.spinner("Sincronizando com o PaperCut via Selenium..."):
-                run_papercut_scraper()
-                st.toast("✅ Raspagem do PaperCut finalizada com sucesso!", icon="🔄")
+        if papercut_ativo:
+            st.sidebar.button("🤖 Sincronizando PaperCut...", use_container_width=True, disabled=True)
+        else:
+            if st.sidebar.button("🔄 Sincronizar Impressoras", type="primary", use_container_width=True, help="Executa a coleta e unificação de dados do PaperCut em segundo plano."):
+                import sys, subprocess, time
+                subprocess.Popen([sys.executable, "src/papercut_scraper.py"])
+                time.sleep(1.0)
+                st.toast("🚀 Sincronização do PaperCut iniciada em segundo plano!", icon="🤖")
                 st.rerun()
 
         st.markdown("---")
@@ -157,7 +156,6 @@ def render_impressoras_page():
 
         servidores_disponiveis = ["Todos"] + sorted([s for s in df['servidor'].dropna().unique() if str(s).strip()])
         selected_servidor = st.selectbox("Servidor de Impressão", servidores_disponiveis)
-
 
         tipos_disponiveis = ["Todos"] + sorted(list(df['tipo'].dropna().unique()))
         selected_tipo = st.selectbox("Tipo de Ativo", tipos_disponiveis)
@@ -177,14 +175,6 @@ def render_impressoras_page():
             default_index=2,
             label="📄 Ativos por página:"
         )
-
-        st.markdown("---")
-        st.markdown("### ⚙️ Ações e Sincronização")
-        if st.button("🔄 Recarregar Coleta do PaperCut", use_container_width=True):
-            with st.spinner("Sincronizando com o PaperCut..."):
-                run_papercut_scraper()
-                st.success("Coleta atualizada com sucesso!")
-                st.rerun()
 
     # -----------------------------------------------------------------------------
     # APLICAÇÃO DOS FILTROS

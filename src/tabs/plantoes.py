@@ -12,6 +12,7 @@ sys.path.insert(0, str(root_dir))
 
 from src.database import get_plantoes_matutino, get_plantoes_semanal
 from src.plantoes_scraper import check_plantoes_sync_running, read_plantoes_last_log_lines
+from src.components.status_banner import render_log_expander
 from src.components.subtabs import render_subtabs
 from src.components.calendar import render_master_calendar
 from src.components.pagination import (
@@ -84,18 +85,21 @@ def render_plantoes_page():
             st.button("🤖 Sincronizando...", use_container_width=True, disabled=True)
         else:
             if st.button("🔄 Sincronizar Tudo", type="primary", use_container_width=True, help="Executa sincronização completa do Matutino e SIMP em segundo plano."):
+                import time
                 subprocess.Popen([sys.executable, "src/plantoes_scraper.py"])
+                time.sleep(0.8)
                 st.session_state["was_plantoes_syncing"] = True
                 st.toast("🚀 Robô de plantões iniciado em segundo plano!", icon="🤖")
                 st.cache_data.clear()
                 st.rerun()
 
-    if plantoes_ativo:
-        with st.expander("🤖 Robô de Plantões em Segundo Plano – Acompanhar Progresso", expanded=False):
-            st.info("O robô está conectando aos portais e sincronizando as escalas neste momento. O uso da aplicação permanece livre!")
-            logs = read_plantoes_last_log_lines(15)
-            st.code(logs, language="text")
-            st.button("🔄 Atualizar Log de Plantões", help="Recarrega as últimas linhas de log")
+    render_log_expander(
+        "🤖 Robô de Plantões em Segundo Plano – Acompanhar Progresso",
+        plantoes_ativo,
+        read_plantoes_last_log_lines,
+        check_plantoes_sync_running,
+        "O robô está conectando aos portais e sincronizando as escalas neste momento. O uso da aplicação permanece livre!"
+    )
 
     st.markdown("---")
 
@@ -237,7 +241,7 @@ def render_plantoes_page():
     st.markdown("<br>", unsafe_allow_html=True)
 
     if selected_subtab == "📅 Agenda / Calendário Interativo":
-        render_master_calendar(events, height_px=860, scrolling_enabled=False)
+        render_master_calendar(events, height_px=860, scrolling_enabled=True)
 
     elif selected_subtab == "☀️ Plantão Matutino PGJ (08h-15h)":
         st.markdown("### ☀️ Escala do Plantão Matutino (PGJ)")
@@ -255,6 +259,7 @@ def render_plantoes_page():
                 "telefone": "Telefone / Contato",
                 "ano": "Ano"
             })
+            df_disp_renamed['Data ISO'] = pd.to_datetime(df_disp_renamed['Data ISO'], errors='coerce')
 
             df_page_mat, current_page_mat, total_pages_mat, total_items_mat = paginate_items(
                 df_disp_renamed,
@@ -265,7 +270,10 @@ def render_plantoes_page():
             st.dataframe(
                 df_page_mat,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "Data ISO": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
+                }
             )
 
             render_pagination_controls(
@@ -301,6 +309,8 @@ def render_plantoes_page():
                 "desenvolvimento": "Desenvolvimento",
                 "ano": "Ano"
             })
+            df_disp_s_renamed['Início'] = pd.to_datetime(df_disp_s_renamed['Início'], errors='coerce')
+            df_disp_s_renamed['Término'] = pd.to_datetime(df_disp_s_renamed['Término'], errors='coerce')
 
             df_page_sem, current_page_sem, total_pages_sem, total_items_sem = paginate_items(
                 df_disp_s_renamed,
@@ -311,7 +321,11 @@ def render_plantoes_page():
             st.dataframe(
                 df_page_sem,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "Início": st.column_config.DatetimeColumn("Início", format="DD/MM/YYYY HH:mm:ss"),
+                    "Término": st.column_config.DatetimeColumn("Término", format="DD/MM/YYYY HH:mm:ss")
+                }
             )
 
             render_pagination_controls(

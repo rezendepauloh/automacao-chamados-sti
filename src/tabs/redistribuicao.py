@@ -5,6 +5,8 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.status_banner import render_log_expander
+from src.sync_donations import check_donations_sync_running, read_donations_last_log_lines
 
 def render_donations_page():
     """Renderiza a página de Doação & Redistribuição de Máquinas."""
@@ -13,24 +15,29 @@ def render_donations_page():
     st.title("🖥️ Sistema de Doação & Redistribuição de Máquinas")
     st.write("Acompanhe o inventário de equipamentos destinados a doação, redistribuição, garantia ou baixados.")
     
+    donations_ativo = check_donations_sync_running()
+
+    if "was_donations_syncing" not in st.session_state:
+        st.session_state["was_donations_syncing"] = False
+
+    if st.session_state["was_donations_syncing"] and not donations_ativo:
+        st.session_state["was_donations_syncing"] = False
+        st.toast("🎉 Sincronização de doações concluída com sucesso!", icon="✅")
+        st.rerun()
+
+    if donations_ativo:
+        st.session_state["was_donations_syncing"] = True
+
+    render_log_expander(
+        "🤖 Sincronização de Doações em Segundo Plano",
+        donations_ativo,
+        read_donations_last_log_lines,
+        check_donations_sync_running,
+        "O robô está lendo a planilha do SharePoint. O painel permanece livre para uso!"
+    )
+    
     from src.config import DONATIONS_FILE_PATH
     EXCEL_PATH = str(DONATIONS_FILE_PATH)
-
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.info("Os dados exibidos abaixo são sincronizados a partir da planilha oficial no SharePoint.")
-    with col2:
-        if st.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True):
-            with st.spinner("Lendo dados da planilha Excel..."):
-                try:
-                    res = sync_donations_from_excel(EXCEL_PATH)
-                    if res:
-                        st.toast("Dados sincronizados com sucesso do SharePoint!", icon="✅")
-                        st.rerun()
-                    else:
-                        st.error(f"Não foi possível encontrar o arquivo da planilha no caminho configurado.")
-                except Exception as e:
-                    st.error(f"Erro ao sincronizar planilha: {e}")
                     
     df = get_donations_data()
     
@@ -42,6 +49,18 @@ def render_donations_page():
     df['Ano'] = df['Ano'].fillna("Sem Data").astype(str).str.replace(".0", "", regex=False)
         
     st.sidebar.title("🖥️ Painel de Controle")
+
+    if donations_ativo:
+        st.sidebar.button("🤖 Atualizando...", type="primary", use_container_width=True, disabled=True)
+    else:
+        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True, help="Busca atualizações na planilha do SharePoint em segundo plano."):
+            import sys, subprocess, time
+            subprocess.Popen([sys.executable, "src/sync_donations.py"])
+            time.sleep(0.5)
+            st.toast("🚀 Sincronização de doações iniciada em segundo plano!", icon="🤖")
+            st.rerun()
+
+    st.sidebar.markdown("---")
     st.sidebar.subheader("🔍 Filtros de Equipamentos")
     
     mov_options = ["Todos"] + sorted(list(df['tipo_movimentacao'].unique()))

@@ -11,38 +11,63 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
-
-
+from src.components.status_banner import render_log_expander
+from src.sync_garantia import check_garantia_sync_running, read_garantia_last_log_lines
 
 def parse_date_to_iso_and_br(date_val):
     if pd.isna(date_val) or not date_val:
         return None, None
+    s = str(date_val).strip()
     try:
-        dt = pd.to_datetime(date_val, dayfirst=True, errors='coerce')
+        import re
+        if re.match(r'^\d{4}-\d{2}-\d{2}', s):
+            dt = pd.to_datetime(s, errors='coerce')
+        else:
+            dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
         if pd.isna(dt):
             return None, None
         return dt.strftime('%Y-%m-%d'), dt.strftime('%d/%m/%Y')
     except Exception:
         return None, None
 
-
-
-
-
 def render_garantia_page():
     st.markdown("# 🛡️ Sistema de Controle de Garantia")
     st.caption("Acompanhe os contratos de garantia, vigências e chamados de manutenção abertos junto aos fornecedores.")
     
-    col_syn1, col_syn2 = st.columns([3, 1])
-    with col_syn2:
-        if st.button("🔄 Sincronizar com Excel", type="primary", use_container_width=True):
-            with st.spinner("Lendo dados da planilha Excel oficial..."):
-                ok = sync_garantia_from_excel()
-                if ok:
-                    st.success("Dados de garantia sincronizados com sucesso!")
-                    st.rerun()
-                else:
-                    st.error("Não foi possível encontrar a planilha no caminho configurado.")
+    garantia_ativo = check_garantia_sync_running()
+
+    if "was_garantia_syncing" not in st.session_state:
+        st.session_state["was_garantia_syncing"] = False
+
+    if st.session_state["was_garantia_syncing"] and not garantia_ativo:
+        st.session_state["was_garantia_syncing"] = False
+        st.cache_data.clear()
+        st.toast("🎉 Sincronização de garantias concluída com sucesso!", icon="✅")
+        st.rerun()
+
+    if garantia_ativo:
+        st.session_state["was_garantia_syncing"] = True
+
+    render_log_expander(
+        "🤖 Sincronização de Garantias em Segundo Plano",
+        garantia_ativo,
+        read_garantia_last_log_lines,
+        check_garantia_sync_running,
+        "O robô está lendo a planilha de garantias do OneDrive. O painel permanece livre para uso!"
+    )
+
+    st.sidebar.markdown("## ⚙️ Ações e Sincronização")
+    if garantia_ativo:
+        st.sidebar.button("🤖 Sincronizando...", use_container_width=True, disabled=True)
+    else:
+        if st.sidebar.button("🔄 Sincronizar com Excel", type="primary", use_container_width=True, help="Busca atualizações na planilha de garantia em segundo plano."):
+            import sys, subprocess, time
+            subprocess.Popen([sys.executable, "src/sync_garantia.py"])
+            time.sleep(0.5)
+            st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+            st.rerun()
+
+    st.sidebar.markdown("---")
 
     df_contratos = get_garantia_contratos_df()
     df_chamados = get_garantia_chamados_df()
@@ -407,7 +432,7 @@ def render_garantia_page():
                     })
 
         st.subheader(f"📅 Agenda de Vigências de Garantia ({len(events)} eventos mapeados)")
-        render_master_calendar(events, height_px=750, scrolling_enabled=False)
+        render_master_calendar(events, height_px=750, scrolling_enabled=True)
 
     # -------------------------------------------------------------------------
     # ABA 4: GRÁFICOS & ESTATÍSTICAS

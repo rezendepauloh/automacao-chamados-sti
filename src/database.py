@@ -236,58 +236,18 @@ def save_tickets_to_db(df: pd.DataFrame):
 
 def close_missing_tickets(active_ids: list):
     """
-    Marca como 'Fechado' os chamados que estão no banco como 'Aberto'
-    mas não estão na lista de IDs ativos (que vieram da última coleta).
+    Desativado para proteção do histórico: Não altera em massa chamados ausentes na coleta para 'Fechado'.
     """
-    if not active_ids:
-        return
-        
-    # Normaliza IDs na entrada limpando .0
-    active_ids_clean = [str(cid)[:-2] if str(cid).endswith('.0') else str(cid) for cid in active_ids]
-        
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    placeholders = ",".join("?" for _ in active_ids_clean)
-    
-    cursor.execute(f"""
-    UPDATE chamados 
-    SET status = 'Fechado', data_atualizacao = ?
-    WHERE status = 'Aberto' AND id NOT IN ({placeholders})
-    """, [now] + [str(cid) for cid in active_ids_clean])
-    
-    conn.commit()
-    conn.close()
+    logger.info("🔒 Fechamento automático em massa desativado para proteção do histórico no banco de dados.")
+    return
 
 def close_missing_tickets_by_base(active_ids: list, base: str):
     """
-    Marca como 'Fechado' os chamados de uma base específica (OTRS ou CitSmart) que estão 
-    no banco como 'Aberto' mas não estão na lista de IDs ativos da última coleta.
-    Garante que falhas de scrapers ou coletas vazias de uma base não fechem chamados da outra.
+    Desativado para proteção do histórico: Não altera em massa chamados ausentes na coleta para 'Fechado'.
+    Garante que historicos antigos de chamados e coletas parciais não fechem registros inadvertidamente.
     """
-    if not active_ids or not base:
-        return
-        
-    # Normaliza IDs na entrada limpando .0
-    active_ids_clean = [str(cid)[:-2] if str(cid).endswith('.0') else str(cid) for cid in active_ids]
-        
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    placeholders = ",".join("?" for _ in active_ids_clean)
-    
-    cursor.execute(f"""
-    UPDATE chamados 
-    SET status = 'Fechado', data_atualizacao = ?
-    WHERE status = 'Aberto' AND base = ? AND id NOT IN ({placeholders})
-    """, [now, base] + [str(cid) for cid in active_ids_clean])
-    
-    conn.commit()
-    conn.close()
+    logger.info(f"🔒 Fechamento automático de chamados de {base} desativado para proteção do histórico no banco de dados.")
+    return
 
 def update_ticket_status(cid: str, new_status: str):
     """Atualiza o status de um chamado específico (usado pelo Streamlit)."""
@@ -357,6 +317,24 @@ def update_ticket_location_details(cid: str, localidade: str, cidade_predio: str
     SET localidade_fisica = ?, cidade_predio = ?, unidade = ?, dados_manuais = 1, data_atualizacao = ?
     WHERE id = ?
     """, (localidade, cidade_predio, unidade, now, cid_clean))
+    
+    conn.commit()
+    conn.close()
+
+def update_ticket_title(cid: str, new_title: str):
+    """Atualiza o título de um chamado específico no SQLite."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Normaliza o ID na entrada limpando .0
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+    
+    cursor.execute("""
+    UPDATE chamados 
+    SET titulo = ?, data_atualizacao = ?
+    WHERE id = ?
+    """, (new_title.strip(), now, cid_clean))
     
     conn.commit()
     conn.close()
@@ -639,9 +617,21 @@ def sync_donations_from_excel(file_path: str):
     
     setup_donations_table()
     
+    import shutil
+    import tempfile
+    from pathlib import Path
+    
     try:
-        # Lê a aba correta da planilha
-        df = pd.read_excel(file_path, sheet_name="Equipamentos doados")
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        temp_path = temp_file.name
+        temp_file.close()
+        
+        try:
+            shutil.copy2(file_path, temp_path)
+            df = pd.read_excel(temp_path, sheet_name="Equipamentos doados")
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+            
         logger.info(f"Planilha lida com sucesso. Total de linhas encontradas: {len(df)}")
     except Exception as e:
         logger.error(f"Erro ao ler a planilha Excel: {e}")
@@ -1113,8 +1103,16 @@ def sync_garantia_from_excel(excel_path: str = None) -> bool:
     if not p.exists():
         return False
 
+    import shutil
+    import tempfile
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    temp_path = temp_file.name
+    temp_file.close()
+
     try:
-        xls = pd.ExcelFile(excel_path)
+        shutil.copy2(excel_path, temp_path)
+        xls = pd.ExcelFile(temp_path)
         conn = get_connection()
         cursor = conn.cursor()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1249,7 +1247,6 @@ def sync_garantia_from_excel(excel_path: str = None) -> bool:
             df_chamados.fillna("", inplace=True)
             cursor.execute("DELETE FROM garantia_chamados")
 
-
             for _, row in df_chamados.iterrows():
                 item = ""
                 for k in row.index:
@@ -1332,6 +1329,8 @@ def sync_garantia_from_excel(excel_path: str = None) -> bool:
     except Exception as e:
         print(f"Erro ao sincronizar garantia da planilha: {e}")
         return False
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
 
 
 def get_garantia_contratos_df() -> pd.DataFrame:
@@ -1609,6 +1608,88 @@ def delete_unidade_manual(unit_id: int):
     cursor.execute("DELETE FROM unidades_manuais WHERE id = ?", (unit_id,))
     conn.commit()
     conn.close()
+
+
+def sync_fiscalizacao_from_excel(file_path: str) -> bool:
+    """Lê os dados da planilha de fiscalização de contratos e salva no SQLite em tabelas dedicadas."""
+    import shutil
+    import tempfile
+    import pandas as pd
+    from pathlib import Path
+    from src.config import setup_logging, DEBUG_DIR_FISCALIZACAO
+
+    logger = setup_logging(DEBUG_DIR_FISCALIZACAO / "sync.log", "fiscalizacao_sync")
+    logger.info(f"Iniciando sincronização da planilha de fiscalização: {file_path}")
+
+    if not file_path or not Path(file_path).exists():
+        logger.error(f"Arquivo da planilha de fiscalização não encontrado: {file_path}")
+        return False
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    temp_path = temp_file.name
+    temp_file.close()
+
+    try:
+        shutil.copy2(file_path, temp_path)
+        excel_data = pd.ExcelFile(temp_path)
+
+        df_indicacoes = pd.read_excel(excel_data, sheet_name="Indicações") if "Indicações" in excel_data.sheet_names else pd.DataFrame()
+        df_publicacoes = pd.read_excel(excel_data, sheet_name="Publicações") if "Publicações" in excel_data.sheet_names else pd.DataFrame()
+        df_contador = pd.read_excel(excel_data, sheet_name="Contador") if "Contador" in excel_data.sheet_names else pd.DataFrame()
+
+        conn = get_connection()
+        try:
+            df_indicacoes.to_sql("fiscalizacao_indicacoes", conn, if_exists="replace", index=False)
+            df_publicacoes.to_sql("fiscalizacao_publicacoes", conn, if_exists="replace", index=False)
+            df_contador.to_sql("fiscalizacao_contador", conn, if_exists="replace", index=False)
+            conn.commit()
+        finally:
+            conn.close()
+
+        logger.info(f"Sincronização de fiscalização concluída com sucesso! Indicações: {len(df_indicacoes)}, Publicações: {len(df_publicacoes)}, Contador: {len(df_contador)}")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao ler/salvar planilha de fiscalização: {e}")
+        raise e
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+
+def get_fiscalizacao_indicacoes_df() -> pd.DataFrame:
+    """Retorna um DataFrame com os dados da tabela fiscalizacao_indicacoes do SQLite."""
+    import pandas as pd
+    try:
+        conn = get_connection()
+        df = pd.read_sql_query("SELECT * FROM fiscalizacao_indicacoes", conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def get_fiscalizacao_publicacoes_df() -> pd.DataFrame:
+    """Retorna um DataFrame com os dados da tabela fiscalizacao_publicacoes do SQLite."""
+    import pandas as pd
+    try:
+        conn = get_connection()
+        df = pd.read_sql_query("SELECT * FROM fiscalizacao_publicacoes", conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def get_fiscalizacao_contador_df() -> pd.DataFrame:
+    """Retorna um DataFrame com os dados da tabela fiscalizacao_contador do SQLite."""
+    import pandas as pd
+    try:
+        conn = get_connection()
+        df = pd.read_sql_query("SELECT * FROM fiscalizacao_contador", conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
 
 
 

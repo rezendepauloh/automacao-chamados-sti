@@ -6,15 +6,29 @@ root_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(root_dir))
 sys.path.insert(0, str(root_dir / "src"))
 
-from src.tabs.portarias import fetch_portarias_bancada
+import tempfile
+import os
+from pathlib import Path
 from src.database import add_notification
 from src.config import setup_logging, DEBUG_DIR_FAQ
+from src.components.status_banner import check_process_running, read_log_lines
 
 logger = setup_logging(DEBUG_DIR_FAQ / "sync_portarias.log", "sync_portarias")
 
 
+def check_portarias_sync_running() -> bool:
+    lock_file = Path(tempfile.gettempdir()) / "portarias_sync.lock"
+    return check_process_running(lock_file)
+
+
+def read_portarias_last_log_lines(n: int = 15) -> str:
+    log_path = Path("debug_logs") / "faq" / "sync_portarias.log"
+    return read_log_lines(log_path, n)
+
+
 def sync_portarias_and_generate_alerts():
     """Busca as portarias da API do MPMS e gera notificações para novas ocorrências."""
+    from src.tabs.portarias import fetch_portarias_bancada
     logger.info("Iniciando verificação de novas Portarias da Bancada...")
     
     portarias = fetch_portarias_bancada()
@@ -47,4 +61,15 @@ def sync_portarias_and_generate_alerts():
 
 
 if __name__ == "__main__":
-    sync_portarias_and_generate_alerts()
+    lock_path = Path(tempfile.gettempdir()) / "portarias_sync.lock"
+    with open(lock_path, "w") as f:
+        f.write(str(os.getpid()))
+
+    try:
+        sync_portarias_and_generate_alerts()
+    finally:
+        if lock_path.exists():
+            try:
+                lock_path.unlink()
+            except Exception:
+                pass

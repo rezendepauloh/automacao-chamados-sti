@@ -29,13 +29,14 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 ### 3. Engenharia de Dados & Integração Segura com Excel
 
 - **Sincronização _Append-Only_:** O sistema identifica chamados inéditos e os insere cirurgicamente no final da Planilha Master de produção, **sem sobrescrever** observações, andamentos ou edições manuais feitas pela equipe.
+- **Proteção contra Trava de Leitura (SharePoint / OneDrive):** Utilização de cópias voláteis com `tempfile` e `shutil.copy2` para contornar bloqueios de arquivo em uso no Windows (`PermissionError`) durante a leitura e sincronização em segundo plano de todas as planilhas do sistema (Doações/Redistribuição, Controle de Garantias e Fiscalização de Contratos SAJ).
 - **Tratamento de Anomalias:** Proteção contra vazamento de memória e erros de conversão do Pandas para o Excel (como o erro `65535` em células vazias).
 - **Automação Visual Win32:** Uso nativo do COM (`pywin32`) para formatar a planilha Master (autofit de colunas, quebra de texto, pintura de linhas baseada em TAGs) de forma 100% invisível no background.
 
-### 4. Execução Stealth (Invisível) & Orquestração Unificada
+### 4. Execução Stealth (Invisível) & Arquitetura Descentralizada
 
-- O orquestrador (`orquestrador.py`) roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background.
-- Fluxo sequencial automático: Coleta OTRS → Coleta CitSmart → Coleta OXE Central Telefônica → Coleta PaperCut Impressoras → Pré-processamento → Classificação por IA → Sincronização de Portarias → Verificação de Alertas de Plantão.
+- **Orquestrador Mestre de Chamados (`orquestrador.py`):** Roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background focado estritamente na esteira de chamados de TI (Coleta OTRS → Coleta CitSmart → Pré-processamento → Classificação de TAGs por IA).
+- **Arquitetura Descentralizada por Módulos:** Cada aba/módulo independente (Portarias, Impressoras, Garantias, Fiscalização, Doações, Unidades) possui seu próprio sub-robô worker assíncrono disparado diretamente pela interface do Streamlit, permitindo livre uso do painel enquanto a coleta executa e exibindo logs em tempo real.
 
 ### 5. Gestão Centralizada, Dashboard Modular & Navegação por URL
 
@@ -60,11 +61,12 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Gráficos Temporais e KPIs:** Métricas de acompanhamento de estoque e gráficos dinâmicos de distribuição por tipo e histórico por ano.
 - **Gerador de Relatórios para Chamados (Rich Text HTML):** Ferramenta integrada na barra lateral que gera automaticamente textos formatados com tabelas estilizadas em HTML (Zebra Striping).
 
-### 8. Base de Conhecimento, FAQs & Vídeos de Tutoriais
+### 8. Base de Conhecimento, FAQs, Vídeos & Galeria de Imagens FAQ
 
 - **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot headless com `Playwright` que varre as páginas institucionais de tutoriais do SharePoint, extrai a árvore de conteúdo em HTML limpo e armazena na tabela relacional `faqs` do SQLite.
 - **Visualizador de Vídeos FAQ Local/SharePoint:** Aba de vídeos com varredura recursiva de pastas, categorização automática por subpastas, reprodução em modal e botão de execução nativa via Windows (`os.startfile`) para suporte total a codecs de celular/Teams (H.265/HEVC).
-- **Sub-Navegação Sincronizada por URL:** Interface com sub-abas sincronizadas por query parameters (`?tab=faq&subtab=sharepoint|videos|links`).
+- **Galeria de Imagens FAQ (Tutoriais):** Varredura recursiva em diretórios sincronizados por SharePoint/OneDrive (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`) com agrupamento automático por Pasta/Tutorial. Possui visualizador em modal interativo (`@st.dialog`) em formato de carrossel de fotos (navegação `⬅️`/`➡️` persistente sem fechar o modal, limite visual de altura `max-height: 480px` com `object-fit: contain` e atalho para abertura no visualizador nativo do Windows via `os.startfile`).
+- **Sub-Navegação Sincronizada por URL:** Interface com sub-abas sincronizadas por query parameters (`?tab=faq&subtab=sharepoint|videos|imagens|links`).
 
 ### 9. Conferência de Portarias dos Membros da Bancada
 
@@ -118,7 +120,7 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 ### 15. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
 
 - **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
-- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro e estilização vermelha `#ff4b4b` para abas ativas (Mês/Semana/Dia/Lista).
+- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro, estilização vermelha `#ff4b4b` para abas ativas (Mês/Semana/Dia/Lista) e exibição completa de chamados técnicos (com Título integral, TAG com badge estilizada e histórico de notas/acompanhamentos via sanfonas retráteis `details/summary`).
 
 ---
 
@@ -171,7 +173,7 @@ automated-OTRS-and-CitSmart/
 │   │   ├── notificacoes.py           # Aba 5: Central de Notificações com Paginação (?tab=notificacoes)
 │   │   ├── redistribuicao.py         # Aba 6: Doação & Redistribuição (?tab=redistribuicao)
 │   │   ├── mapas.py                  # Aba 7: Planta Baixa e Rotas Leaflet (?tab=mapa)
-│   │   ├── links_faqs.py             # Aba 8: FAQs, Tutoriais (SharePoint) & Vídeos FAQ (?tab=faq&subtab=...)
+│   │   ├── links_faqs.py             # Aba 8: FAQs, Tutoriais (SharePoint), Vídeos FAQ & Galeria de Imagens FAQ (?tab=faq&subtab=...)
 │   │   ├── fiscalizacao.py           # Aba 9: Fiscalização de Contratos SAJ (?tab=fiscalizacao&subtab=...)
 │   │   ├── impressoras.py            # Aba 10: Gestão de Impressoras & Dispositivos PaperCut (?tab=impressoras&subtab=...)
 │   │   ├── scripts_automacao.py      # Aba 11: Scripts de Automação PowerShell (?tab=scripts-automacao&subtab=...)
@@ -183,7 +185,10 @@ automated-OTRS-and-CitSmart/
 │   ├── papercut_scraper.py           # Bot de extração de impressoras e dispositivos do PaperCut
 │   ├── plantoes_scraper.py           # Bot de extração dos plantões PGJ e SIMP
 │   ├── ramais_scraper.py             # Extrator em PDF da Lista Oficial de Ramais da Intranet do MPMS
-│   ├── sync_portarias.py             # Sincronizador de portarias para o orquestrador
+│   ├── sync_donations.py             # Worker em background para sincronização da planilha de doações/redistribuição
+│   ├── sync_fiscalizacao.py          # Worker em background para sincronização da planilha de fiscalização de contratos SAJ
+│   ├── sync_garantia.py              # Worker em background para sincronização da planilha de controle de garantias
+│   ├── sync_portarias.py             # Sincronizador de portarias em segundo plano
 │   ├── sync_plantoes_alerts.py       # Verificador de alertas de plantão para o orquestrador
 │   ├── unidades_scraper.py           # Raspador de unidades/promotorias no portal do MPMS
 │   ├── faq_scraper.py                # Bot Playwright para FAQs do SharePoint

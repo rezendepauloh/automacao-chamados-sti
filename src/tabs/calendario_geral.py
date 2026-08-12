@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import datetime, date, time
 import pandas as pd
 import streamlit as st
 from src.components.calendar import render_master_calendar
@@ -23,10 +24,23 @@ def parse_ticket_date_iso_and_br(date_val):
         return None, None
     s = str(date_val).strip()
     try:
-        dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+        # Se a data já for ISO (YYYY-MM-DD...)
+        if re.match(r'^\d{4}-\d{2}-\d{2}', s):
+            dt = pd.to_datetime(s, errors='coerce')
+        else:
+            # Se for formato brasileiro (DD/MM/YYYY...)
+            dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+
         if pd.isna(dt):
             return None, None
-        return dt.strftime('%Y-%m-%d'), dt.strftime('%d/%m/%Y %H:%M:%S')
+
+        if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+            iso_str = dt.strftime('%Y-%m-%d')
+        else:
+            iso_str = dt.strftime('%Y-%m-%dT%H:%M:%S')
+
+        br_str = dt.strftime('%d/%m/%Y %H:%M:%S')
+        return iso_str, br_str
     except Exception:
         return None, None
 
@@ -139,6 +153,8 @@ def modal_novo_evento_manual():
 
 def render_calendario_geral_page():
     """Renderiza a página principal do Calendário Geral Unificado com Filtros Laterais e Botão de Novo Evento."""
+    st.cache_data.clear()
+
     st.title("📅 Calendário Geral Unificado")
     st.caption("Visão centralizada de registros manuais, plantões da bancada, vigências de contratos de garantia, portarias e chamados técnicos.")
 
@@ -355,20 +371,30 @@ def render_calendario_geral_page():
     if chk_otrs or chk_citsmart:
         df_chamados = load_data()
         if not df_chamados.empty:
+            from src.database import get_comments_by_ticket
             for _, row in df_chamados.iterrows():
-                base = str(row.get('base', 'OTRS')).strip()
-                
-                # Filtra estritamente de acordo com a base e o checkbox selecionado
-                if base == "OTRS" and not chk_otrs:
+                base_raw = str(row.get('base', 'OTRS')).strip()
+                base_upper = base_raw.upper()
+
+                is_otrs = "OTRS" in base_upper
+                is_citsmart = "CITSMART" in base_upper or "CIT" in base_upper
+
+                if is_otrs and not chk_otrs:
                     continue
-                if base == "CitSmart" and not chk_citsmart:
+                if is_citsmart and not chk_citsmart:
                     continue
-                if base not in ["OTRS", "CitSmart"] and not (chk_otrs and chk_citsmart):
+                if not is_otrs and not is_citsmart and not (chk_otrs or chk_citsmart):
                     continue
+
+                base = "OTRS" if is_otrs else ("CitSmart" if is_citsmart else base_raw)
 
                 cid = str(row.get('id', '')).strip()
                 titulo = str(row.get('titulo', '')).strip()
+                if not titulo or titulo.lower() in ["none", "nan", "null"]:
+                    titulo = "Sem Título"
+
                 status = str(row.get('status', 'Aberto')).strip()
+                tag = str(row.get('tag', '')).strip()
                 usuario = str(row.get('usuario', '')).strip()
                 localidade = str(row.get('localidade_fisica', '')).strip()
                 unidade = str(row.get('unidade', '')).strip()
@@ -379,10 +405,11 @@ def render_calendario_geral_page():
                 if not iso_dt:
                     continue
 
-                bg_col = "#0ea5e9" if base == "OTRS" else "#f59e0b"
-                border_col = "#0284c7" if base == "OTRS" else "#d97706"
+                bg_col = "#0ea5e9" if is_otrs else "#f59e0b"
+                border_col = "#0284c7" if is_otrs else "#d97706"
 
-                desc_resumo = (descricao[:250] + "...") if len(descricao) > 250 else descricao
+                desc_resumo = (descricao[:350] + "...") if len(descricao) > 350 else descricao
+                comments_list = get_comments_by_ticket(cid)
 
                 events.append({
                     "id": f"chamado_{cid}",
@@ -395,13 +422,15 @@ def render_calendario_geral_page():
                         "tipo": f"Chamado {base}",
                         "id": cid,
                         "base": base,
-                        "titulo": titulo,
                         "status": status,
+                        "tag": tag if tag else "Sem TAG",
+                        "titulo_completo": titulo,
                         "usuario": usuario,
                         "localidade": localidade,
                         "unidade": unidade,
                         "data_criacao": br_dt if br_dt else str(dt_criacao_raw),
-                        "descricao": desc_resumo if desc_resumo else "Sem descrição."
+                        "descricao": desc_resumo if desc_resumo else "Sem descrição.",
+                        "comentarios": comments_list if comments_list else []
                     }
                 })
 
@@ -508,7 +537,13 @@ def render_calendario_geral_page():
             # Varre o título e todas as extendedProps em busca da palavra-chave
             ev_title = str(ev.get("title", "")).lower()
             props = ev.get("extendedProps", {})
-            props_str = " ".join([str(v).lower() for v in props.values() if v])
+            props_str_list = []
+            for v in props.values():
+                if isinstance(v, list):
+                    props_str_list.append(" ".join([str(item).lower() for item in v if item]))
+                elif v:
+                    props_str_list.append(str(v).lower())
+            props_str = " ".join(props_str_list)
             
             combined_search_text = f"{ev_title} {props_str}"
             if search_query in combined_search_text:

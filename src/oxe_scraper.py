@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
+import sys
 import time
 import json
 import logging
 from pathlib import Path
 from datetime import datetime
+
+root_dir = Path(__file__).parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -11,7 +17,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-from config import (
+from src.components.status_banner import check_process_running, read_log_lines
+from src.config import (
     OXE_URL, OXE_USER, OXE_PASS,
     HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OXE,
     setup_logging, save_df_to_excel_formatted,
@@ -553,9 +560,43 @@ def scrape_oxe():
                 pass
 
 
+def check_oxe_sync_running() -> bool:
+    """Verifica se a sincronização da Central OXE está em andamento."""
+    import tempfile
+    lock_file = Path(tempfile.gettempdir()) / "oxe_scraper.lock"
+    return check_process_running(lock_file)
+
+
+def read_oxe_last_log_lines(n: int = 15) -> str:
+    """Lê as últimas N linhas do log do scraper do OXE."""
+    log_path = Path("debug_logs") / "oxe" / "oxe_scraper.log"
+    return read_log_lines(log_path, n)
+
+
 if __name__ == "__main__":
     import sys
-    if scrape_oxe():
-        sys.exit(0)
-    else:
-        sys.exit(1)
+    import os
+    import tempfile
+    from pathlib import Path
+
+    lock_path = Path(tempfile.gettempdir()) / "oxe_scraper.lock"
+    with open(lock_path, "w") as f:
+        f.write(str(os.getpid()))
+
+    try:
+        success = scrape_oxe()
+        if success:
+            try:
+                from src.preprocess_oxe import preprocess_oxe
+                preprocess_oxe()
+            except Exception as pe:
+                logger.error(f"Erro ao executar pré-processamento do OXE: {pe}")
+            sys.exit(0)
+        else:
+            sys.exit(1)
+    finally:
+        if lock_path.exists():
+            try:
+                lock_path.unlink()
+            except Exception:
+                pass

@@ -2,7 +2,6 @@ import sys
 from pathlib import Path
 
 root_dir = Path(__file__).parent.parent.parent
-custom_select_dir = root_dir / "custom_select_component"
 
 import asyncio
 import os
@@ -13,17 +12,13 @@ import sqlite3
 import streamlit as st
 import streamlit.components.v1 as components
 
-from src.components.status_banner import check_orquestrador_running, read_last_log_lines
-from src.database import load_data, get_comments_by_ticket, update_ticket_location_details, update_ticket_tag, update_ticket_andamento
+from src.components.status_banner import check_orquestrador_running, read_last_log_lines, render_log_expander
+from src.database import load_data, get_comments_by_ticket, update_ticket_location_details, update_ticket_tag, update_ticket_andamento, update_ticket_title
 from src.components.pagination import (
     render_items_per_page_selector,
     paginate_items,
     render_pagination_controls
 )
-
-
-# Declara o componente customizado do Select Multiple nativo com clique-e-arraste
-custom_select = components.declare_component("custom_select", path=str(custom_select_dir))
 
 DB_PATH = root_dir / "chamados.db"
 
@@ -246,17 +241,20 @@ def render_chamados_page():
             )
             if run_orquestrador:
                 import subprocess
+                import time
                 subprocess.Popen([sys.executable, "orquestrador.py"])
+                time.sleep(0.8)
                 st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
                 st.cache_data.clear()
                 st.rerun()
 
-    if robo_ativo:
-        with st.expander("🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso", expanded=False):
-            st.info("O robô está coletando novos chamados e classificando com IA neste momento. Você pode continuar usando o painel normalmente!")
-            logs = read_last_log_lines(15)
-            st.code(logs, language="text")
-            st.button("🔄 Atualizar Progresso", help="Recarrega as últimas linhas de log do robô")
+    render_log_expander(
+        "🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso",
+        robo_ativo,
+        read_last_log_lines,
+        check_orquestrador_running,
+        "O robô está coletando novos chamados e classificando com IA neste momento. Você pode continuar usando o painel normalmente!"
+    )
 
     df = load_data()
 
@@ -264,9 +262,23 @@ def render_chamados_page():
         st.warning("Nenhum dado encontrado no banco de dados. Execute o orquestrador primeiro!")
         return
 
-    df['datetime_obj'] = pd.to_datetime(df['data_criacao'], errors='coerce')
+    # Conversão de data garantindo formato brasileiro e ISO correto
+    def parse_dates_safely(val):
+        if pd.isna(val) or not str(val).strip():
+            return pd.NaT
+        s = str(val).strip()
+        # Se estiver no padrão ISO YYYY-MM-DD HH:MM:SS
+        if re.match(r'^\d{4}-\d{2}-\d{2}', s):
+            return pd.to_datetime(s, errors='coerce')
+        # Se estiver no formato brasileiro DD/MM/YYYY HH:MM:SS
+        return pd.to_datetime(s, dayfirst=True, errors='coerce')
+
+    df['datetime_obj'] = df['data_criacao'].apply(parse_dates_safely)
     df['Data Formatada'] = df['datetime_obj'].dt.strftime('%d/%m/%Y %H:%M:%S')
     df['Data Formatada'] = df['Data Formatada'].fillna(df['data_criacao'])
+
+    # Ordenação padrão decrescente pela data correta
+    df = df.sort_values(by='datetime_obj', ascending=False)
 
     min_date = df['datetime_obj'].dropna().min().date() if not df['datetime_obj'].dropna().empty else datetime.now().date()
     max_date = df['datetime_obj'].dropna().max().date() if not df['datetime_obj'].dropna().empty else datetime.now().date()
@@ -437,16 +449,14 @@ def render_chamados_page():
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("📍 Seleção de Localidades")
-    st.sidebar.write("Arraste o mouse sobre as opções ou segure **Shift** para selecionar múltiplas de uma vez:")
     
-    with st.sidebar:
-        selected_locs = custom_select(
-            options=loc_options,
-            default=st.session_state.get("custom_loc_selection", []),
-            key="custom_loc_selection"
-        )
-    if selected_locs is None:
-        selected_locs = []
+    selected_locs = st.sidebar.multiselect(
+        "Localidade Física",
+        options=loc_options,
+        default=st.session_state.get("custom_loc_selection", []),
+        key="custom_loc_selection",
+        placeholder="Escolha as localidades..."
+    )
     
     selected_cities = st.sidebar.multiselect(
         "Cidade - Prédio", 
@@ -533,6 +543,7 @@ def render_chamados_page():
     df_tickets_list = source_df[['id', 'titulo']].copy()
     ids_clean = df_tickets_list['id'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     titles_clean = df_tickets_list['titulo'].fillna("Sem Título").astype(str).str.strip()
+    titles_clean = titles_clean.replace(["nan", "NaN", "None", "null", ""], "Sem Título")
     labels = ids_clean + " - " + titles_clean
     ticket_options = sorted(labels.unique().tolist())
     
@@ -549,8 +560,8 @@ def render_chamados_page():
     )
 
     items_per_page = render_items_per_page_selector(
-        key_prefix="chamados",
-        options=[10, 25, 50, 100, 200, 500, "Todos"],
+        key_prefix="chamados_v5",
+        options=[10, 50, 100, "Todos"],
         default_index=2,
         label="📄 Chamados por página:"
     )
@@ -700,6 +711,16 @@ def render_chamados_page():
                     st.markdown(f"**IP de Origem:** `{row.get('ip_origem') or 'N/A'}`")
                     st.markdown(f"**Hostname:** `{row.get('hostname') or 'N/A'}`")
                     
+                    with st.expander("✏️ Editar Título do Chamado", expanded=False):
+                        curr_title = str(row.get('titulo', '')).strip()
+                        if curr_title.lower() in ["none", "nan", "null", "sem título"]:
+                            curr_title = ""
+                        new_titulo = st.text_input("Título do Chamado:", value=curr_title, key=f"edit_titulo_{row['id']}")
+                        if st.button("💾 Salvar Título", key=f"save_title_btn_{row['id']}"):
+                            update_ticket_title(row['id'], new_titulo)
+                            st.success("Título do chamado atualizado com sucesso! (Fechar para atualizar a tabela)")
+                            st.cache_data.clear()
+
                     with st.expander("📍 Editar Localização Manual", expanded=False):
                         new_cidade = st.text_input("Cidade - Prédio", value=str(row.get('cidade_predio', '')), key=f"edit_cidade_{row['id']}")
                         new_unidade = st.text_input("Unidade", value=str(row.get('unidade', '')), key=f"edit_unidade_{row['id']}")
@@ -890,6 +911,8 @@ def render_chamados_page():
             items_per_page=items_per_page
         )
 
+        table_height = "content" if items_per_page >= 999999 else 600
+
         selection_event = st.dataframe(
             df_page.style.apply(style_dataframe, axis=1),
             column_order=cols_to_show,
@@ -908,7 +931,7 @@ def render_chamados_page():
             },
             hide_index=True,
             width="stretch",
-            height=600,
+            height=table_height,
             on_select="rerun",
             selection_mode="single-row",
             key="tabela_chamados_datagrid"

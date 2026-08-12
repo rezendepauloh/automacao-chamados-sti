@@ -19,6 +19,7 @@ if str(root_dir) not in sys.path:
 if str(root_dir / "src") not in sys.path:
     sys.path.insert(0, str(root_dir / "src"))
 
+from src.components.status_banner import check_process_running, read_log_lines
 from src.config import (
     PAPERCUT_URL, PAPERCUT_PRINTER_LIST_URL, PAPERCUT_DEVICE_LIST_URL,
     PAPERCUT_USER, PAPERCUT_PASS, DEBUG_DIR_PAPERCUT, HEADLESS,
@@ -27,7 +28,17 @@ from src.config import (
 )
 from src.database import save_impressoras_to_db
 
+# ---------------------------
+# Utilitários e Log
+# ---------------------------
+# --- Configuração de logging ---
+
 logger = setup_logging(DEBUG_DIR_PAPERCUT / "papercut_scraper.log", __name__)
+
+# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
+logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+# -----------------------------------------------------------------
 
 DOWNLOAD_DIR = USER_HOME / "Downloads"
 PAPERCUT_BRUTOS_DIR = INPUT_DIR_BRUTOS / "papercut"
@@ -529,6 +540,34 @@ def reprocess_existing_papercut_csvs() -> bool:
     return False
 
 
+def check_papercut_sync_running() -> bool:
+    """Verifica se a sincronização do PaperCut está em andamento."""
+    import tempfile
+    lock_file = Path(tempfile.gettempdir()) / "papercut_scraper.lock"
+    return check_process_running(lock_file)
+
+
+def read_papercut_last_log_lines(n: int = 15) -> str:
+    """Lê as últimas N linhas do log do scraper do PaperCut."""
+    log_path = Path("debug_logs") / "papercut" / "papercut_scraper.log"
+    return read_log_lines(log_path, n)
+
+
 if __name__ == "__main__":
-    run_papercut_scraper()
+    import os
+    import tempfile
+    from pathlib import Path
+
+    lock_path = Path(tempfile.gettempdir()) / "papercut_scraper.lock"
+    with open(lock_path, "w") as f:
+        f.write(str(os.getpid()))
+
+    try:
+        run_papercut_scraper()
+    finally:
+        if lock_path.exists():
+            try:
+                lock_path.unlink()
+            except Exception:
+                pass
 
