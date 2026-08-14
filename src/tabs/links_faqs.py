@@ -362,10 +362,10 @@ def render_faq_page():
                         
                         c_btn1, c_btn2 = st.columns([1, 1])
                         with c_btn1:
-                            if st.button("📖 Ler Tutorial", key=f"btn_read_{row['id']}", use_container_width=True):
+                            if st.button("📖 Ler Tutorial", key=f"btn_read_{row['id']}", width='stretch'):
                                 open_faq_modal(row['id'])
                         with c_btn2:
-                            st.link_button("🔗 SharePoint ↗", url=row["url"], use_container_width=True)
+                            st.link_button("🔗 SharePoint ↗", url=row["url"], width='stretch')
 
 
             render_pagination_controls("faq_sp", cur_p_faq, tot_p_faq, tot_i_faq, items_per_page_faq)
@@ -437,7 +437,7 @@ def render_faq_page():
                 with c_info:
                     st.caption(f"📁 **Caminho do Arquivo:** `{video_item['caminho']}`")
                 with c_act:
-                    if st.button("🖥️ Abrir no Player do Windows", key=f"btn_win_open_{hash(video_item['titulo'])}", use_container_width=True):
+                    if st.button("🖥️ Abrir no Player do Windows", key=f"btn_win_open_{hash(video_item['titulo'])}", width='stretch'):
                         try:
                             os.startfile(str(video_item['caminho']))
                             st.toast("Vídeo aberto no player nativo do Windows!", icon="🎬")
@@ -472,7 +472,7 @@ def render_faq_page():
                             st.caption(f"📁 `{vid['nome_arquivo']}` • {vid['tamanho']}")
                             st.markdown("<br>", unsafe_allow_html=True)
 
-                            if st.button("🎥 Assistir Vídeo", key=f"btn_vid_{idx}_{hash(vid['titulo'])}", use_container_width=True):
+                            if st.button("🎥 Assistir Vídeo", key=f"btn_vid_{idx}_{hash(vid['titulo'])}", width='stretch'):
                                 open_video_modal(vid)
 
                 render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
@@ -572,18 +572,18 @@ def render_faq_page():
                 # Navegação do Carrossel de Fotos
                 c_prev, c_img, c_next = st.columns([1, 6, 1])
                 with c_prev:
-                    if st.button("⬅️", key="btn_prev_img", use_container_width=True, disabled=(idx == 0)):
+                    if st.button("⬅️", key="btn_prev_img", width='stretch', disabled=(idx == 0)):
                         st.session_state['current_img_idx'] = idx - 1
                         st.rerun()
 
                 with c_img:
                     try:
-                        st.image(str(img_item['caminho']), use_container_width=True)
+                        st.image(str(img_item['caminho']), width='stretch')
                     except Exception as e:
                         st.error(f"Erro ao carregar a imagem: {e}")
 
                 with c_next:
-                    if st.button("➡️", key="btn_next_img", use_container_width=True, disabled=(idx == len(folder_imgs) - 1)):
+                    if st.button("➡️", key="btn_next_img", width='stretch', disabled=(idx == len(folder_imgs) - 1)):
                         st.session_state['current_img_idx'] = idx + 1
                         st.rerun()
 
@@ -593,7 +593,7 @@ def render_faq_page():
                     st.caption(f"💾 **Tamanho:** `{img_item['tamanho']}`")
                     st.caption(f"📁 **Arquivo:** `{img_item['caminho']}`")
                 with c_act:
-                    if st.button("🖥️ Abrir no Windows", key=f"btn_win_img_{idx}_{hash(folder_name)}", use_container_width=True):
+                    if st.button("🖥️ Abrir no Windows", key=f"btn_win_img_{idx}_{hash(folder_name)}", width='stretch'):
                         try:
                             os.startfile(str(img_item['caminho']))
                             st.toast("Imagem aberta no visualizador nativo!", icon="🖼️")
@@ -622,7 +622,7 @@ def render_faq_page():
                             st.caption(f"🖼️ **{folder['total']}** imagem(ns) nesta pasta")
                             st.markdown("<br>", unsafe_allow_html=True)
 
-                            if st.button("👁️ Abrir Pasta", key=f"btn_folder_view_{idx}_{hash(folder['categoria'])}", use_container_width=True):
+                            if st.button("👁️ Abrir Pasta", key=f"btn_folder_view_{idx}_{hash(folder['categoria'])}", width='stretch'):
                                 st.session_state['active_img_folder'] = folder['categoria']
                                 st.session_state['current_img_idx'] = 0
                                 st.rerun()

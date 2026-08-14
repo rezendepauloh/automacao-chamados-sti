@@ -127,7 +127,7 @@ def modal_novo_evento_manual():
     autor = st.text_input("👤 Autor / Responsável", value="Bancada STI")
     descricao = st.text_area("📝 Descrição / Detalhes", placeholder="Descreva os detalhes e orientações do evento...")
 
-    if st.button("💾 Salvar Evento", type="primary", use_container_width=True):
+    if st.button("💾 Salvar Evento", type="primary", width='stretch'):
         if not titulo.strip():
             st.error("Por favor, preencha o título do evento.")
             return
@@ -159,7 +159,7 @@ def render_calendario_geral_page():
     st.caption("Visão centralizada de registros manuais, plantões da bancada, vigências de contratos de garantia, portarias e chamados técnicos.")
 
     # --- BOTÃO DE DESTAQUE NO TOPO DA SIDEBAR ---
-    if st.sidebar.button("➕ Novo Evento Manual", type="primary", use_container_width=True):
+    if st.sidebar.button("➕ Novo Evento Manual", type="primary", width='stretch'):
         modal_novo_evento_manual()
 
     st.sidebar.markdown("---")
@@ -597,5 +597,5 @@ def render_calendario_geral_page():
                     "Detalhes / Resumo": st.column_config.TextColumn("Detalhes / Resumo"),
                 },
                 hide_index=True,
-                use_container_width=True
+                width='stretch'
             )

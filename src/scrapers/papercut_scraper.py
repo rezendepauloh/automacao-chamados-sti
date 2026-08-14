@@ -7,17 +7,19 @@ import logging
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+
+# Garante importações dos módulos do projeto
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
-# Garante importações dos módulos do projeto
-root_dir = Path(__file__).parent.parent
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
-if str(root_dir / "src") not in sys.path:
-    sys.path.insert(0, str(root_dir / "src"))
 
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import (
@@ -28,26 +30,16 @@ from src.config import (
 )
 from src.database import save_impressoras_to_db
 
-# ---------------------------
-# Utilitários e Log
-# ---------------------------
-# --- Configuração de logging ---
-
 logger = setup_logging(DEBUG_DIR_PAPERCUT / "papercut_scraper.log", __name__)
 
-# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-# -----------------------------------------------------------------
 
 DOWNLOAD_DIR = USER_HOME / "Downloads"
 PAPERCUT_BRUTOS_DIR = INPUT_DIR_BRUTOS / "papercut"
 PAPERCUT_BRUTOS_DIR.mkdir(parents=True, exist_ok=True)
 
-
-
 def cleanup_old_papercut_downloads():
-    """Remove arquivos antigos do tipo printer_list*.csv e device_list*.csv na pasta Downloads."""
     logger.info("🧹 Limpando arquivos CSV anteriores do PaperCut na pasta Downloads...")
     for pattern in ["printer_list*.csv", "device_list*.csv"]:
         for f in DOWNLOAD_DIR.glob(pattern):
@@ -57,9 +49,7 @@ def cleanup_old_papercut_downloads():
             except Exception as e:
                 logger.warning(f"  └─ Não foi possível apagar {f.name}: {e}")
 
-
 def clean_encoding_text(val):
-    """Corrige encodings corrompidos (Latin1 / UTF-8 misturados ou bytes mal decodificados)."""
     if not isinstance(val, str):
         return val
     val = val.strip()
@@ -74,9 +64,7 @@ def clean_encoding_text(val):
     
     return val
 
-
 def load_csv_safe(file_path: Path) -> pd.DataFrame:
-    """Carrega um arquivo CSV do PaperCut (usando ';' como separador e '#' como comentário)."""
     logger.info(f"--- Tentando carregar arquivo CSV: {file_path} ---")
     if not file_path.exists():
         logger.warning(f"❌ Arquivo não encontrado no disco: {file_path}")
@@ -91,7 +79,6 @@ def load_csv_safe(file_path: Path) -> pd.DataFrame:
     encodings = ['latin1', 'utf-8-sig', 'cp1252', 'iso-8859-1', 'utf-16']
     df = None
     
-    # 1. Tenta carregar com separador ';' e ignorando linhas de comentário '#'
     for enc in encodings:
         try:
             temp_df = pd.read_csv(file_path, encoding=enc, sep=';', comment='#', engine='python')
@@ -103,7 +90,6 @@ def load_csv_safe(file_path: Path) -> pd.DataFrame:
             logger.debug(f"Falha ao tentar sep=';' com encoding '{enc}' em '{file_path.name}': {e}")
             continue
 
-    # 2. Fallback com auto-detecção de separador se o primeiro falhar
     if df is None:
         for enc in encodings:
             try:
@@ -119,7 +105,6 @@ def load_csv_safe(file_path: Path) -> pd.DataFrame:
         logger.error(f"💥 Erro fatal: Não foi possível estruturar o CSV '{file_path.name}'.")
         return pd.DataFrame()
 
-    # Tratamento dos nomes de colunas e dados
     df.columns = [clean_encoding_text(str(col)).strip() for col in df.columns]
     for col in df.columns:
         df[col] = df[col].apply(clean_encoding_text)
@@ -130,9 +115,7 @@ def load_csv_safe(file_path: Path) -> pd.DataFrame:
 
     return df
 
-
 def get_flexible_value(row_dict: dict, candidates: list, default=""):
-    """Busca um valor no dicionário da linha comparando chaves de forma flexível."""
     for cand in candidates:
         cand_clean = cand.lower().strip()
         for k, v in row_dict.items():
@@ -142,7 +125,6 @@ def get_flexible_value(row_dict: dict, candidates: list, default=""):
                     return str(v).strip()
     return default
 
-
 def is_valid_printer_name(nome: str) -> bool:
     if not nome or len(nome) <= 1:
         return False
@@ -151,9 +133,7 @@ def is_valid_printer_name(nome: str) -> bool:
         return False
     return True
 
-
 def get_canonical_asset_key(nome_raw: str) -> str:
-    """Extrai uma chave canônica única limpa (ex: 'prt-5050') a partir de nomes do PaperCut."""
     if not nome_raw:
         return ""
     s = str(nome_raw).strip()
@@ -164,19 +144,13 @@ def get_canonical_asset_key(nome_raw: str) -> str:
         s = s.split('/')[-1]
     return s.strip().lower()
 
-
 def is_valid_ipv4(ip_str: str) -> bool:
     if not ip_str or pd.isna(ip_str):
         return False
     s = str(ip_str).strip()
     return bool(re.match(r"^(\d{1,3}\.){3}\d{1,3}$", s))
 
-
 def merge_papercut_records(records: list[dict]) -> pd.DataFrame:
-    """
-    Realiza a fusão inteligente entre a lista de impressoras (PrinterList) e dispositivos físicos (DeviceList),
-    unificando pelo nome canônico do ativo (ex: 'prt-5050') e combinando IP, Servidor, Modelo e Localização.
-    """
     merged_map = {}
 
     for rec in records:
@@ -201,7 +175,6 @@ def merge_papercut_records(records: list[dict]) -> pd.DataFrame:
         else:
             existing = merged_map[key]
             
-            # 1. IP / Hostname: prioriza IPv4 válido
             existing_ip = existing.get('ip_host', '')
             new_ip = rec.get('ip_host', '')
             if not is_valid_ipv4(existing_ip) and is_valid_ipv4(new_ip):
@@ -209,7 +182,6 @@ def merge_papercut_records(records: list[dict]) -> pd.DataFrame:
             elif not existing_ip and new_ip:
                 existing['ip_host'] = new_ip
 
-            # 2. Servidor: prioriza o servidor de impressão nomeado (ex: srv-1565) sobre IP genérico ou 'PaperCut'
             existing_srv = existing.get('servidor', '')
             new_srv = rec.get('servidor', '')
             if existing_srv in ['', 'PaperCut'] or is_valid_ipv4(existing_srv):
@@ -218,11 +190,9 @@ def merge_papercut_records(records: list[dict]) -> pd.DataFrame:
                 elif not existing_srv and new_srv:
                     existing['servidor'] = new_srv
 
-            # 3. Localização: se estiver em branco, aproveita do outro registro
             if not existing.get('localizacao') and rec.get('localizacao'):
                 existing['localizacao'] = rec.get('localizacao')
 
-            # 4. Modelo / Fabricante: prioriza modelo específico sobre genérico (ex: HP OXP)
             existing_mod = existing.get('modelo', '')
             new_mod = rec.get('modelo', '')
             if not existing_mod or existing_mod.lower() in ['hp oxp', 'desconhecido', 'mfd', 'mfd/printer']:
@@ -231,20 +201,15 @@ def merge_papercut_records(records: list[dict]) -> pd.DataFrame:
             elif not existing_mod and new_mod:
                 existing['modelo'] = new_mod
 
-            # 5. Tipo: se um dos registros for MFD, classifica como 'Dispositivo Físico (MFD)'
             if 'MFD' in rec.get('tipo', '') or 'Dispositivo' in rec.get('tipo', ''):
                 existing['tipo'] = 'Dispositivo Físico (MFD)'
 
-            # 6. Status: prioriza status mais longo/detalhado de hardware MFD sobre 'OK'
             existing_st = existing.get('status', '')
             new_st = rec.get('status', '')
             if len(new_st) > len(existing_st) or (existing_st == 'OK' and new_st != 'OK'):
                 existing['status'] = new_st
 
-            # 7. Total Páginas Impressas: mantém a maior contagem observada
             existing['total_paginas'] = max(existing.get('total_paginas', 0), rec.get('total_paginas', 0))
-
-            # 8. Detalhes extras: indica unificação
             existing['detalhes_extra'] = f"Unificado: {existing.get('detalhes_extra', '')} + {rec.get('detalhes_extra', '')}"
 
     if not merged_map:
@@ -252,15 +217,10 @@ def merge_papercut_records(records: list[dict]) -> pd.DataFrame:
 
     return pd.DataFrame(list(merged_map.values()))
 
-
 def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.DataFrame) -> pd.DataFrame:
-    """
-    Unifica e normaliza os dados de Impressoras (filas) e Dispositivos Físicos do PaperCut.
-    """
     logger.info("--- Iniciando Normalização e Fusão dos DataFrames ---")
     records = []
 
-    # Processa Lista de Impressoras (PrinterList)
     if df_printers is not None and not df_printers.empty:
         logger.info(f"Processando {len(df_printers)} linhas do DataFrame de Impressoras (PrinterList)...")
         for idx, row in df_printers.iterrows():
@@ -297,9 +257,6 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
                     'detalhes_extra': 'Origem: PrinterList'
                 })
 
-    printers_count = len(records)
-
-    # Processa Lista de Dispositivos (DeviceList)
     if df_devices is not None and not df_devices.empty:
         logger.info(f"Processando {len(df_devices)} linhas do DataFrame de Dispositivos (DeviceList)...")
         for idx, row in df_devices.iterrows():
@@ -340,12 +297,7 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
     logger.info(f"Total de registros unificados inteligentes: {len(df_merged)}")
     return df_merged
 
-
-
 def run_papercut_scraper():
-    """
-    Executa a raspagem dos dados do PaperCut via Selenium baixando e tratando os arquivos CSVs atualizados.
-    """
     logger.info("============================================================")
     logger.info("INICIANDO PROCESSO DE RASPAGEM E SINCRONIZAÇÃO DO PAPERCUT")
     logger.info("============================================================")
@@ -354,7 +306,6 @@ def run_papercut_scraper():
     logger.info(f"URL DeviceList: '{PAPERCUT_DEVICE_LIST_URL}'")
     logger.info(f"Usuário PaperCut: '{PAPERCUT_USER}' | Senha preenchida: {'SIM' if PAPERCUT_PASS else 'NÃO'}")
 
-    # Limpa arquivos antigos da pasta Downloads antes de iniciar o novo download
     cleanup_old_papercut_downloads()
 
     driver = None
@@ -372,7 +323,6 @@ def run_papercut_scraper():
             
             logger.info(f"Página de Login -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
 
-            # Preenche o formulário de login
             username_fields = driver.find_elements(By.ID, "inputUsername") or driver.find_elements(By.NAME, "inputUsername")
             password_fields = driver.find_elements(By.ID, "inputPassword") or driver.find_elements(By.NAME, "inputPassword")
             
@@ -392,16 +342,11 @@ def run_papercut_scraper():
                     time.sleep(4)
                     logger.info(f"Pós-Login -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
 
-            # -----------------------------------------------------------------------------
-            # NAVEGAÇÃO E DOWNLOAD: PRINTER LIST
-            # -----------------------------------------------------------------------------
             logger.info(f"Navegando para PrinterList: {PAPERCUT_PRINTER_LIST_URL}")
             driver.get(PAPERCUT_PRINTER_LIST_URL)
             time.sleep(3)
             logger.info(f"PrinterList -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
             
-            # Localiza o link exato do CSV apontado no HTML do PaperCut:
-            # <a href="/app?service=direct/1/PrinterList/$ReportLink.csv&sp=SCSV&sp=F"...>
             csv_links_printer = (
                 driver.find_elements(By.XPATH, "//a[contains(@href, 'PrinterList/$ReportLink.csv') or contains(@href, 'sp=SCSV')]") or
                 driver.find_elements(By.XPATH, "//img[@alt='CSV' or @title='CSV']/parent::a")
@@ -416,16 +361,11 @@ def run_papercut_scraper():
             else:
                 logger.warning("⚠️ Nenhum link de download CSV encontrado em PrinterList.")
 
-            # -----------------------------------------------------------------------------
-            # NAVEGAÇÃO E DOWNLOAD: DEVICE LIST
-            # -----------------------------------------------------------------------------
             logger.info(f"Navegando para DeviceList: {PAPERCUT_DEVICE_LIST_URL}")
             driver.get(PAPERCUT_DEVICE_LIST_URL)
             time.sleep(3)
             logger.info(f"DeviceList -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
             
-            # Localiza o link exato do CSV apontado no HTML do PaperCut:
-            # <a href="/app?service=direct/1/DeviceList/$ReportLink.csv&sp=SCSV&sp=F"...>
             csv_links_device = (
                 driver.find_elements(By.XPATH, "//a[contains(@href, 'DeviceList/$ReportLink.csv') or contains(@href, 'sp=SCSV')]") or
                 driver.find_elements(By.XPATH, "//img[@alt='CSV' or @title='CSV']/parent::a")
@@ -456,9 +396,6 @@ def run_papercut_scraper():
             except Exception:
                 pass
 
-    # -----------------------------------------------------------------------------
-    # IDENTIFICAÇÃO DOS ARQUIVOS CSV BAIXADOS
-    # -----------------------------------------------------------------------------
     logger.info("--- Procurando arquivos CSV recém-baixados na pasta Downloads ---")
     
     downloaded_printers = list(DOWNLOAD_DIR.glob("printer_list*.csv"))
@@ -470,11 +407,9 @@ def run_papercut_scraper():
     logger.info(f"Arquivo selecionado para PrinterList: {printer_csv_file}")
     logger.info(f"Arquivo selecionado para DeviceList: {device_csv_file}")
 
-    # Carrega os DataFrames
     df_printers = load_csv_safe(printer_csv_file)
     df_devices = load_csv_safe(device_csv_file)
 
-    # Copia backups com timestamp para a pasta de dados brutos do projeto
     ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     if printer_csv_file.exists() and printer_csv_file.parent == DOWNLOAD_DIR:
         try:
@@ -492,12 +427,9 @@ def run_papercut_scraper():
         except Exception as e:
             logger.warning(f"Não foi possível salvar backup de device_list: {e}")
 
-    # Mantém até 10 backups rotativos históricos do PaperCut
     cleanup_old_files(PAPERCUT_BRUTOS_DIR, "printer_list_*.csv", keep_count=10)
     cleanup_old_files(PAPERCUT_BRUTOS_DIR, "device_list_*.csv", keep_count=10)
 
-
-    # Unifica e trata os dados
     df_merged = merge_and_normalize_papercut_data(df_printers, df_devices)
 
     if not df_merged.empty:
@@ -505,7 +437,6 @@ def run_papercut_scraper():
         save_impressoras_to_db(df_merged)
         logger.info(f"🎉 SUCESSO COMPLETO: {len(df_merged)} ativos gravados com sucesso no SQLite!")
         
-        # Limpa os arquivos temporários baixados em Downloads para não acumular
         for f in [printer_csv_file, device_csv_file]:
             if f and f.exists() and f.parent == DOWNLOAD_DIR:
                 try:
@@ -518,9 +449,7 @@ def run_papercut_scraper():
 
     logger.info("============================================================\n")
 
-
 def reprocess_existing_papercut_csvs() -> bool:
-    """Reprocessa e funde os CSVs existentes na pasta de brutos sem precisar abrir o Selenium."""
     logger.info("Reprocessando CSVs locais de PaperCut...")
     p_csv = PAPERCUT_BRUTOS_DIR / "printer_list.csv"
     d_csv = PAPERCUT_BRUTOS_DIR / "device_list.csv"
@@ -539,24 +468,17 @@ def reprocess_existing_papercut_csvs() -> bool:
         return True
     return False
 
-
 def check_papercut_sync_running() -> bool:
-    """Verifica se a sincronização do PaperCut está em andamento."""
     import tempfile
     lock_file = Path(tempfile.gettempdir()) / "papercut_scraper.lock"
     return check_process_running(lock_file)
 
-
 def read_papercut_last_log_lines(n: int = 15) -> str:
-    """Lê as últimas N linhas do log do scraper do PaperCut."""
     log_path = Path("debug_logs") / "papercut" / "papercut_scraper.log"
     return read_log_lines(log_path, n)
 
-
 if __name__ == "__main__":
-    import os
     import tempfile
-    from pathlib import Path
 
     lock_path = Path(tempfile.gettempdir()) / "papercut_scraper.lock"
     with open(lock_path, "w") as f:
@@ -570,4 +492,3 @@ if __name__ == "__main__":
                 lock_path.unlink()
             except Exception:
                 pass
-

@@ -133,7 +133,7 @@ def render_pagination_controls(
     cols = st.columns([1.2] + [0.8] * num_buttons + [1.2])
 
     with cols[0]:
-        if st.button("⬅️ Anterior", key=f"{page_key}_btn_prev", disabled=(current_page == 1), use_container_width=True):
+        if st.button("⬅️ Anterior", key=f"{page_key}_btn_prev", disabled=(current_page == 1), width='stretch'):
             st.session_state[state_key] = current_page - 1
             st.rerun()
 
@@ -144,11 +144,11 @@ def render_pagination_controls(
             else:
                 is_active = (p == current_page)
                 btn_type = "primary" if is_active else "secondary"
-                if st.button(f"{p}", key=f"{page_key}_btn_p_{p}", type=btn_type, use_container_width=True):
+                if st.button(f"{p}", key=f"{page_key}_btn_p_{p}", type=btn_type, width='stretch'):
                     st.session_state[state_key] = p
                     st.rerun()
 
     with cols[-1]:
-        if st.button("Próxima ➡️", key=f"{page_key}_btn_next", disabled=(current_page == total_pages), use_container_width=True):
+        if st.button("Próxima ➡️", key=f"{page_key}_btn_next", disabled=(current_page == total_pages), width='stretch'):
             st.session_state[state_key] = current_page + 1
             st.rerun()

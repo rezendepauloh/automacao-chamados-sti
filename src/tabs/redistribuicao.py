@@ -6,7 +6,7 @@ from src.components.pagination import (
     render_pagination_controls
 )
 from src.components.status_banner import render_log_expander
-from src.sync_donations import check_donations_sync_running, read_donations_last_log_lines
+from src.syncs.sync_donations import check_donations_sync_running, read_donations_last_log_lines
 
 def render_donations_page():
     """Renderiza a página de Doação & Redistribuição de Máquinas."""
@@ -51,11 +51,11 @@ def render_donations_page():
     st.sidebar.title("🖥️ Painel de Controle")
 
     if donations_ativo:
-        st.sidebar.button("🤖 Atualizando...", type="primary", use_container_width=True, disabled=True)
+        st.sidebar.button("🤖 Atualizando...", type="primary", width='stretch', disabled=True)
     else:
-        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True, help="Busca atualizações na planilha do SharePoint em segundo plano."):
+        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
             import sys, subprocess, time
-            subprocess.Popen([sys.executable, "src/sync_donations.py"])
+            subprocess.Popen([sys.executable, "src/syncs/sync_donations.py"])
             time.sleep(0.5)
             st.toast("🚀 Sincronização de doações iniciada em segundo plano!", icon="🤖")
             st.rerun()
@@ -101,7 +101,7 @@ def render_donations_page():
             return date_str
             
     selected_date_str = st.sidebar.selectbox("Selecione a Data de Preparo", valid_dates, format_func=format_date_br)
-    generate_btn = st.sidebar.button("📝 Gerar Texto do Chamado", use_container_width=True)
+    generate_btn = st.sidebar.button("📝 Gerar Texto do Chamado", width='stretch')
 
     @st.dialog("📋 Texto de Preparo de Chamado", width="large")
     def show_preparo_text(date_str, df_all):
@@ -287,7 +287,7 @@ def render_donations_page():
         if not df_filtered.empty:
             mov_counts = df_filtered['tipo_movimentacao'].value_counts().reset_index()
             mov_counts.columns = ['Movimentação', 'Quantidade']
-            st.bar_chart(data=mov_counts, x='Movimentação', y='Quantidade', use_container_width=True)
+            st.bar_chart(data=mov_counts, x='Movimentação', y='Quantidade', width='stretch')
         else:
             st.info("Sem dados para exibir o gráfico.")
             
@@ -298,7 +298,7 @@ def render_donations_page():
             df_filtered['Ano'] = df_filtered['Ano'].fillna("Sem Data").astype(str).str.replace(".0", "", regex=False)
             
             ano_counts = df_filtered.groupby(['Ano', 'tipo_movimentacao']).size().unstack(fill_value=0)
-            st.bar_chart(ano_counts, use_container_width=True)
+            st.bar_chart(ano_counts, width='stretch')
         else:
             st.info("Sem dados para exibir o gráfico.")
             
@@ -325,7 +325,7 @@ def render_donations_page():
             "motivo_baixa": st.column_config.TextColumn("Motivo da Baixa"),
         },
         hide_index=True,
-        use_container_width=True
+        width='stretch'
     )
 
     render_pagination_controls(

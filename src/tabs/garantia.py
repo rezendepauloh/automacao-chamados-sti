@@ -12,7 +12,7 @@ from src.components.pagination import (
     render_pagination_controls
 )
 from src.components.status_banner import render_log_expander
-from src.sync_garantia import check_garantia_sync_running, read_garantia_last_log_lines
+from src.syncs.sync_garantia import check_garantia_sync_running, read_garantia_last_log_lines
 
 def parse_date_to_iso_and_br(date_val):
     if pd.isna(date_val) or not date_val:
@@ -58,11 +58,11 @@ def render_garantia_page():
 
     st.sidebar.markdown("## ⚙️ Ações e Sincronização")
     if garantia_ativo:
-        st.sidebar.button("🤖 Sincronizando...", use_container_width=True, disabled=True)
+        st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
     else:
-        if st.sidebar.button("🔄 Sincronizar com Excel", type="primary", use_container_width=True, help="Busca atualizações na planilha de garantia em segundo plano."):
+        if st.sidebar.button("🔄 Sincronizar com Excel", type="primary", width='stretch', help="Busca atualizações na planilha de garantia em segundo plano."):
             import sys, subprocess, time
-            subprocess.Popen([sys.executable, "src/sync_garantia.py"])
+            subprocess.Popen([sys.executable, "src/syncs/sync_garantia.py"])
             time.sleep(0.5)
             st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
             st.rerun()
@@ -173,7 +173,7 @@ def render_garantia_page():
                 data=buffer,
                 file_name=f"contratos_garantia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width='stretch'
             )
 
         cols_c = [
@@ -206,7 +206,7 @@ def render_garantia_page():
                 "link_suporte": st.column_config.LinkColumn("Link para Abertura de Chamado", display_text="🔗 Abrir Portal do Fornecedor"),
             },
             hide_index=True,
-            use_container_width=True
+            width='stretch'
         )
 
         render_pagination_controls(
@@ -302,7 +302,7 @@ def render_garantia_page():
                 data=buffer,
                 file_name=f"chamados_garantia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width='stretch'
             )
 
         cols_ch = [
@@ -332,7 +332,7 @@ def render_garantia_page():
                 "chamado_dmp": st.column_config.TextColumn("Chamado DMP"),
             },
             hide_index=True,
-            use_container_width=True
+            width='stretch'
         )
 
         render_pagination_controls(
@@ -448,7 +448,7 @@ def render_garantia_page():
             if not df_chamados.empty and 'status' in df_chamados.columns:
                 st_counts = df_chamados['status'].value_counts().reset_index()
                 st_counts.columns = ['Status do Chamado', 'Quantidade']
-                st.bar_chart(data=st_counts, x='Status do Chamado', y='Quantidade', use_container_width=True)
+                st.bar_chart(data=st_counts, x='Status do Chamado', y='Quantidade', width='stretch')
             else:
                 st.info("Sem dados de chamados para exibir gráfico.")
 
@@ -457,6 +457,6 @@ def render_garantia_page():
             if not df_contratos.empty and 'fornecedor' in df_contratos.columns:
                 forn_counts = df_contratos['fornecedor'].value_counts().reset_index()
                 forn_counts.columns = ['Fornecedor', 'Quantidade']
-                st.bar_chart(data=forn_counts, x='Fornecedor', y='Quantidade', use_container_width=True)
+                st.bar_chart(data=forn_counts, x='Fornecedor', y='Quantidade', width='stretch')
             else:
                 st.info("Sem dados de contratos para exibir gráfico.")

@@ -2,9 +2,12 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 
-root_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(root_dir))
-sys.path.insert(0, str(root_dir / "src"))
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 from src.database import get_plantoes_matutino, get_plantoes_semanal, add_notification
 from src.tabs.plantoes import is_bancada_member
@@ -12,15 +15,11 @@ from src.config import setup_logging, DEBUG_DIR_PLANTOES
 
 logger = setup_logging(DEBUG_DIR_PLANTOES / "sync_alerts.log", "sync_plantoes_alerts")
 
-
 def check_and_generate_plantao_alerts():
     """Gera notificações automáticas para os plantões matutino e semanal seguindo as regras de antecedência."""
     logger.info("Iniciando verificação de alertas de plantão...")
     today = datetime.now().date()
 
-    # -------------------------------------------------------------
-    # 1. PLANTÃO MATUTINO (PGJ)
-    # -------------------------------------------------------------
     df_mat = get_plantoes_matutino(today.year)
     if not df_mat.empty:
         for _, row in df_mat.iterrows():
@@ -37,15 +36,11 @@ def check_and_generate_plantao_alerts():
             except Exception:
                 continue
 
-            # Calcula o dia em que o aviso deve ser emitido
-            # Se a data do plantão for Segunda (weekday == 0), avisa na Sexta anterior (duty - 3 dias)
-            # Caso contrário, avisa no dia útil anterior (duty - 1 dia)
             if dt_duty.weekday() == 0:
                 notify_date = dt_duty - timedelta(days=3)
             else:
                 notify_date = dt_duty - timedelta(days=1)
 
-            # Se hoje é igual ou posterior à data de notificação, e ainda não passou do dia do plantão
             if notify_date <= today <= dt_duty:
                 dt_fmt = dt_duty.strftime("%d/%m/%Y")
                 dia_semana_str = row.get("dia_semana", "")
@@ -63,9 +58,6 @@ def check_and_generate_plantao_alerts():
                 if inserted:
                     logger.info(f"🔔 Notificação criada para Plantão Matutino de {servidor} em {dt_fmt}")
 
-    # -------------------------------------------------------------
-    # 2. PLANTÃO SEMANAL (SIMP)
-    # -------------------------------------------------------------
     df_sem = get_plantoes_semanal(today.year)
     if not df_sem.empty:
         for _, row in df_sem.iterrows():
@@ -107,7 +99,6 @@ def check_and_generate_plantao_alerts():
                     logger.info(f"🔔 Notificação criada para Plantão Semanal em {dt_fmt}")
 
     logger.info("Verificação de alertas de plantão concluída.")
-
 
 if __name__ == "__main__":
     check_and_generate_plantao_alerts()

@@ -316,7 +316,7 @@ def render_background_jobs_widget():
                     st.markdown(f"#### 📄 Relatório HTML Gerado (`{latest_html.name}`)")
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
-                        if st.button("🌐 Abrir no Navegador", key=f"bg_open_html_{job_id}", use_container_width=True):
+                        if st.button("🌐 Abrir no Navegador", key=f"bg_open_html_{job_id}", width='stretch'):
                             try:
                                 os.startfile(str(latest_html))
                             except Exception:
@@ -329,12 +329,12 @@ def render_background_jobs_widget():
                             data=html_content,
                             file_name=latest_html.name,
                             mime="text/html",
-                            use_container_width=True,
+                            width='stretch',
                             key=f"bg_download_html_{job_id}"
                         )
                     with st.expander("👁️ Pré-visualizar Relatório HTML no Painel", expanded=False):
                         html_content = _read_file_safe_utf8(latest_html)
-                        components.html(html_content, height=700, scrolling=True)
+                        st.components.v1.html(html_content, height=700, scrolling=True)
 
 
 def render_scripts_automacao_page():
@@ -402,7 +402,7 @@ def render_scripts_automacao_page():
             skip_major = st.checkbox("⚡ Coleta Rápida (Ignorar Drivers, Programas e Serviços)", value=False)
 
         st.markdown("---")
-        if st.button("🚀 Executar Análise de Dispositivo em Segundo Plano", type="primary", key="btn_run_analisador", use_container_width=True):
+        if st.button("🚀 Executar Análise de Dispositivo em Segundo Plano", type="primary", key="btn_run_analisador", width='stretch'):
             if not comp_analisador.strip():
                 st.warning("⚠️ Por favor, informe o Nome ou IP da máquina remota.")
             else:
@@ -443,7 +443,7 @@ def render_scripts_automacao_page():
             verbose_mode = st.checkbox("🔍 Modo Verbose", value=True, help="Exibe detalhes estendidos durante o progresso")
 
         st.markdown("---")
-        if st.button("🚀 Executar Manutenção e Limpeza em Segundo Plano", type="primary", key="btn_run_manutencao", use_container_width=True):
+        if st.button("🚀 Executar Manutenção e Limpeza em Segundo Plano", type="primary", key="btn_run_manutencao", width='stretch'):
             if not comp_manutencao.strip():
                 st.warning("⚠️ Por favor, informe o Nome ou IP da máquina remota.")
             else:
@@ -479,7 +479,7 @@ def render_scripts_automacao_page():
         users_input = st.text_area("👤 Logins dos Usuários a Remover", key="input_perfis_users", placeholder="Digite os logins separados por vírgula ou em linhas separadas.\nEx: pedrofonseca, amandabarbosa, lohanlima", height=100)
 
         st.markdown("---")
-        if st.button("🚀 Remover Perfis em Segundo Plano", type="primary", key="btn_run_perfis", use_container_width=True):
+        if st.button("🚀 Remover Perfis em Segundo Plano", type="primary", key="btn_run_perfis", width='stretch'):
             if not comp_perfis.strip():
                 st.warning("⚠️ Por favor, informe o Nome ou IP da máquina remota.")
             elif not users_input.strip():

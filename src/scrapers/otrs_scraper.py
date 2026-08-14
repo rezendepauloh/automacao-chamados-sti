@@ -1,3 +1,14 @@
+import sys
+from pathlib import Path
+
+# Adiciona o diretório raiz e o diretório src ao sys.path para suportar importações diretas
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -6,11 +17,9 @@ from selenium.common.exceptions import (
     StaleElementReferenceException
 )
 import pandas as pd
-import sys
 import os
 import json
 import shutil
-from pathlib import Path
 from datetime import datetime
 import logging
 from ldap3 import SUBTREE
@@ -22,54 +31,38 @@ from config import (
     setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
 )
 
-# Configurações atualizadas de cabeçalhos incluindo a coluna Unidade e Hostname
 HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem', 'Hostname', 'Link', 'Comentários']
 
-# --- Configuração de logging ---
 logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
 
-# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-# -----------------------------------------------------------------
 
 def get_timestamp():
     return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
-# --- Configuração do AD ---
 ad_conn = setup_ad_connection()
 
-# ---------------------------
-# AD (Active Directory) - Versão Robusta
-# ---------------------------
 def fetch_unidade(username):
-    """
-    Busca a unidade do usuário no AD usando o sAMAccountName de forma unificada.
-    """
     return fetch_ad_department(ad_conn, username, is_username=True)
 
 def backup_master():
-    """Create a backup of the existing master file."""
     if INPUT_DIR_BRUTOS.exists():
         shutil.copy2(INPUT_DIR_BRUTOS, BACKUP_PATH_OTRS)
         logging.debug(f"Backup created at {BACKUP_PATH_OTRS}")
 
 def restore_master():
-    """Restore from backup if needed."""
     if BACKUP_PATH_OTRS.exists():
         shutil.copy2(BACKUP_PATH_OTRS, INPUT_DIR_BRUTOS)
         logging.debug("Master restored from backup.")
 
 def cleanup_backup():
-    """Remove the backup file after successful run."""
     if BACKUP_PATH_OTRS.exists():
         BACKUP_PATH_OTRS.unlink()
         logging.debug("Backup file removed.")
 
 def write_master(df: pd.DataFrame):
-    """Write merged DataFrame atomically to master file."""
     df.to_excel(TEMP_PATH_OTRS, index=False)
-    # Verify integrity
     tmp = pd.read_excel(TEMP_PATH_OTRS, dtype=str)
     if tmp.shape == df.shape:
         os.replace(TEMP_PATH_OTRS, INPUT_DIR_BRUTOS)
@@ -78,7 +71,6 @@ def write_master(df: pd.DataFrame):
         raise ValueError("Integrity check failed: row/column mismatch.")
 
 def merge_data(new_df: pd.DataFrame) -> pd.DataFrame:
-    """Merge new scraped data with existing master, doing add/update/delete."""
     if not INPUT_DIR_BRUTOS.exists():
         logging.debug("No master found, using new data.")
         return new_df.copy()
@@ -95,7 +87,6 @@ def merge_data(new_df: pd.DataFrame) -> pd.DataFrame:
     df_update = new_df[new_df['Chamado#'].isin(to_update)]
     df_keep = old_df[~old_df['Chamado#'].isin(to_drop)]
 
-    # Remove outdated rows before concatenation
     df_keep = df_keep[~df_keep['Chamado#'].isin(to_update)]
 
     merged = pd.concat([df_keep, df_update, df_add], ignore_index=True)
@@ -103,33 +94,24 @@ def merge_data(new_df: pd.DataFrame) -> pd.DataFrame:
     return merged
 
 def get_ticket_details(driver):
-    """
-    Extrai a descrição (primeira nota) e todos os comentários subsequentes
-    das notas contidas no container #ArticleItems.
-    """
     desc = ""
     comments = []
     
     try:
-        # Espera o container principal aparecer
         container = WebDriverWait(driver, EXPLICIT_WAIT).until(
             EC.presence_of_element_located((By.ID, "ArticleItems"))
         )
         
-        # Encontra todas as notas (widgets simples de artigos)
         widgets = container.find_elements(By.CSS_SELECTOR, "div.WidgetSimple")
         logger.info(f"Detectados {len(widgets)} artigos/notas no chamado zoom.")
         
         for idx, widget in enumerate(widgets):
-            # 1. Extração de Metadados (Data e Autor)
             data_envio = ""
             autor = "Desconhecido"
             
             try:
-                # Localiza o título/h2 do cabeçalho
                 h2 = widget.find_element(By.TAG_NAME, "h2")
                 
-                # Tenta buscar a data via span[title*="Criado"], span[title*="Created"]
                 try:
                     date_span = h2.find_element(By.CSS_SELECTOR, 'span[title*="Criado"], span[title*="Created"]')
                     raw_title = date_span.get_attribute("title") or ""
@@ -140,17 +122,14 @@ def get_ticket_details(driver):
                 except:
                     pass
                 
-                # Tenta buscar o autor de forma ultra robusta
                 autor = ""
                 
-                # 1. Tenta pelo span.Hidden (que contém Nome + E-mail completo)
                 try:
                     sender_span = h2.find_element(By.CSS_SELECTOR, 'span.Hidden')
                     autor = sender_span.get_attribute("textContent").strip()
                 except:
                     pass
                     
-                # 2. Se falhar ou vier vazio, tenta pelo span visível
                 if not autor:
                     try:
                         sender_span = h2.find_element(By.CSS_SELECTOR, 'span:not(.Hidden)')
@@ -158,7 +137,6 @@ def get_ticket_details(driver):
                     except:
                         pass
                         
-                # 3. Se ainda estiver vazio, busca o padrão "por [Nome]" no texto completo do H2
                 if not autor:
                     try:
                         h2_text = h2.get_attribute("textContent")
@@ -167,7 +145,6 @@ def get_ticket_details(driver):
                     except:
                         pass
                         
-                # 4. Tratamento final e limpeza
                 if autor:
                     autor = autor.replace('"', '').strip()
                 else:
@@ -175,10 +152,8 @@ def get_ticket_details(driver):
             except Exception as meta_err:
                 logger.warning(f"Erro ao extrair metadados do artigo {idx+1}: {meta_err}")
             
-            # 2. Extração do Conteúdo (Texto da nota via iframe)
             texto_nota = ""
             try:
-                # OTRS usa um iframe para isolar o HTML da nota se ele existir
                 iframes = widget.find_elements(By.TAG_NAME, "iframe")
                 if iframes:
                     driver.switch_to.frame(iframes[0])
@@ -188,28 +163,22 @@ def get_ticket_details(driver):
                     texto_nota = body.text
                     driver.switch_to.default_content()
                 else:
-                    # Se não tem iframe (ex: notas de sistema), pega diretamente pelo fallback
                     content_div = widget.find_element(By.CSS_SELECTOR, "div.ArticleMailContent, div.Content")
                     texto_nota = content_div.text
             except Exception as iframe_err:
                 driver.switch_to.default_content()
                 logger.debug(f"Nota {idx+1} sem iframe padrão ou erro de extração direta: {iframe_err}")
-                # Tentativa de fallback final direta
                 try:
                     content_div = widget.find_element(By.CSS_SELECTOR, "div.ArticleMailContent, div.Content")
                     texto_nota = content_div.text
                 except:
                     pass
 
-            
-            # Limpa linhas vazias e faz strip
             clean_text = "\n".join(line.strip() for line in texto_nota.splitlines() if line.strip())
             
-            # Se for o primeiro artigo (idx == 0), é a descrição principal do chamado
             if idx == 0:
                 desc = clean_text
             else:
-                # Do segundo em diante, são comentários/notas de acompanhamento
                 comments.append({
                     "data": data_envio or datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                     "autor": autor or "Sistema",
@@ -221,12 +190,10 @@ def get_ticket_details(driver):
         
     return desc, comments
 
-# Processa um ticket individualmente
 def process_ticket(driver, row):
     ticket_id = row.get_attribute('id')
     current_url = driver.current_url
 
-    # abre o chamado
     link = WebDriverWait(row, EXPLICIT_WAIT).until(
         EC.element_to_be_clickable((By.CSS_SELECTOR, "td a.MasterActionLink"))
     )
@@ -238,14 +205,12 @@ def process_ticket(driver, row):
 
     desc, comments = get_ticket_details(driver)
 
-    # volta para lista
     driver.execute_script("window.history.go(-1);")
     
     try:
         WebDriverWait(driver, EXPLICIT_WAIT).until(
             EC.presence_of_element_located((By.ID, ticket_id))
         )
-    
     except:
         WebDriverWait(driver, EXPLICIT_WAIT).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "table.TableSmall"))
@@ -254,13 +219,11 @@ def process_ticket(driver, row):
     return desc, comments
 
 def check_pagination(driver):
-    """Verifica se existe paginação de resultados"""
     try:
         pagination_span = WebDriverWait(driver, EXPLICIT_WAIT).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.OverviewActions span.Pagination"))
         )
 
-        # Verificar se existem links de paginação
         page_links = pagination_span.find_elements(By.TAG_NAME, "a")
         
         if len(page_links) > 0:
@@ -274,15 +237,12 @@ def check_pagination(driver):
         logger.error(f"Passo 8.1: Erro na verificação de paginação: {str(e)}")
         return False
 
-# Extração por linha agora inclui Unidade via AD lookup e cache inteligente de descrições
 def extract_row_data(driver, row, cache=None):
     data = {h: '' for h in HEADERS}
     try:
-        # Garante que a linha está visível
         current = WebDriverWait(driver, EXPLICIT_WAIT).until(EC.visibility_of(row))
         cells = current.find_elements(By.TAG_NAME, 'td')
 
-        # --- Chamado# e Link (Cell 3) ---
         try:
             a_elem = cells[3].find_element(By.TAG_NAME, 'a')
             data['Chamado#'] = a_elem.text.strip()
@@ -290,28 +250,24 @@ def extract_row_data(driver, row, cache=None):
         except Exception as e:
             logger.error(f"Erro Chamado# / Link: {e}")
 
-        # --- Data Criação (Cell 4) ---
         try:
             raw_date = cells[4].find_element(By.TAG_NAME, 'div').get_attribute('title')
             data['Data Criação'] = (raw_date or "").strip()
         except Exception as e:
             logger.error(f"Erro Data Criação: {e}")
 
-        # --- Título (Cell 6) ---
         try:
             raw_title = cells[6].find_element(By.TAG_NAME, 'div').get_attribute('title')
             data['Título'] = (raw_title or "").strip()
         except Exception as e:
             logger.error(f"Erro Título: {e}")
 
-        # --- Cidade - Prédio (Cell 8) ---
         try:
             raw_city = cells[8].find_element(By.TAG_NAME, 'div').get_attribute('title')
             data['Cidade - Prédio'] = (raw_city or "").strip()
         except Exception as e:
             logger.error(f"Erro Cidade - Prédio: {e}")
 
-        # --- Nome do Usuário (Cell 9) ---
         try:
             raw_user = cells[9].find_element(By.TAG_NAME, 'div').get_attribute('title')
             client_user = (raw_user or "").strip()
@@ -319,13 +275,11 @@ def extract_row_data(driver, row, cache=None):
         except Exception as e:
             logger.error(f"Erro Nome do Usuário: {e}")
 
-        # --- ID do Cliente e Unidade (Cell 10) ---
         try:
             raw_client_id = cells[10].find_element(By.TAG_NAME, 'span').get_attribute('title')
             client_id = (raw_client_id or "").strip()
             data['ID do Cliente'] = client_id
             
-            # Lookup Unidade no AD
             if client_id:
                 data['Unidade'] = fetch_unidade(client_id)
             else:
@@ -333,22 +287,18 @@ def extract_row_data(driver, row, cache=None):
         except Exception as e:
             logger.error(f"Erro ID do Cliente ou lookup AD: {e}")
 
-        # --- Descrição e Comentários (Sempre obtidos abrindo o chamado para garantir novos comentários) ---
         try:
             cid = data['Chamado#']
-            # Abre o chamado para extrair descrição e a lista atualizada de comentários
             desc, comments = process_ticket(driver, current)
             data['Descrição'] = desc
             data['Comentários'] = json.dumps(comments, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Erro Descrição e Comentários: {e}")
  
-        # --- Extração de IP e Hostname (OTRS ou SCCM ou Cache) ---
         desc = data.get('Descrição', '')
         ip_encontrado = ""
         hostname_encontrado = ""
         
-        # 1. Tenta recuperar do cache anterior
         if cache and cid in cache:
             if cache[cid].get('IP_Origem'):
                 ip_encontrado = cache[cid]['IP_Origem']
@@ -359,7 +309,6 @@ def extract_row_data(driver, row, cache=None):
             if ip_encontrado or hostname_encontrado:
                 logger.info(f"⚡ [CACHE MATCH] IP/Hostname do chamado {cid} recuperado do cache anterior: IP={ip_encontrado}, Hostname={hostname_encontrado}")
             
-        # 2. Se não tinha no cache, busca IP na descrição
         if not ip_encontrado and desc:
             import re
             ip_match = re.search(r'IP:\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', desc)
@@ -368,7 +317,6 @@ def extract_row_data(driver, row, cache=None):
                 data['IP_Origem'] = ip_encontrado
                 logger.info(f"IP encontrado na descrição do OTRS: {ip_encontrado}")
                 
-        # 3. Se ainda não tem IP ou Hostname, faz a consulta ao SCCM
         if (not ip_encontrado or not hostname_encontrado) and data.get('ID do Cliente'):
             from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
             client_id = data['ID do Cliente']
@@ -385,11 +333,8 @@ def extract_row_data(driver, row, cache=None):
                     data['Hostname'] = sccm_hostname
                     hostname_encontrado = sccm_hostname
         else:
-            # Garante que a chave exista no dicionário mesmo vazia
             if 'Hostname' not in data:
                 data['Hostname'] = hostname_encontrado
-
-        # logger.info(f"Dados extraídos: {data['Chamado#']}")
         
         return data
     
@@ -416,13 +361,11 @@ def process_all_pages(driver, cache=None):
                 data = extract_row_data(driver, row, cache=cache)
                 all_data.append(data)
                 
-                # Pega o número do chamado do dicionário retornado
                 chamado_num = data.get('Chamado#', 'N/A')
                 logger.info(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
             
             except StaleElementReferenceException:
                 logger.error("Linha obsoleta, tentando novamente")
-                # Atualiza a tabela e a lista de elementos da página
                 table = WebDriverWait(driver, EXPLICIT_WAIT).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'table.TableSmall'))
                 )
@@ -433,7 +376,6 @@ def process_all_pages(driver, cache=None):
                 chamado_num = data.get('Chamado#', 'N/A')
                 logger.info(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
 
-        # tentar próxima página via links
         try:
             pag = driver.find_element(By.CSS_SELECTOR, 'span.Pagination')
             links = pag.find_elements(By.TAG_NAME, 'a')
@@ -454,11 +396,9 @@ def process_all_pages(driver, cache=None):
 
     return all_data
 
-# ========== ETAPA 1: LOGIN ========== #
 def login_page(driver):
     logger.info("Passo 1: Carregando página de login...")
     driver.get(OTRS_URL)
-    # time.sleep(2)  # Espera inicial anti-bot
 
     logger.info("Passo 2: Preenchendo credenciais...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
@@ -472,7 +412,6 @@ def login_page(driver):
         EC.element_to_be_clickable((By.ID, "LoginButton"))
     ).click()
 
-# ========== ETAPA 2: NAVEGAÇÃO PARA FILA ========== #
 def navigation_queue(driver):
     logger.info("Passo 4: Navegando para fila principal...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
@@ -484,7 +423,6 @@ def navigation_queue(driver):
         By.XPATH, "//a[contains(@href, 'Action=AgentTicketQueue')]")
     queue_link.click()    
 
-# ========== ETAPA 3: TODOS OS CHAMADOS ========== #
 def all_chamados(driver):
     logger.info("Passo 6: Acessando todos os chamados...")
     all_tickets_link = WebDriverWait(driver, EXPLICIT_WAIT).until(
@@ -492,11 +430,9 @@ def all_chamados(driver):
             (By.XPATH, "//a[contains(@href, 'QueueID=0') and contains(@href, 'Filter=All')]"))
     )
     
-    # Clique robusto com JavaScript
     driver.execute_script("arguments[0].scrollIntoView(true);", all_tickets_link)
     driver.execute_script("arguments[0].click();", all_tickets_link)
 
-    # ========== VERIFICAÇÃO FINAL ========== #
     logger.info("Passo 7: Validando carregamento...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.presence_of_element_located(
@@ -504,7 +440,6 @@ def all_chamados(driver):
         )
     )    
 
-# ========== ETAPA 4: VERIFICAÇÃO DE PAGINAÇÃO ========== #
 def pagination_or_not(driver):
     try:
         container = WebDriverWait(driver, EXPLICIT_WAIT).until(
@@ -518,15 +453,12 @@ def pagination_or_not(driver):
         logger.error(f"Erro na verificação de paginação: {e}")
         return False
 
-# ========== ETAPA 5: EXTRAÇÃO DE DADOS ========== #
 def data_extract(driver, has_pagination, cache=None):
     logger.info("Passo 9: Extraindo dados da tabela...")
     
-    # Se tem mais de uma página, vai para a função que arrumamos antes
     if has_pagination:
         return process_all_pages(driver, cache=cache)
     
-    # Se tem só UMA página, ele cai aqui:
     else:
         all_data = []
         table = WebDriverWait(driver, EXPLICIT_WAIT).until(
@@ -542,13 +474,11 @@ def data_extract(driver, has_pagination, cache=None):
                 data = extract_row_data(driver, row, cache=cache)
                 all_data.append(data)
                 
-                # Print no formato [1/21] Lido: 46444521
                 chamado_num = data.get('Chamado#', 'N/A')
                 logger.info(f"[{idx + 1}/{total_linhas}] Lido: {chamado_num}")
                 
             except StaleElementReferenceException:
                 logger.error("Linha obsoleta, tentando novamente")
-                # Atualiza a tabela e a lista de elementos da página
                 table = WebDriverWait(driver, EXPLICIT_WAIT).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'table.TableSmall'))
                 )
@@ -561,7 +491,6 @@ def data_extract(driver, has_pagination, cache=None):
                 
         return all_data
 
-# ========== ETAPA 6: SALVANDO DADOS (DADOS BRUTOS) ========== #
 def brute_data(data):
     df = pd.DataFrame(data, columns=HEADERS).dropna(subset=['Chamado#'], how='all')
     out_dir = Path("01 - Dados Brutos")
@@ -590,7 +519,6 @@ def brute_data(data):
     logger.info(f"SUCESSO! Total de {len(df)} chamados salvos em: {file}")
 
 def scrape_otrs():
-    # Carrega cache do último arquivo de OTRS gerado para evitar cliques repetidos
     cache = {}
     try:
         out_dir = Path("01 - Dados Brutos")
@@ -618,28 +546,22 @@ def scrape_otrs():
 
     driver = None
     try:
-        # ========== CONFIGURAÇÃO INICIAL ========== #
         driver = get_chrome_driver(headless=HEADLESS, block_media=True)
         driver.implicitly_wait(IMPLICIT_WAIT)
 
-        # Login e navegação
         login_page(driver)
         navigation_queue(driver)
         all_chamados(driver)
         
-        # Verifica paginação
         has_pagination = pagination_or_not(driver)
 
-        # Extrai dados passando o cache
         data = data_extract(driver, has_pagination, cache=cache)
         
-        # Salvando em "01 - Dados Brutos"
         brute_data(data)
         
-        # Limpeza de arquivos antigos (mantém no máximo os 10 últimos)
         cleanup_old_files(INPUT_DIR_BRUTOS, "Chamados_OTRS_*.xlsx", keep_count=10)
         
-        return True  # Indica sucesso
+        return True
 
     except Exception as e:
         timestamp = get_timestamp()
@@ -651,7 +573,7 @@ def scrape_otrs():
             driver.save_screenshot(str(error_dir / f'erro_final_{timestamp}.png'))
             with open(error_dir / f'pagina_final_{timestamp}.html', 'w', encoding='utf-8') as f:
                 f.write(driver.page_source)
-        return False # Indica falha
+        return False
         
     finally:
         if driver:
@@ -662,6 +584,6 @@ def scrape_otrs():
 
 if __name__ == "__main__":
     if scrape_otrs():
-        sys.exit(0)  # Saída limpa
+        sys.exit(0)
     else:
-        sys.exit(1)  # Saída com erro
+        sys.exit(1)

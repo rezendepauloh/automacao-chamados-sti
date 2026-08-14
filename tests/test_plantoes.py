@@ -9,7 +9,7 @@ root_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(root_dir))
 sys.path.insert(0, str(root_dir / "src"))
 
-from src.plantoes_scraper import parse_data_matutino_string, parse_simp_periodo
+from src.scrapers.plantoes_scraper import parse_data_matutino_string, parse_simp_periodo
 from src.database import (
     setup_plantoes_tables, 
     save_plantoes_matutino, 

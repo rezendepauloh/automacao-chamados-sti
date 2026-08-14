@@ -119,8 +119,12 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 
 ### 15. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
 
+### 15. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
+
 - **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
-- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro, estilização vermelha `#ff4b4b` para abas ativas (Mês/Semana/Dia/Lista) e exibição completa de chamados técnicos (com Título integral, TAG com badge estilizada e histórico de notas/acompanhamentos via sanfonas retráteis `details/summary`).
+- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro (incluindo o popover do "+X mais"), estilização vermelha `#ff4b4b` para abas ativas e exibição completa de chamados técnicos.
+- **Fechamento Automático de Chamados Ausentes (`close_missing_tickets_by_base`):** Mecanismo de sincronização relacional no SQLite que identifica chamados encerrados nos portais de origem e atualiza seu status para `'Fechado'`, com trava de segurança por volume mínimo (`active_ids >= 3`).
+- **Conformidade com a API Moderna do Streamlit:** Migração global de parâmetros legados de largura para `width='stretch'` e componentes de HTML customizados para `st.components.v1.html(...)`.
 
 ---
 
@@ -158,13 +162,43 @@ automated-OTRS-and-CitSmart/
 │   └── scripts/                      # Logs centralizados de execução dos scripts de automação PowerShell
 ├── debug/                            # Logs de execução em background dos scrapers (unidades, ramais)
 ├── src/
+│   ├── database/                     # Camada modular de banco de dados SQLite
+│   │   ├── __init__.py               # Reexportação pública unificada da DAO
+│   │   ├── connection.py             # Conexão central com chamados.db
+│   │   ├── tickets_db.py            # Operações de chamados e fechamento por base (close_missing_tickets_by_base)
+│   │   ├── ramais_db.py             # Tabela e consultas de ramais telefônicos
+│   │   ├── map_db.py                # Tabelas do mapa predial, salas e rotas
+│   │   ├── plantoes_db.py           # Tabelas e persistência de escalas de plantão
+│   │   ├── notifications_db.py     # Gerenciamento de alertas e notificações
+│   │   ├── impressoras_db.py       # Tabela de dispositivos do PaperCut
+│   │   ├── central_db.py           # Tabela de ramais do OXE Alcatel
+│   │   ├── garantia_db.py          # Tabela de controle de garantias
+│   │   ├── events_db.py            # Tabela de eventos manuais do calendário
+│   │   ├── unidades_db.py          # Tabela de unidades e promotorias
+│   │   ├── fiscalizacao_db.py      # Tabela de fiscalização de contratos SAJ
+│   │   └── donations_db.py         # Tabela de doações e redistribuição
+│   ├── scrapers/                     # Scrapers e bots automatizados de coleta
+│   │   ├── citsmart_scraper.py       # Bot de extração do CitSmart
+│   │   ├── otrs_scraper.py           # Bot de extração do OTRS
+│   │   ├── oxe_scraper.py            # Bot de extração em lote paralelo (Promise.all) do OXE
+│   │   ├── papercut_scraper.py       # Bot de extração de impressoras do PaperCut
+│   │   ├── plantoes_scraper.py       # Bot de extração dos plantões PGJ e SIMP
+│   │   ├── ramais_scraper.py         # Extrator PDF de ramais da Intranet
+│   │   ├── unidades_scraper.py       # Raspador de unidades no portal do MPMS
+│   │   └── faq_scraper.py            # Bot Playwright para FAQs do SharePoint
+│   ├── syncs/                        # Workers assíncronos de sincronização em segundo plano
+│   │   ├── sync_donations.py         # Sincronizador da planilha de doações/redistribuição
+│   │   ├── sync_fiscalizacao.py      # Sincronizador da planilha de fiscalização SAJ
+│   │   ├── sync_garantia.py          # Sincronizador da planilha de garantias
+│   │   ├── sync_master.py            # Sincronizador Append-Only na Planilha Master
+│   │   ├── sync_portarias.py         # Sincronizador da API de portarias
+│   │   └── sync_plantoes_alerts.py   # Verificador de alertas de plantão
 │   ├── components/                   # Componentes reutilizáveis do frontend
 │   │   ├── header.py                 # Menu popover de navegação rápida com query parameters e notificações
 │   │   ├── subtabs.py                # Componente de sub-abas sincronizadas com query parameters na URL
 │   │   ├── calendar.py               # Componente mestre FullCalendar v6 com modal dinâmico inteligente
 │   │   ├── pagination.py             # Componente de paginação e seletor de registros por página
 │   │   └── status_banner.py          # Checagem de status e leitor de logs do robô
-│   ├── database.py                   # Interface DAO SQLite (chamados, OXE, doações, plantões, notificações, impressoras, unidades, ramais)
 │   ├── tabs/                         # Módulos isolados por página
 │   │   ├── chamados.py               # Aba 1: Painel Geral de Chamados (?tab=chamados&subtab=...)
 │   │   ├── central_telefonica.py     # Aba 2: Central Telefônica OXE & Modal Ficha Técnica (?tab=central-telefonica)
@@ -177,28 +211,14 @@ automated-OTRS-and-CitSmart/
 │   │   ├── fiscalizacao.py           # Aba 9: Fiscalização de Contratos SAJ (?tab=fiscalizacao&subtab=...)
 │   │   ├── impressoras.py            # Aba 10: Gestão de Impressoras & Dispositivos PaperCut (?tab=impressoras&subtab=...)
 │   │   ├── scripts_automacao.py      # Aba 11: Scripts de Automação PowerShell (?tab=scripts-automacao&subtab=...)
-│   │   ├── calendario_geral.py       # Aba 12: Calendário Geral Unificado (FullCalendar v6, Modal Inteligente & Pesquisa) (?tab=calendario-geral)
+│   │   ├── calendario_geral.py       # Aba 12: Calendário Geral Unificado (?tab=calendario-geral)
 │   │   └── unidades.py               # Aba 13: Catálogo Unificado de Unidades & Lista de Ramais Telefônicos (?tab=unidades&subtab=...)
-│   ├── citsmart_scraper.py           # Bot de extração do CitSmart
-│   ├── otrs_scraper.py               # Bot de extração do OTRS
-│   ├── oxe_scraper.py                # Bot de extração em lote paralelo (Promise.all) da Central Telefônica OXE
-│   ├── papercut_scraper.py           # Bot de extração de impressoras e dispositivos do PaperCut
-│   ├── plantoes_scraper.py           # Bot de extração dos plantões PGJ e SIMP
-│   ├── ramais_scraper.py             # Extrator em PDF da Lista Oficial de Ramais da Intranet do MPMS
-│   ├── sync_donations.py             # Worker em background para sincronização da planilha de doações/redistribuição
-│   ├── sync_fiscalizacao.py          # Worker em background para sincronização da planilha de fiscalização de contratos SAJ
-│   ├── sync_garantia.py              # Worker em background para sincronização da planilha de controle de garantias
-│   ├── sync_portarias.py             # Sincronizador de portarias em segundo plano
-│   ├── sync_plantoes_alerts.py       # Verificador de alertas de plantão para o orquestrador
-│   ├── unidades_scraper.py           # Raspador de unidades/promotorias no portal do MPMS
-│   ├── faq_scraper.py                # Bot Playwright para FAQs do SharePoint
 │   ├── preprocess_chamados.py        # Limpeza e padronização de chamados
 │   ├── preprocess_oxe.py             # Pré-processamento e classificação de ramais do OXE
 │   ├── tag_classifier.py             # Classificador de IA com NLP (spaCy + Scikit-Learn)
-│   ├── sync_master.py                # Sincronizador Append-Only na Planilha Master
 │   └── salvar_senha.py               # Utilitário de segurança e credenciais (Keyring)
 ├── tests/                            # Suíte de testes unitários automatizados
-│   ├── test_app.py                   # Testes de NLP, scrapers e regras de negócio
+│   ├── test_app.py                   # Testes de NLP, scrapers, banco e fechamento por base
 │   └── test_tabs_and_components.py   # Testes dos módulos do dashboard
 ├── .env.example                      # Template de variáveis de ambiente e caminhos dos scripts
 ├── .env                              # Variáveis de ambiente locais (não commitado)

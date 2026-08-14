@@ -5,16 +5,19 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import time
 
-root_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(root_dir))
-sys.path.insert(0, str(root_dir / "src"))
+# Adiciona o diretório raiz e o diretório src ao sys.path para suportar importações diretas
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 db_path = root_dir / "chamados.db"
 
 from src.config import setup_logging, DEBUG_DIR_FAQ
 
 logger = setup_logging(DEBUG_DIR_FAQ / "faq_scraper.log", __name__)
-
 
 def init_faq_schema():
     """Garante que a tabela faqs possui a estrutura completa no SQLite."""
@@ -41,11 +44,9 @@ def clean_sharepoint_html(raw_html: str, base_url: str = "https://ministeriopubl
     """Limpa o HTML bruto do SharePoint mantendo formatação, imagens, vídeos e estilos de leitura."""
     soup = BeautifulSoup(raw_html, "html.parser")
     
-    # Remove elementos desnecessários da interface do SharePoint mantendo video e iframe
     for tag in soup.find_all(["button", "svg", "script", "style", "nav"]):
         tag.decompose()
 
-    # Trata elementos de vídeo do SharePoint (ex: Stream/EmbedVideoPreview)
     for video_div in soup.find_all(attrs={"id": "EmbedVideoPreview"}):
         video_tag = video_div.find("video")
         if video_tag and video_tag.get("src"):
@@ -55,13 +56,11 @@ def clean_sharepoint_html(raw_html: str, base_url: str = "https://ministeriopubl
             video_html = f'<video controls style="max-width: 100%; border-radius: 8px; margin: 16px 0; border: 1px solid #343541;" src="{video_src}"></video>'
             video_div.replace_with(BeautifulSoup(video_html, "html.parser"))
         else:
-            # Se for apenas a imagem de preview do vídeo com link ou dataset de vídeo
             img_tag = video_div.find("img")
             if img_tag:
                 img_src = img_tag.get("data-sp-originalimgsrc") or img_tag.get("src") or ""
                 if img_src.startswith("/"):
                     img_src = f"{base_url}{img_src}"
-                # Renderiza a capa do vídeo acompanhada de um aviso/botão de play
                 video_preview_html = f'''
                 <div style="position: relative; margin: 16px 0;">
                     <img src="{img_src}" style="max-width: 100%; border-radius: 8px; display: block; filter: brightness(0.8);" />
@@ -70,11 +69,9 @@ def clean_sharepoint_html(raw_html: str, base_url: str = "https://ministeriopubl
                 '''
                 video_div.replace_with(BeautifulSoup(video_preview_html, "html.parser"))
         
-    # Preserva e ajusta links de imagens do SharePoint
     for img in soup.find_all("img"):
         src = img.get("data-sp-originalimgsrc") or img.get("src") or ""
         
-        # Se for um caminho relativo do SharePoint, transforma em URL absoluta
         if src.startswith("/"):
             src = f"{base_url}{src}"
         
@@ -83,7 +80,6 @@ def clean_sharepoint_html(raw_html: str, base_url: str = "https://ministeriopubl
             
         img["style"] = "max-width: 100%; height: auto; border-radius: 8px; margin: 16px 0; display: block; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"
 
-    # Garante que os links externos tenham target="_blank"
     for a in soup.find_all("a"):
         a["target"] = "_blank"
         a["style"] = "color: #ff4b4b; text-decoration: underline; font-weight: 500;"
@@ -91,7 +87,6 @@ def clean_sharepoint_html(raw_html: str, base_url: str = "https://ministeriopubl
     return str(soup)
 
 def perform_microsoft_login(page):
-    """Realiza o login na conta Microsoft / SharePoint se a tela de login for exibida."""
     try:
         from config import CITSMART_EMAIL, PASSWORD
         email, password = CITSMART_EMAIL, PASSWORD
@@ -99,7 +94,6 @@ def perform_microsoft_login(page):
         logging.warning(f"Não foi possível obter credenciais de config: {e}")
         return
 
-    # Preenche o e-mail
     try:
         page.wait_for_selector('input[name="loginfmt"]', timeout=8000)
         logging.info("Preenchendo e-mail da conta Microsoft...")
@@ -109,7 +103,6 @@ def perform_microsoft_login(page):
     except Exception:
         pass
 
-    # Preenche a senha
     try:
         page.wait_for_selector('input[name="passwd"]', timeout=8000)
         logging.info("Preenchendo senha...")
@@ -119,7 +112,6 @@ def perform_microsoft_login(page):
     except Exception:
         pass
 
-    # Pula o KMSI (manter conectado)
     try:
         page.wait_for_selector('#KmsiCheckboxField, input[id="idSIButton9"]', timeout=8000)
         logging.info("Pulando confirmação KMSI...")
@@ -128,9 +120,7 @@ def perform_microsoft_login(page):
     except Exception:
         pass
 
-
 def scrape_all_faqs():
-    """Conecta ao SharePoint via Playwright usando autenticação automática e atualiza a coluna conteudo no SQLite."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -156,7 +146,6 @@ def scrape_all_faqs():
         context = browser.new_context()
         page = context.new_page()
 
-        # Efetua login inicial no SharePoint usando a primeira URL
         first_url = pending_faqs[0][2]
         logging.info(f"🔑 Acessando portal para autenticação inicial...")
         page.goto(first_url, wait_until="domcontentloaded", timeout=40000)
@@ -170,12 +159,10 @@ def scrape_all_faqs():
                 logging.info(f"⏳ Raspando: '{titulo}' ({url})")
                 page.goto(url, wait_until="networkidle", timeout=35000)
                 
-                # Se for redirecionado para login no meio do caminho, realiza login novamente
                 if "login.microsoftonline.com" in page.url:
                     perform_microsoft_login(page)
                     page.goto(url, wait_until="networkidle", timeout=35000)
 
-                # Tenta localizar o contêiner de conteúdo do SharePoint
                 try:
                     page.wait_for_selector('div[data-automation-id="CanvasLayout"], .ck-content, [data-automation-id="CanvasZone"]', timeout=15000)
                 except Exception:

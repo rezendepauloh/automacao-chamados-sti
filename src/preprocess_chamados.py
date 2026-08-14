@@ -92,7 +92,19 @@ ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
 
 
-# --- Normalize units lookup ---
+def parse_date_safely(v):
+    if pd.isna(v) or not str(v).strip():
+        return v
+    s = str(v).strip()
+    if re.match(r'^\d{1,2}/\d{1,2}/\d{4}', s):
+        dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+    else:
+        dt = pd.to_datetime(s, errors='coerce')
+    if pd.isna(dt):
+        return s
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize('NFKD', str(text)).lower()
     text = ''.join(c for c in text if not unicodedata.combining(c))
@@ -208,19 +220,6 @@ def process_otrs(ts: str) -> pd.DataFrame:
     df['Título'] = df.get('Título', '').fillna('')
     
     if 'Data Criação' in df.columns:
-        def parse_date_safely(v):
-            if pd.isna(v) or not str(v).strip():
-                return v
-            s = str(v).strip()
-            # Se for formato BR DD/MM/YYYY
-            if re.match(r'^\d{1,2}/\d{1,2}/\d{4}', s):
-                dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
-            else:
-                dt = pd.to_datetime(s, errors='coerce')
-            if pd.isna(dt):
-                return s
-            return dt.strftime('%Y-%m-%d %H:%M:%S')
-
         df['Data Criação'] = df['Data Criação'].apply(parse_date_safely)
     
     if 'Comentários' not in df.columns:
@@ -252,18 +251,6 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     
     df = safe_read_excel(path)
     df['Data Criação'] = df['Data Criação'].astype(str)
-    def parse_date_safely(v):
-        if pd.isna(v) or not str(v).strip():
-            return v
-        s = str(v).strip()
-        if re.match(r'^\d{1,2}/\d{1,2}/\d{4}', s):
-            dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
-        else:
-            dt = pd.to_datetime(s, errors='coerce')
-        if pd.isna(dt):
-            return s
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
-
     df['Data Criação'] = df['Data Criação'].apply(parse_date_safely)
     df['Base'] = 'CitSmart'
     df = enrich_with_unidades(df, base='CitSmart')
@@ -364,4 +351,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.exception(f"Erro crítico no pré-processamento de chamados: {e}")
+        sys.exit(1)

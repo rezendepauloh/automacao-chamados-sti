@@ -69,37 +69,37 @@ def render_header_navigation() -> str:
 
     with st.popover("☰ Menu"):
         st.markdown("### 📌 Sistemas / Páginas")
-        if st.button("📋 Painel de Chamados", use_container_width=True, type=get_btn_type("📋 Painel de Chamados")):
+        if st.button("📋 Painel de Chamados", width='stretch', type=get_btn_type("📋 Painel de Chamados")):
             set_page("📋 Painel de Chamados")
-        if st.button("🏢 Catálogo de Unidades", use_container_width=True, type=get_btn_type("🏢 Catálogo de Unidades")):
+        if st.button("🏢 Catálogo de Unidades", width='stretch', type=get_btn_type("🏢 Catálogo de Unidades")):
             set_page("🏢 Catálogo de Unidades")
-        if st.button("📞 Central Telefônica (OXE)", use_container_width=True, type=get_btn_type("📞 Central Telefônica (OXE)")):
+        if st.button("📞 Central Telefônica (OXE)", width='stretch', type=get_btn_type("📞 Central Telefônica (OXE)")):
             set_page("📞 Central Telefônica (OXE)")
 
-        if st.button("📅 Plantões da Bancada", use_container_width=True, type=get_btn_type("📅 Plantões da Bancada")):
+        if st.button("📅 Plantões da Bancada", width='stretch', type=get_btn_type("📅 Plantões da Bancada")):
             set_page("📅 Plantões da Bancada")
-        if st.button("📅 Calendário Geral", use_container_width=True, type=get_btn_type("📅 Calendário Geral")):
+        if st.button("📅 Calendário Geral", width='stretch', type=get_btn_type("📅 Calendário Geral")):
             set_page("📅 Calendário Geral")
-        if st.button("📜 Portarias da Bancada", use_container_width=True, type=get_btn_type("📜 Portarias da Bancada")):
+        if st.button("📜 Portarias da Bancada", width='stretch', type=get_btn_type("📜 Portarias da Bancada")):
             set_page("📜 Portarias da Bancada")
-        if st.button("📍 Mapa & Localização", use_container_width=True, type=get_btn_type("📍 Mapa & Localização")):
+        if st.button("📍 Mapa & Localização", width='stretch', type=get_btn_type("📍 Mapa & Localização")):
             set_page("📍 Mapa & Localização")
-        if st.button("🖥️ Doação & Redistribuição", use_container_width=True, type=get_btn_type("🖥️ Doação & Redistribuição")):
+        if st.button("🖥️ Doação & Redistribuição", width='stretch', type=get_btn_type("🖥️ Doação & Redistribuição")):
             set_page("🖥️ Doação & Redistribuição")
-        if st.button("📜 Fiscalização de Contratos", use_container_width=True, type=get_btn_type("📜 Fiscalização de Contratos")):
+        if st.button("📜 Fiscalização de Contratos", width='stretch', type=get_btn_type("📜 Fiscalização de Contratos")):
             set_page("📜 Fiscalização de Contratos")
-        if st.button("🛡️ Controle de Garantia", use_container_width=True, type=get_btn_type("🛡️ Controle de Garantia")):
+        if st.button("🛡️ Controle de Garantia", width='stretch', type=get_btn_type("🛡️ Controle de Garantia")):
             set_page("🛡️ Controle de Garantia")
-        if st.button("🖨️ Impressoras (PaperCut)", use_container_width=True, type=get_btn_type("🖨️ Impressoras (PaperCut)")):
+        if st.button("🖨️ Impressoras (PaperCut)", width='stretch', type=get_btn_type("🖨️ Impressoras (PaperCut)")):
             set_page("🖨️ Impressoras (PaperCut)")
 
-        if st.button("⚡ Scripts de Automação", use_container_width=True, type=get_btn_type("⚡ Scripts de Automação")):
+        if st.button("⚡ Scripts de Automação", width='stretch', type=get_btn_type("⚡ Scripts de Automação")):
             set_page("⚡ Scripts de Automação")
-        if st.button("📚 FAQ & Tutoriais", use_container_width=True, type=get_btn_type("📚 FAQ & Tutoriais")):
+        if st.button("📚 FAQ & Tutoriais", width='stretch', type=get_btn_type("📚 FAQ & Tutoriais")):
             set_page("📚 FAQ & Tutoriais")
         
         st.markdown("---")
-        if st.button(notif_btn_label, use_container_width=True, type=get_btn_type("🔔 Central de Notificações")):
+        if st.button(notif_btn_label, width='stretch', type=get_btn_type("🔔 Central de Notificações")):
             set_page("🔔 Central de Notificações")
 
     return st.session_state["current_page"]

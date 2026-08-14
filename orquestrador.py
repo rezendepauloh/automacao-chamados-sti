@@ -87,8 +87,8 @@ def main():
         sys.exit(1)
 
     scripts = [
-        ("src/otrs_scraper.py", "Coleta OTRS"),
-        ("src/citsmart_scraper.py", "Coleta CitSmart"),
+        ("src/scrapers/otrs_scraper.py", "Coleta OTRS"),
+        ("src/scrapers/citsmart_scraper.py", "Coleta CitSmart"),
         ("src/preprocess_chamados.py", "Pré-processamento"),
         ("src/tag_classifier.py", "Classificação de TAGs por IA")
     ]

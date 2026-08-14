@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 import sys
+from pathlib import Path
+
+# Adiciona o diretório raiz e o diretório src ao sys.path para suportar importações diretas
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 import time
 import json
 import logging
-from pathlib import Path
 from datetime import datetime
-
-root_dir = Path(__file__).parent.parent
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
-
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -25,17 +29,12 @@ from src.config import (
     get_chrome_driver, cleanup_old_files
 )
 
-# ---------------------------
-# Configuração de Logging
-# ---------------------------
 logger = setup_logging(DEBUG_DIR_OXE / "oxe_scraper.log", __name__)
 
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-# -----------------------------------------------------------------
 
 def salvar_screenshot(driver, nome_etapa: str):
-    """Salva screenshot da tela do navegador para auxílio no depuramento."""
     try:
         ts = datetime.now().strftime("%H-%M-%S")
         filename = f"debug_oxe_{ts}_{nome_etapa}.png"
@@ -45,16 +44,12 @@ def salvar_screenshot(driver, nome_etapa: str):
     except Exception as e:
         logger.warning(f"Não foi possível salvar screenshot '{nome_etapa}': {e}")
 
-
 def initial_config():
-    """Inicializa o driver Chrome configurado para ignorar erros SSL."""
     driver = get_chrome_driver(headless=HEADLESS, disable_gpu=True)
     wait = WebDriverWait(driver, timeout=EXPLICIT_WAIT, poll_frequency=0.2)
     return driver, wait
 
-
 def realizar_login_oxe(driver, wait):
-    """Acessa a interface web da Central Telefônica OXE e efetua o login."""
     target_url = OXE_URL if OXE_URL.endswith("/") else f"{OXE_URL}/"
     login_full_url = f"{target_url}#/login"
     
@@ -62,7 +57,6 @@ def realizar_login_oxe(driver, wait):
     driver.get(login_full_url)
     time.sleep(2)
 
-    # 0. Injeta o interceptador XHR/Fetch no navegador ANTES do login para capturar o Authorization header
     logger.info("Injetando interceptador de cabeçalhos de autenticação XHR/Fetch...")
     driver.execute_script("""
         (function() {
@@ -96,7 +90,6 @@ def realizar_login_oxe(driver, wait):
         })();
     """)
 
-    # 1. Trata aceite de riscos / certificados no caso do Chrome exibir a tela de aviso
     try:
         page_src = driver.page_source.lower()
         if "details-button" in page_src or "err_cert" in page_src or "privacidade" in page_src or "particular" in page_src:
@@ -110,7 +103,6 @@ def realizar_login_oxe(driver, wait):
     except Exception as cert_err:
         logger.debug(f"Bypass de certificado via DOM não foi necessário: {cert_err}")
 
-    # 2. Localiza os campos #username e #password
     logger.info("Aguardando formulário de login...")
     try:
         user_field = wait.until(EC.element_to_be_clickable((By.ID, "username")))
@@ -135,7 +127,6 @@ def realizar_login_oxe(driver, wait):
     pwd_field.send_keys(OXE_PASS)
     driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true })); arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", pwd_field)
 
-    # 3. Clica no botão de login (#login-button)
     logger.info(f"Efetuando login no OXE com o usuário '{OXE_USER}'...")
     login_btn = driver.find_element(By.ID, "login-button")
     try:
@@ -143,14 +134,12 @@ def realizar_login_oxe(driver, wait):
     except Exception:
         driver.execute_script("arguments[0].click();", login_btn)
 
-    # Trata submissão de formulário se o botão de clique puro não disparar no Angular
     try:
         form = driver.find_element(By.TAG_NAME, "form")
         driver.execute_script("arguments[0].dispatchEvent(new Event('submit', { bubbles: true }));", form)
     except Exception:
         pass
 
-    # 4. Aguarda a autenticação e gravação das credenciais de sessão
     time.sleep(3)
     logger.info(f"URL após login: {driver.current_url}")
     
@@ -185,7 +174,6 @@ def realizar_login_oxe(driver, wait):
         """)
         logger.warning(f"⚠️ Token não encontrado. Conteúdo atual dos Storages: {storage_dump}")
 
-    # Interage com elementos do menu se necessário para disparar chamadas do Angular
     try:
         elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'UTILIZADORES', 'utilizadores'), 'utilizadores') or contains(text(), 'Subscriber')]")
         if elements:
@@ -195,12 +183,7 @@ def realizar_login_oxe(driver, wait):
     except Exception as nav_err:
         logger.debug(f"Interação de menu opcional: {nav_err}")
 
-
 def fetch_oxe_api_js(driver, api_endpoint: str):
-    """
-    Executa uma requisição GET assíncrona utilizando o fetch nativo do contexto do navegador,
-    suportando 'id_token' do sessionStorage e realizando retentativas com e sem o prefixo Bearer.
-    """
     js_code = f"""
         var callback = arguments[arguments.length - 1];
         
@@ -263,12 +246,7 @@ def fetch_oxe_api_js(driver, api_endpoint: str):
         logger.debug(f"Erro na requisição JS para {api_endpoint}: {err_msg}")
         return None
 
-
 def fetch_oxe_batch_subscriber_details_js(driver, ramais_list: list) -> dict:
-    """
-    Executa requisições em lote paralelo via Promise.all no contexto do navegador
-    para obter os detalhes avançados de cada Subscriber (Grupo de Captura, Categoria Rede Pública, etc).
-    """
     if not ramais_list:
         return {}
 
@@ -307,12 +285,7 @@ def fetch_oxe_batch_subscriber_details_js(driver, ramais_list: list) -> dict:
         return res.get("data", {})
     return {}
 
-
 def fetch_oxe_batch_tsc_ip_js(driver, ramais_list: list) -> dict:
-    """
-    Executa requisições em lote paralelo via Promise.all no contexto do navegador
-    para obter os detalhes dos telefones IP (IP e MAC Address).
-    """
     if not ramais_list:
         return {}
 
@@ -351,13 +324,7 @@ def fetch_oxe_batch_tsc_ip_js(driver, ramais_list: list) -> dict:
         return res.get("data", {})
     return {}
 
-
 def extrair_dados_assinantes(driver):
-    """
-    Busca a lista completa de utilizadores/assinantes via API do OXE,
-    recupera os detalhes estendidos do ramal (Grupo de Captura, Categoria Rede Pública)
-    e os detalhes dos telefones IP (IP e Endereço MAC).
-    """
     subscribers_endpoint = (
         "/api/mgt/1.0/Node/1/Subscriber?attributes="
         "Annu_Name,Annu_First_Name,UTF8_Phone_Book_Name,UTF8_Phone_Book_First_Name,"
@@ -377,7 +344,6 @@ def extrair_dados_assinantes(driver):
 
     todos_ramais = [str(s.get("Directory_Number", "")).strip() for s in subscribers if s.get("Directory_Number")]
 
-    # 1. Consulta paralela em lote para Detalhes do Ramal (/Subscriber/{num_ramal})
     logger.info(f"⚡ Disparando consulta paralela em lote de detalhes avançados para {len(todos_ramais)} ramais...")
     subscriber_details_map = {}
     chunk_size = 100
@@ -390,7 +356,6 @@ def extrair_dados_assinantes(driver):
 
     logger.info(f"✅ Detalhes avançados (Grupo de Captura, Categoria) obtidos para {len(subscriber_details_map)} ramais.")
 
-    # 2. Consulta paralela em lote para Detalhes IP (/Tsc_IP_subscriber/{num_ramal})
     ramais_ip_candidatos = []
     for sub in subscribers:
         num_ramal = str(sub.get("Directory_Number", "")).strip()
@@ -441,7 +406,6 @@ def extrair_dados_assinantes(driver):
 
             registro = {}
 
-            # 1. Traz TODOS os atributos brutos retornados pela API /Subscriber/{num_ramal}
             detalhes_ramal = subscriber_details_map.get(num_ramal, {})
             if isinstance(detalhes_ramal, dict):
                 for k, v in detalhes_ramal.items():
@@ -450,7 +414,6 @@ def extrair_dados_assinantes(driver):
                     else:
                         registro[k] = v
 
-            # 2. Insere/Padroniza as colunas principais tratadas no dicionário
             registro["Ramal"] = num_ramal
             registro["Nome / Titular"] = name
             registro["Complemento"] = first_name or utf8_first
@@ -466,7 +429,6 @@ def extrair_dados_assinantes(driver):
             registro["Placa"] = board if board != 255 else "-"
             registro["Terminal"] = terminal if terminal != 255 else "-"
 
-            # Detalhes IP da rota /Tsc_IP_subscriber/{num_ramal}
             ip_address = ""
             mac_address = ""
             
@@ -478,7 +440,6 @@ def extrair_dados_assinantes(driver):
             registro["Endereço IP"] = ip_address
             registro["MAC Address"] = mac_address
 
-
             registros_finais.append(registro)
 
         except Exception as item_err:
@@ -487,13 +448,11 @@ def extrair_dados_assinantes(driver):
 
     return registros_finais
 
-
 def scrape_oxe():
-    """Função principal para execução do Scraper da Central Telefônica OXE."""
     logger.info("=== Iniciando Scraper da Central Telefônica (OXE) ===")
     
     if not OXE_PASS:
-        logger.error("❌ A senha do OXE (OXE_PASS) não foi configurada! Por favor, execute 'python src/salvar_senha.py' para cadastrar a senha no cofre de senhas do Windows ou configure OXE_PASS no arquivo .env.")
+        logger.error("❌ A senha do OXE (OXE_PASS) não foi configurada!")
         return False
 
     driver = None
@@ -508,7 +467,6 @@ def scrape_oxe():
             logger.error("Nenhum registro foi coletado da Central Telefônica.")
             return False
 
-        # Exportação para arquivo Excel
         out_dir = Path("01 - Dados Brutos")
         out_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
@@ -559,25 +517,18 @@ def scrape_oxe():
             except Exception:
                 pass
 
-
 def check_oxe_sync_running() -> bool:
-    """Verifica se a sincronização da Central OXE está em andamento."""
     import tempfile
     lock_file = Path(tempfile.gettempdir()) / "oxe_scraper.lock"
     return check_process_running(lock_file)
 
-
 def read_oxe_last_log_lines(n: int = 15) -> str:
-    """Lê as últimas N linhas do log do scraper do OXE."""
     log_path = Path("debug_logs") / "oxe" / "oxe_scraper.log"
     return read_log_lines(log_path, n)
 
-
 if __name__ == "__main__":
-    import sys
     import os
     import tempfile
-    from pathlib import Path
 
     lock_path = Path(tempfile.gettempdir()) / "oxe_scraper.lock"
     with open(lock_path, "w") as f:

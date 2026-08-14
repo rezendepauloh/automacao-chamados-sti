@@ -231,11 +231,11 @@ def render_chamados_page():
     with col_btn:
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         if robo_ativo:
-            st.button("🤖 Robô em Execução...", use_container_width=True, disabled=True)
+            st.button("🤖 Robô em Execução...", width='stretch', disabled=True)
         else:
             run_orquestrador = st.button(
                 "🔄 Atualizar Chamados", 
-                use_container_width=True, 
+                width='stretch', 
                 help="Executa o orquestrador completo em segundo plano.",
                 type="primary"
             )
@@ -400,7 +400,7 @@ def render_chamados_page():
 
     col_btn_sel1, col_btn_sel2 = st.sidebar.columns(2)
     with col_btn_sel1:
-        if st.button("☑️ Marcar Todos", use_container_width=True, help="Seleciona todas as opções"):
+        if st.button("☑️ Marcar Todos", width='stretch', help="Seleciona todas as opções"):
             st.session_state["f_status"] = list(status_options)
             st.session_state["f_tags"] = list(tag_options)
             st.session_state["f_cities"] = list(city_options)
@@ -408,7 +408,7 @@ def render_chamados_page():
             st.session_state["f_bases"] = list(base_options)
             st.rerun()
     with col_btn_sel2:
-        if st.button("🧹 Limpar Tudo", use_container_width=True, help="Limpa todos os filtros ativos"):
+        if st.button("🧹 Limpar Tudo", width='stretch', help="Limpa todos os filtros ativos"):
             st.session_state["f_date_range"] = (min_date, max_date)
             st.session_state["f_status"] = []
             st.session_state["f_tags"] = []
@@ -647,13 +647,13 @@ def render_chamados_page():
                 st.markdown("#### 🏢 Top Prédios / Cidades com Mais Chamados")
                 city_counts = filtered_df['cidade_predio'].value_counts().head(10).reset_index()
                 city_counts.columns = ['Prédio / Cidade', 'Quantidade']
-                st.bar_chart(city_counts.set_index('Prédio / Cidade'), use_container_width=True)
+                st.bar_chart(city_counts.set_index('Prédio / Cidade'), width='stretch')
 
             with g_col2:
                 st.markdown("#### 🏛️ Top Unidades / Setores Mais Demandantes")
                 unit_counts = filtered_df['unidade'].value_counts().head(10).reset_index()
                 unit_counts.columns = ['Unidade / Setor', 'Quantidade']
-                st.bar_chart(unit_counts.set_index('Unidade / Setor'), use_container_width=True)
+                st.bar_chart(unit_counts.set_index('Unidade / Setor'), width='stretch')
 
             st.markdown("---")
 
@@ -662,13 +662,13 @@ def render_chamados_page():
                 st.markdown("#### 🏷️ Distribuição por Categoria (TAG de IA)")
                 tag_counts = filtered_df['tag'].value_counts().reset_index()
                 tag_counts.columns = ['Categoria (TAG)', 'Quantidade']
-                st.bar_chart(tag_counts.set_index('Categoria (TAG)'), use_container_width=True)
+                st.bar_chart(tag_counts.set_index('Categoria (TAG)'), width='stretch')
 
             with g_col4:
                 st.markdown("#### 👤 Top Usuários que Mais Abrem Chamados")
                 user_counts = filtered_df['usuario'].value_counts().head(10).reset_index()
                 user_counts.columns = ['Usuário', 'Quantidade']
-                st.bar_chart(user_counts.set_index('Usuário'), use_container_width=True)
+                st.bar_chart(user_counts.set_index('Usuário'), width='stretch')
                 
             st.markdown("---")
 
@@ -677,12 +677,12 @@ def render_chamados_page():
                 st.markdown("#### 🔄 Origem dos Chamados (Base)")
                 base_counts = filtered_df['base'].value_counts().reset_index()
                 base_counts.columns = ['Base de Origem', 'Quantidade']
-                st.bar_chart(base_counts.set_index('Base de Origem'), use_container_width=True)
+                st.bar_chart(base_counts.set_index('Base de Origem'), width='stretch')
 
             with g_col6:
                 st.markdown("#### 📍 Status por Prédio / Cidade (Abertos x Fechados)")
                 status_city = filtered_df.groupby(['cidade_predio', 'status']).size().unstack(fill_value=0)
-                st.bar_chart(status_city.head(10), use_container_width=True)
+                st.bar_chart(status_city.head(10), width='stretch')
         else:
             st.info("Sem chamados no filtro selecionado para renderizar gráficos.")
 
@@ -826,7 +826,7 @@ def render_chamados_page():
             st.subheader(f"📋 Lista de Chamados ({len(filtered_df)} registros)")
             st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha para abrir os Detalhes no Modal.")
         with col_tbl_cap:
-            components.html("""
+            st.components.v1.html("""
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
             <div style="text-align: right; padding-top: 5px;">
                 <button id="btn-cap-tbl" onclick="captureTable()" style="

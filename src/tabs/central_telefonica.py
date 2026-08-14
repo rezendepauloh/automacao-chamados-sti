@@ -9,7 +9,7 @@ root_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(root_dir))
 
 from src.database import get_central_telefonica_df
-from src.oxe_scraper import check_oxe_sync_running, read_oxe_last_log_lines
+from src.scrapers.oxe_scraper import check_oxe_sync_running, read_oxe_last_log_lines
 from src.components.status_banner import render_log_expander
 from src.components.pagination import (
     render_items_per_page_selector,
@@ -78,11 +78,11 @@ def render_central_telefonica_page():
     with st.sidebar:
         st.markdown("## ⚙️ Ações e Coleta")
         if oxe_ativo:
-            st.button("🤖 Sincronizando OXE...", use_container_width=True, disabled=True)
+            st.button("🤖 Sincronizando OXE...", width='stretch', disabled=True)
         else:
-            if st.button("🔄 Sincronizar Ramais (OXE)", type="primary", use_container_width=True, help="Executa o scraper e o pré-processamento em segundo plano."):
+            if st.button("🔄 Sincronizar Ramais (OXE)", type="primary", width='stretch', help="Executa o scraper e o pré-processamento em segundo plano."):
                 import subprocess, time
-                subprocess.Popen([sys.executable, "src/oxe_scraper.py"])
+                subprocess.Popen([sys.executable, "src/scrapers/oxe_scraper.py"])
                 time.sleep(1.0)
                 st.toast("🚀 Scraper do OXE iniciado em segundo plano!", icon="🤖")
                 st.rerun()
@@ -376,7 +376,7 @@ def render_central_telefonica_page():
 
     selection_event = st.dataframe(
         df_page,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -416,7 +416,7 @@ def render_central_telefonica_page():
         data=output.getvalue(),
         file_name=f"Central_Telefonica_Filtrada_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
+        width='stretch'
     )
 
 

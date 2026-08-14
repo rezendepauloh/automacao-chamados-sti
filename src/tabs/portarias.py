@@ -11,7 +11,7 @@ from src.components.pagination import (
     render_pagination_controls
 )
 from src.components.status_banner import render_log_expander
-from src.sync_portarias import check_portarias_sync_running, read_portarias_last_log_lines
+from src.syncs.sync_portarias import check_portarias_sync_running, read_portarias_last_log_lines
 
 logger = setup_logging(DEBUG_DIR_FAQ / "portarias.log", "portarias")
 
@@ -188,11 +188,11 @@ def render_portarias_page():
 
         st.markdown("<br>", unsafe_allow_html=True)
         if portarias_ativo:
-            st.button("🤖 Atualizando...", use_container_width=True, disabled=True)
+            st.button("🤖 Atualizando...", width='stretch', disabled=True)
         else:
-            if st.button("🔄 Atualizar Dados (API)", use_container_width=True, help="Busca novas portarias em segundo plano."):
+            if st.button("🔄 Atualizar Dados (API)", width='stretch', help="Busca novas portarias em segundo plano."):
                 import sys, subprocess, time
-                subprocess.Popen([sys.executable, "src/sync_portarias.py"])
+                subprocess.Popen([sys.executable, "src/syncs/sync_portarias.py"])
                 time.sleep(0.8)
                 st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
                 st.rerun()
@@ -291,7 +291,7 @@ def render_portarias_page():
             st.caption(f"🏛️ **Origem:** {portaria['origem']} ({portaria['subtipo']})")
         with c_pdf:
             if portaria['pdf_url']:
-                st.link_button("📥 Abrir PDF / Anexo MPMS ↗", url=portaria['pdf_url'], type="primary", use_container_width=True)
+                st.link_button("📥 Abrir PDF / Anexo MPMS ↗", url=portaria['pdf_url'], type="primary", width='stretch')
 
     # Paginação dos registros
     page_portarias, current_page, total_pages, total_items = paginate_items(
@@ -318,11 +318,11 @@ def render_portarias_page():
                 
                 c_b1, c_b2 = st.columns([1, 1])
                 with c_b1:
-                    if st.button("📖 Ver Detalhes", key=f"btn_port_{p['id']}", use_container_width=True):
+                    if st.button("📖 Ver Detalhes", key=f"btn_port_{p['id']}", width='stretch'):
                         open_portaria_modal(p)
                 with c_b2:
                     if p['pdf_url']:
-                        st.link_button("📥 PDF MPMS ↗", url=p['pdf_url'], use_container_width=True)
+                        st.link_button("📥 PDF MPMS ↗", url=p['pdf_url'], width='stretch')
 
 
     # Controles da Paginação ao final da página

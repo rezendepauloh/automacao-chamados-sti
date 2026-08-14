@@ -4,6 +4,13 @@ import pandas as pd
 import shutil
 from typing import Tuple, Any
 
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from config import (
     DEBUG_DIR_SYNC, OUTPUT_DIR_PRONTO,
     MASTER_FILE_PATH, TREINO_PATH,
@@ -15,25 +22,15 @@ try:
     from win32com.client import constants
 except ImportError:
     win32 = None
-    constants = None # type: ignore
+    constants = None
 
-# --------------------------------------------------------------------------
-# Configuração de Logging
-# --------------------------------------------------------------------------
 logger = setup_logging(DEBUG_DIR_SYNC / "sync_master.log", __name__)
 
-# --------------------------------------------------------------------------
-# Funções de Integração COM (Excel)
-# --------------------------------------------------------------------------
 def format_excel(excel_data: Tuple[Any, Any], fechar_apos=True):
-    """Aplica formatação (bordas, cores, tamanho das colunas e quebra de texto) nativamente via Excel."""
     excel_app, wb = excel_data
     ws = wb.Sheets(1)
     used = ws.UsedRange
 
-    # --------------------------------------------------------------------------
-    # Dicionários de Cores e Larguras (Recuperados do código original)
-    # --------------------------------------------------------------------------
     TAG_COLORS = {
         "BACKUP": "#dd5358",
         "EVENTO": "#ce66ce",
@@ -55,51 +52,45 @@ def format_excel(excel_data: Tuple[Any, Any], fechar_apos=True):
     }
 
     COLUMN_WIDTHS = {
-        1: 15,   # Chamado#
-        2: 25,   # Nome do Usuário
-        3: 20,   # Data Criação
-        4: 30,   # TAG
-        5: 25,   # Cidade - Prédio
-        6: 25,   # Unidade
-        7: 12,   # Ramal
-        8: 20,   # Andamento
-        9: 100,  # Descrição
-        10: 15,  # Base
+        1: 15,
+        2: 25,
+        3: 20,
+        4: 30,
+        5: 25,
+        6: 25,
+        7: 12,
+        8: 20,
+        9: 100,
+        10: 15,
     }
 
-    # Função para converter cores HEX (ex: #dd5358) para o formato nativo do Excel (OLE Color)
     def hex_to_excel_color(hex_str):
         h = hex_str.lstrip('#')
         r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
         return r + (g * 256) + (b * 65536)
 
-    # 1. Aplicar a largura exata de cada coluna
     for col_idx, width in COLUMN_WIDTHS.items():
         try:
             ws.Columns(col_idx).ColumnWidth = width
         except Exception:
             pass
 
-    # 1.1 Aplicar o NumberFormat brasileiro para a coluna Data Criação (Coluna 3)
     try:
         ws.Columns(3).NumberFormat = "dd/mm/aaaa hh:mm:ss"
     except Exception:
         pass
 
-    # 2. Descobrir em que coluna exata a palavra "TAG" está na Master
     tag_col_idx = -1
     for c in range(1, used.Columns.Count + 1):
         if ws.Cells(1, c).Value == "TAG":
             tag_col_idx = c
             break
 
-    # 3. Formatar o Cabeçalho (Cinza escuro com texto a branco)
     header = ws.Range(ws.Cells(1, 1), ws.Cells(1, used.Columns.Count))
     header.Interior.Color = 0x808080
     header.Font.Bold = True
     header.Font.Color = 0xFFFFFF
 
-    # 4. Pintar cada linha consoante a sua respetiva TAG
     if tag_col_idx != -1:
         for r in range(2, used.Rows.Count + 1):
             cell_value = ws.Cells(r, tag_col_idx).Value
@@ -109,15 +100,11 @@ def format_excel(excel_data: Tuple[Any, Any], fechar_apos=True):
                     row_range = ws.Range(ws.Cells(r, 1), ws.Cells(r, used.Columns.Count))
                     row_range.Interior.Color = hex_to_excel_color(TAG_COLORS[tag_name])
 
-    # 5. Ativar a "Quebra de Texto" (Wrap) de forma GLOBAL para todas as colunas
-    # Isso garante que se qualquer metadado (ex: "Cidade - Prédio") for muito longo, ele quebre a linha e fique legível sem ser cortado
     try:
         used.WrapText = True
     except Exception:
         pass
 
-    # 5.1 Reseta a altura de todas as linhas de dados para um padrão uniforme antes de rodar o AutoFit.
-    # Isso remove travamentos e overrides manuais antigos e garante que o Excel recalcule a altura ideal do zero!
     if used.Rows.Count > 1:
         try:
             data_rows = ws.Range(ws.Cells(2, 1), ws.Cells(used.Rows.Count, used.Columns.Count))
@@ -125,13 +112,11 @@ def format_excel(excel_data: Tuple[Any, Any], fechar_apos=True):
         except Exception:
             pass
 
-    # 5.2 Manda o Excel recalcular a altura ideal de todas as linhas de forma precisa
     try:
         used.Rows.AutoFit()
     except Exception:
         pass
 
-    # ---- Guardar o ficheiro ----
     wb.Save()
     
     if fechar_apos:
@@ -143,7 +128,6 @@ def format_excel(excel_data: Tuple[Any, Any], fechar_apos=True):
             pass
 
 def read_excel_com_to_df(ws) -> pd.DataFrame:
-    """Lê planilha via Win32 COM, retirando TimeZones para não quebrar no Pandas."""
     used_range = ws.UsedRange.Value
     if not used_range:
         return pd.DataFrame()
@@ -163,7 +147,6 @@ def read_excel_com_to_df(ws) -> pd.DataFrame:
     return df
 
 def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any, Any, bool, bool]:
-    """Sincroniza os chamados novos com a planilha Master no SharePoint e extrai chamados fechados."""
     def clean_ticket_id(series):
         return series.astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
 
@@ -171,9 +154,9 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
     df_tagged_novo['Chamado#'] = clean_ticket_id(df_tagged_novo['Chamado#'])
 
     try:
-        excel = win32.GetActiveObject("Excel.Application") # type: ignore
+        excel = win32.GetActiveObject("Excel.Application")
     except Exception:
-        excel = win32.Dispatch("Excel.Application") # type: ignore
+        excel = win32.Dispatch("Excel.Application")
         excel.Visible = False
         
     excel.DisplayAlerts = False
@@ -200,14 +183,10 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
 
     chamados_novos = {str(cid).strip() for cid in df_tagged_novo['Chamado#'] if cid and str(cid).strip().lower() not in ('nan', 'none', '')}
 
-    # ======= SALVAGUARDA CONTRA FALHA DE SCRAPING =======
     if not chamados_novos:
-        logger.warning("⚠️ ALERTA DE SEGURANÇA: A lista de novos chamados está VAZIA! "
-                       "Isso pode indicar uma falha nos scrapers ou problemas de rede/credenciais. "
-                       "Sincronização abortada para evitar a exclusão em massa de chamados ativos na planilha Master.")
+        logger.warning("⚠️ ALERTA DE SEGURANÇA: A lista de novos chamados está VAZIA! Sincronização abortada.")
         return excel, wb_master, False, was_already_open
 
-    # ======= LÓGICA DE TREINO E LIMPEZA DA MASTER =======
     houve_exclusao = False
     fechados_ids = chamados_master - chamados_novos
     
@@ -215,9 +194,7 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
         logger.info(f"Chamados fechados identificados: {len(fechados_ids)}. Movendo para Treino e limpando da Master...")
         df_fechados = df_master_tagged[df_master_tagged['Chamado#'].isin(fechados_ids)].copy()
         
-        # 1. Salva no Treino
         try:
-            # Vacina contra o aviso (FutureWarning) do Pandas
             df_fechados_clean = df_fechados.dropna(how='all') 
             
             if not df_fechados_clean.empty:
@@ -234,14 +211,11 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
         except Exception as e:
             logger.error(f"Erro ao salvar chamados fechados no treino: {e}", exc_info=True)
 
-        # 2. Deleta as linhas da planilha Master via Excel COM (De baixo para cima!)
         last_row_master = ws_tagged.Cells(ws_tagged.Rows.Count, 1).End(-4162).Row
         linhas_deletadas = 0
         
-        for r in range(last_row_master, 1, -1): # Vai da última linha até a linha 2
+        for r in range(last_row_master, 1, -1):
             celula_id = ws_tagged.Cells(r, 1).Value
-            
-            # Limpa o ID lido do Excel (remove o .0 fantasma) para o if funcionar com perfeição
             raw_id = str(celula_id).strip()
             if raw_id.endswith('.0'):
                 raw_id = raw_id[:-2]
@@ -252,50 +226,32 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
                 
         logger.info(f"{linhas_deletadas} linhas apagadas da Planilha Master.")
         houve_exclusao = True
-    # ================================================
 
     novos_ids = chamados_novos - chamados_master
     if not novos_ids:
         logger.info("Nenhum chamado novo para adicionar à Master.")
-        # ATENÇÃO AQUI: Se apagamos linhas, retornamos True para o robô saber que precisa salvar o Excel!
         return excel, wb_master, houve_exclusao, was_already_open
 
     df_apenas_novos = df_tagged_novo[df_tagged_novo['Chamado#'].isin(novos_ids)].copy()
     
-    # =================================================================
-    # ALINHAMENTO INTELIGENTE DE COLUNAS
-    # =================================================================
     if df_master_tagged is not None and len(df_master_tagged.columns) > 0:
         colunas_master = df_master_tagged.columns.tolist()
         
-        # 1. Cria colunas vazias caso a master tenha colunas que os dados novos não têm
         for col in colunas_master:
             if col not in df_apenas_novos.columns:
                 df_apenas_novos[col] = ""
                 
-        # 2. Reordena e filtra as colunas para ficarem EXATAMENTE iguais à master
         df_apenas_novos = df_apenas_novos[colunas_master]
-    # =================================================================
     
-    # =================================================================
-    # SANITIZAÇÃO DE DATA CRIAÇÃO (Imunidade contra inversão de Dia/Mês)
-    # =================================================================
     if 'Data Criação' in df_apenas_novos.columns:
         try:
-            # Força a conversão para datetime (tratando possíveis anomalias)
             dt_col = pd.to_datetime(df_apenas_novos['Data Criação'], errors='coerce')
-            # Grava estritamente como string formato ISO (YYYY-MM-DD HH:MM:SS)
-            # Isso impede que o Excel COM (que conversa em en-US) inverta dia/mês para dias <= 12
             df_apenas_novos['Data Criação'] = dt_col.dt.strftime('%Y-%m-%d %H:%M:%S').fillna(df_apenas_novos['Data Criação'])
         except Exception as e:
             logger.error(f"Erro ao sanitizar Data Criação para ISO: {e}", exc_info=True)
-    # =================================================================
     
-    # 🧹 FAXINA CONTRA O 65535: 
-    # Transforma todos os vazios (NaN/NaT) do Python em strings vazias pro Excel entender
     df_apenas_novos = df_apenas_novos.fillna("")
 
-    # Transforma o DataFrame em uma lista de listas para o Excel
     data_list = df_apenas_novos.values.tolist()
     
     last_row = ws_tagged.UsedRange.Rows.Count
@@ -305,7 +261,6 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
     else:
         start_row = last_row + 1
 
-    # Insere os dados
     data_list = df_apenas_novos.values.tolist()
     if start_row == 1:
         headers = df_apenas_novos.columns.tolist()
@@ -317,27 +272,20 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
     
     ws_tagged.Range(ws_tagged.Cells(start_row, 1), ws_tagged.Cells(end_row, end_col)).Value = data_list
     
-    # =================================================================
-    # CORREÇÃO DA TABELA E FORMATAÇÃO CONDICIONAL
-    # =================================================================
-    # Verifica se existe uma Tabela Oficial do Excel (ListObject) na planilha
     if ws_tagged.ListObjects.Count > 0:
         tabela = ws_tagged.ListObjects(1)
         coluna_inicial = tabela.Range.Column
         linha_inicial = tabela.Range.Row
         
-        # O novo range da tabela vai da primeira célula do cabeçalho até a última linha e coluna
         novo_range = ws_tagged.Range(
             ws_tagged.Cells(linha_inicial, coluna_inicial), 
             ws_tagged.Cells(end_row, end_col)
         )
         tabela.Resize(novo_range)
-    # =================================================================
 
     logger.info(f"Adicionados {len(novos_ids)} novos chamados à Master.")
 
     return excel, wb_master, True, was_already_open
-
 
 def main():
     logger.info("=== INICIANDO SINCRONIZAÇÃO MASTER ===")

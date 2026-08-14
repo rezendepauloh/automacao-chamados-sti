@@ -13,29 +13,24 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Configura o path do projeto
-root_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(root_dir))
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 from src.database import save_ramais_to_db
 from src.config import USERNAME, PASSWORD, setup_logging, DEBUG_DIR_RAMAIS
 
-# ---------------------------
-# Utilitários e Log
-# ---------------------------
-# --- Configuração de logging ---
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Configuração de Logging
 logger = setup_logging(DEBUG_DIR_RAMAIS / "ramais_scraper.log", __name__)
 
-# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-# -----------------------------------------------------------------
 
 def check_ramais_sync_running() -> bool:
-    """Verifica se o processo de sincronização de ramais está ativo analisando o arquivo de lock."""
     import ctypes
     import tempfile
     lock_file = Path(tempfile.gettempdir()) / "automated_ramais_sync.lock"
@@ -53,15 +48,13 @@ def check_ramais_sync_running() -> bool:
             exit_code = ctypes.c_ulong()
             if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
                 kernel32.CloseHandle(handle)
-                return exit_code.value == 259  # STILL_ACTIVE
+                return exit_code.value == 259
             kernel32.CloseHandle(handle)
     except Exception:
         pass
     return False
 
-
 def read_ramais_last_log_lines(n: int = 15) -> str:
-    """Lê as últimas N linhas do arquivo de log do scraper de ramais."""
     log_path = DEBUG_DIR_RAMAIS / "ramais_scraper.log"
     if not log_path.exists():
         return "Nenhum log gerado ainda. Aguardando início..."
@@ -72,9 +65,7 @@ def read_ramais_last_log_lines(n: int = 15) -> str:
     except Exception as e:
         return f"Erro ao ler arquivo de log: {e}"
 
-
 def is_header_or_footer(line_str: str) -> bool:
-    """Verifica se a linha é cabeçalho/rodapé descartável do PDF."""
     if not line_str or not line_str.strip():
         return True
     s = line_str.strip().lower()
@@ -88,22 +79,16 @@ def is_header_or_footer(line_str: str) -> bool:
     for pat in ignore_patterns:
         if pat in s:
             return True
-    # Se for apenas um número de página solto (ex: "2", "12")
     if re.match(r'^\d{1,3}$', line_str.strip()):
         return True
     return False
 
-
 def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
-    """
-    Processa o arquivo PDF em memória usando pdfplumber e extrai os ramais organizados por localidade/setor.
-    """
     records = []
     current_localidade = "Geral"
 
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
-            # 1. Extração por Tabelas se existirem
             tables = page.extract_tables()
             if tables:
                 for table in tables:
@@ -111,7 +96,6 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
                         continue
                     headers = [str(cell).strip() if cell else "" for cell in table[0]]
                     
-                    # Verifica se é uma tabela de membros (PJ, MEMBRO, GABINETE, ASSESSORIA...)
                     if any("MEMBRO" in h.upper() for h in headers) or any("GABINETE" in h.upper() for h in headers):
                         for row in table[1:]:
                             if not row:
@@ -120,7 +104,6 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
                             if not row_str_list:
                                 continue
                             
-                            # Mapeia colunas para células
                             row_dict = {}
                             for idx, h_text in enumerate(headers):
                                 if idx < len(row):
@@ -131,7 +114,6 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
                             membro = row_dict.get("MEMBRO", "")
                             pj = row_dict.get("PJ", "")
                             
-                            # Se a primeira coluna não tiver header mas for nome de membro
                             if not membro and len(row_str_list) >= 2:
                                 membro = row_str_list[0]
                                 
@@ -149,7 +131,6 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
                                     })
                         continue
 
-            # 2. Extração linha a linha de texto
             text = page.extract_text()
             if not text:
                 continue
@@ -160,8 +141,6 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
                 if is_header_or_footer(line_clean):
                     continue
 
-                # Se a linha for um TÍTULO DE LOCALIDADE/SETOR PRINCIPAL
-                # Padrões: Toda em maiúsculas sem números longos, ou contendo PROMOTORIA DE JUSTIÇA, UNIDADE, DEPARTAMENTO, etc.
                 is_title = False
                 if any(kw in line_clean.upper() for kw in [
                     "PROMOTORIA DE JUSTIÇA", "PROCURADORIA", "UNIDADE", "SECRETARIA",
@@ -176,10 +155,8 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
                     current_localidade = line_clean
                     continue
 
-                # Se a linha contiver números de ramais (4 dígitos ou formato telefone)
                 phone_match = re.search(r'(\+?55\s*)?\(?\d{2}\)?\s*9?\d{4}[-\s]?\d{4}|\b\d{4}\b|\b\d{4}/\d{4}\b', line_clean)
                 if phone_match:
-                    # Separa o nome do setor/membro dos números
                     parts = re.split(r'(\b\d{4}(?:/\d{4})*\b|\b\d{4}-\d{4}\b|\b33\d{2}-\d{4}\b)', line_clean)
                     if len(parts) >= 2:
                         setor_str = parts[0].strip()
@@ -196,9 +173,7 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
 
     return records
 
-
 def run_ramais_scraper():
-    """Executa a sincronização dos PDFs de ramais da Intranet do MPMS."""
     load_dotenv()
     
     otrs_user = USERNAME or os.getenv("OTRS_USER")
@@ -229,7 +204,6 @@ def run_ramais_scraper():
     except Exception as e:
         logger.error(f"Falha ao realizar login na intranet: {e}")
 
-    # Fazer GET na página principal da intranet
     intranet_url = "https://www.mpms.mp.br/intranet"
     pdf_links = {}
 
@@ -237,7 +211,6 @@ def run_ramais_scraper():
         resp_intra = session.get(intranet_url, verify=False, timeout=15)
         soup = BeautifulSoup(resp_intra.text, "html.parser")
 
-        # Busca links contendo os textos indicados
         for a_tag in soup.find_all("a", href=True):
             text = a_tag.get_text().strip()
             title = a_tag.get("title", "").strip()
@@ -251,7 +224,6 @@ def run_ramais_scraper():
     except Exception as e:
         logger.error(f"Erro ao buscar links de ramais na página da Intranet: {e}")
 
-    # Links de fallback descobertos se a busca por HTML não retornar nada
     fallback_links = {
         "Interior": "/anexo/MTAxMDYxNDE2ODMyMWQ0MjFjZmEyZTJkODEzYzI5ZDUzZWUzNTllMDJkM2VhLTAyMg",
         "Capital / PGJ": "/anexo/MTAxMDYxNDI3NTAyMWVmZWY2MjA4MjRhN2FiZDY2ZDU5ZTQxMmUyZDVjODJmLTAyMg"
@@ -281,13 +253,11 @@ def run_ramais_scraper():
 
     if all_records:
         df_ramais = pd.DataFrame(all_records)
-        # Limpeza de duplicatas exatas
         df_ramais.drop_duplicates(subset=["localidade", "setor_nome", "telefone_ramal"], inplace=True)
         save_ramais_to_db(df_ramais)
         logger.info(f"Sincronização concluída com {len(df_ramais)} ramais salvos no SQLite!")
     else:
         logger.warning("Nenhum registro de ramal foi extraído dos PDFs!")
-
 
 if __name__ == "__main__":
     import tempfile

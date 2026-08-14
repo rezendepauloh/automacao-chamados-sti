@@ -30,7 +30,7 @@ def render_notificacoes_page():
         else:
             st.success("🎉 Todas as notificações estão em dia!")
     with c_act:
-        if st.button("✅ Marcar Todas como Lidas", use_container_width=True, disabled=(unread_count == 0)):
+        if st.button("✅ Marcar Todas como Lidas", width='stretch', disabled=(unread_count == 0)):
             mark_all_notifications_as_read()
             st.toast("Todas as notificações foram marcadas como lidas!", icon="✅")
             st.rerun()
@@ -145,14 +145,14 @@ def render_notificacoes_page():
                 
                 # Botão para redirecionar para a página da notificação
                 if link_pagina:
-                    if st.button("🔗 Acessar Página", key=f"btn_nav_{notif_id}", use_container_width=True):
+                    if st.button("🔗 Acessar Página", key=f"btn_nav_{notif_id}", width='stretch'):
                         mark_notification_as_read(notif_id)
                         st.session_state["current_page"] = link_pagina
                         st.rerun()
 
                 # Botão para marcar como lida
                 if not is_read:
-                    if st.button("✔ Marcar como Lida", key=f"btn_read_n_{notif_id}", use_container_width=True):
+                    if st.button("✔ Marcar como Lida", key=f"btn_read_n_{notif_id}", width='stretch'):
                         mark_notification_as_read(notif_id)
                         st.toast("Notificação marcada como lida!", icon="✅")
                         st.rerun()

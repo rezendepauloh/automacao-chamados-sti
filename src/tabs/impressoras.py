@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 from src.database import get_impressoras_df
-from src.papercut_scraper import check_papercut_sync_running, read_papercut_last_log_lines, run_papercut_scraper
+from src.scrapers.papercut_scraper import check_papercut_sync_running, read_papercut_last_log_lines, run_papercut_scraper
 from src.components.status_banner import render_log_expander
 from src.components.pagination import (
     render_items_per_page_selector,
@@ -87,10 +87,10 @@ def show_printer_details(row_data):
                     label="🌐 Interface Web ↗",
                     url=url_web,
                     type="primary",
-                    use_container_width=True
+                    width='stretch'
                 )
         with c_ping:
-            do_ping = st.button("📡 Testar Ping", use_container_width=True, key=f"btn_ping_{clean_ip}")
+            do_ping = st.button("📡 Testar Ping", width='stretch', key=f"btn_ping_{clean_ip}")
 
         if do_ping:
             with st.spinner(f"Disparando 4 pacotes de ping para {clean_ip}..."):
@@ -140,11 +140,11 @@ def render_impressoras_page():
     with st.sidebar:
         st.markdown("## ⚙️ Ações e Coleta")
         if papercut_ativo:
-            st.sidebar.button("🤖 Sincronizando PaperCut...", use_container_width=True, disabled=True)
+            st.sidebar.button("🤖 Sincronizando PaperCut...", width='stretch', disabled=True)
         else:
-            if st.sidebar.button("🔄 Sincronizar Impressoras", type="primary", use_container_width=True, help="Executa a coleta e unificação de dados do PaperCut em segundo plano."):
+            if st.sidebar.button("🔄 Sincronizar Impressoras", type="primary", width='stretch', help="Executa a coleta e unificação de dados do PaperCut em segundo plano."):
                 import sys, subprocess, time
-                subprocess.Popen([sys.executable, "src/papercut_scraper.py"])
+                subprocess.Popen([sys.executable, "src/scrapers/papercut_scraper.py"])
                 time.sleep(1.0)
                 st.toast("🚀 Sincronização do PaperCut iniciada em segundo plano!", icon="🤖")
                 st.rerun()
@@ -305,7 +305,7 @@ def render_impressoras_page():
                 data=buffer,
                 file_name=f"impressoras_papercut_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width='stretch'
             )
 
         # Formatação das colunas para exibição amigável
@@ -346,7 +346,7 @@ def render_impressoras_page():
 
         selection_event = st.dataframe(
             df_page,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config={
                 "IP / Hostname": st.column_config.LinkColumn(
@@ -391,7 +391,7 @@ def render_impressoras_page():
             if not df_filtered.empty and 'tipo' in df_filtered.columns:
                 tipo_counts = df_filtered['tipo'].value_counts().reset_index()
                 tipo_counts.columns = ['Tipo', 'Quantidade']
-                st.bar_chart(tipo_counts, x='Tipo', y='Quantidade', use_container_width=True)
+                st.bar_chart(tipo_counts, x='Tipo', y='Quantidade', width='stretch')
             else:
                 st.info("Sem dados suficientes.")
                 
@@ -400,6 +400,6 @@ def render_impressoras_page():
             if not df_filtered.empty and 'status' in df_filtered.columns:
                 status_counts = df_filtered['status'].value_counts().reset_index()
                 status_counts.columns = ['Status', 'Quantidade']
-                st.bar_chart(status_counts, x='Status', y='Quantidade', use_container_width=True)
+                st.bar_chart(status_counts, x='Status', y='Quantidade', width='stretch')
             else:
                 st.info("Sem dados suficientes.")

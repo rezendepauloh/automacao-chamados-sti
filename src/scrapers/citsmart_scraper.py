@@ -1,4 +1,15 @@
 # -*- coding: utf-8 -*-
+import sys
+from pathlib import Path
+
+# Adiciona o diretório raiz e o diretório src ao sys.path para suportar importações diretas
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -11,7 +22,6 @@ import time
 import pandas as pd
 import re
 import logging
-from pathlib import Path
 import json
 import html
 from ldap3 import SUBTREE
@@ -25,20 +35,15 @@ from config import (
 # ---------------------------
 # Utilitários e Log
 # ---------------------------
-# --- Configuração de logging ---
 logger = setup_logging(DEBUG_DIR_CITSMART / "citsmart_scraper.log", __name__)
 
-# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-# -----------------------------------------------------------------
 
 def salvar_screenshot(driver, nome_etapa):
-    """Tira um print da tela para vermos exatamente o que o Selenium vê."""
     ts = datetime.now().strftime("%H-%M-%S")
     filename = f"debug_citsmart_{ts}_{nome_etapa}.png"
     
-    # Se o nome do print indicar erro, falha ou timeout, salva no subdiretório 'errors'
     if any(k in nome_etapa.lower() for k in ["erro", "falha", "timeout"]):
         error_dir = DEBUG_DIR_CITSMART / "errors"
         error_dir.mkdir(parents=True, exist_ok=True)
@@ -49,9 +54,7 @@ def salvar_screenshot(driver, nome_etapa):
     driver.save_screenshot(str(filepath))
     logger.debug(f"📸 Screenshot salvo: {filepath.name}")
 
-
 def inspecionar_elemento(driver, seletor, nome_elemento):
-    """Extrai informações vitais do elemento antes de tentar clicar."""
     logger.debug(f"🔍 Inspecionando: {nome_elemento} {seletor}")
     try:
         elementos = driver.find_elements(*seletor)
@@ -60,7 +63,7 @@ def inspecionar_elemento(driver, seletor, nome_elemento):
             return None
         
         el = elementos[0]
-        html_trecho = el.get_attribute('outerHTML')[:150] # Pega os primeiros 150 caracteres
+        html_trecho = el.get_attribute('outerHTML')[:150]
         
         logger.debug(f"Status de {nome_elemento}:")
         logger.debug(f" - Visível na tela? {el.is_displayed()}")
@@ -72,9 +75,6 @@ def inspecionar_elemento(driver, seletor, nome_elemento):
         return None
 
 def find_all(ctx, candidates, timeout=5):
-    """
-    Retorna a primeira lista de elementos encontrada dentre os candidatos.
-    """
     for by, sel in candidates:
         try:
             WebDriverWait(ctx, timeout).until(EC.presence_of_element_located((by, sel)))
@@ -85,18 +85,9 @@ def find_all(ctx, candidates, timeout=5):
             continue
     return []
 
-# ---------------------------
-# AD (Active Directory) - Versão Robusta
-# ---------------------------
 def fetch_setor_temp(conn, query_val, is_username=False):
-    """
-    Busca o setor do usuário no AD de forma unificada e parametrizável.
-    """
     return fetch_ad_department(conn, query_val, is_username=is_username)
 
-# ---------------------------
-# Navegador / Login
-# ---------------------------
 def initial_config():
     driver = get_chrome_driver(headless=HEADLESS, page_load_strategy="eager", disable_gpu=True)
     wait = WebDriverWait(driver, timeout=EXPLICIT_WAIT, poll_frequency=0.1)
@@ -106,21 +97,18 @@ def navigate_to_caixa_entrada(driver, wait):
     logger.info("Acessando CitSmart e fazendo login…")
     driver.get(CITSMART_URL)
 
-    # 1) E-mail
     email = wait.until(EC.element_to_be_clickable((By.NAME, "loginfmt")))
     driver.execute_script("arguments[0].click()", email)
     time.sleep(0.5)
     email.clear(); email.send_keys(CITSMART_EMAIL)
     wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
 
-    # 2) Senha
     pwd = wait.until(EC.element_to_be_clickable((By.NAME, "passwd")))
     driver.execute_script("arguments[0].click()", pwd)
     time.sleep(0.5)
     pwd.clear(); pwd.send_keys(PASSWORD)
     wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
 
-    # 3) KMSI
     try:
         wait.until(EC.presence_of_element_located((By.ID, "KmsiCheckboxField")))
         logger.info("Pulando KMSI de manter conectado…")
@@ -128,7 +116,6 @@ def navigate_to_caixa_entrada(driver, wait):
     except TimeoutException:
         pass
 
-    # 4) Redirecionamento Direto para LowCode
     logger.info("Aguardando carregamento do portal inicial...")
     wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
     time.sleep(5) 
@@ -156,24 +143,12 @@ def navigate_to_caixa_entrada(driver, wait):
         driver.save_screenshot(str(error_dir / f"erro_iframe_app_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"))
         raise
 
-# ---------------------------
-# Manipulação da Tabela e Paginação
-# ---------------------------
 def expand_all_records_lowcode(driver, wait):
-    """
-    Tenta localizar o pager (id='pageSize') e setar para 100 itens.
-    Usa o loader específico (.hyper-loading) para sincronizar.
-    """
     logger.info("Tentando expandir registros (LowCode)...")
-    # salvar_screenshot(driver, "1_inicio_expansao")
-    
-    # Seletor do GIF de carregamento
     loader_loc = (By.CSS_SELECTOR, "div.hyper-loading")
 
-    # Função auxiliar para esperar o loader sumir
     def wait_loader_vanish(timeout=30):
         try:
-            # Espera até que o elemento fique invisível (display: none)
             WebDriverWait(driver, timeout).until(
                 EC.invisibility_of_element_located(loader_loc)
             )
@@ -182,19 +157,13 @@ def expand_all_records_lowcode(driver, wait):
 
     try:
         time.sleep(3) 
-        
-        # 1. ANTES DE TUDO: Garante que a página está "quieta"
         wait_loader_vanish()
-        # salvar_screenshot(driver, "2_pos_primeiro_loader")
-
         logger.info("Procurando o dropdown de itens por página...")
         
-        # 2. Espera o select específico (novo ID) aparecer na tela
         dropdown_element = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.ID, "pageSize"))
         )
         
-        # Injeta o interceptador de XHR para capturar o JSON de chamados diretamente do AngularJS/LowCode!
         logger.info("Injetando interceptador XHR no contexto do iframe para captura direta de JSON...")
         driver.execute_script("""
             (function() {
@@ -224,13 +193,11 @@ def expand_all_records_lowcode(driver, wait):
                                         candidate = data.list;
                                     }
                                     
-                                    // Valida se o candidato é de fato um array de chamados (deve conter ticket_id ou id)
                                     if (candidate && candidate.length > 0) {
                                         var has_ticket_id = candidate.some(function(item) {
                                             return item && (item.ticket_id || item.id);
                                         });
                                         if (has_ticket_id) {
-                                            // Mantém o maior lote capturado e evita que requests menores de atualização sobrescrevam
                                             if (!window.__captured_tickets__ || candidate.length > window.__captured_tickets__.length) {
                                                 window.__captured_tickets__ = candidate;
                                                 console.log("🔥 [CAPTURED TICKETS] " + window.__captured_tickets__.length + " chamados gravados!");
@@ -251,10 +218,8 @@ def expand_all_records_lowcode(driver, wait):
             })();
         """)
 
-        # Usa o Select do Selenium para interagir com ele
         dropdown = Select(dropdown_element)
         
-        # Verifica se já está em 100
         try:
             current = dropdown.first_selected_option.text.strip()
         except:
@@ -264,7 +229,6 @@ def expand_all_records_lowcode(driver, wait):
             logger.info("Já está exibindo 100 registros. Forçando toggle (100 -> 50 -> 100) para registrar captura de rede...")
             dropdown.select_by_visible_text("50")
             time.sleep(1.5)
-            # Re-localiza elemento para evitar StaleElementReferenceException
             dropdown_element = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.ID, "pageSize"))
             )
@@ -273,31 +237,17 @@ def expand_all_records_lowcode(driver, wait):
             time.sleep(1)
             wait_loader_vanish(timeout=30)
         else:
-            # 3. APLICA A MUDANÇA
             dropdown.select_by_visible_text("100")
             logger.info("Sucesso! Paginação alterada para 100 itens.")
-            
-            # Tira foto exatamente após o clique
-            # salvar_screenshot(driver, "3_apos_selecionar_100")
-            
-            # Dá 1 segundo para o sistema injetar o loader na tela
             time.sleep(1) 
-            
-            # Agora esperamos ele SUMIR de verdade
             logger.info("Aguardando o loader (.hyper-loading) desaparecer...")
             wait_loader_vanish(timeout=30)
-            
-            # Tira foto do resultado final da tabela
-            # salvar_screenshot(driver, "4_resultado_final")
 
-        # 4. Extrai a contagem final para garantir que atualizou (usando o NOVO HTML)
         try:
-            # Busca pela div específica do AngularJS que contém "Mostrando 1–17 de 17"
             pager_info = driver.find_element(By.CSS_SELECTOR, "div[ng-if='totalTickets']")
             text = pager_info.text.strip()  
             logger.info(f"Paginação atualizada: {text}")
 
-            # Usa Regex para capturar o número total que vem depois da palavra "de"
             match = re.search(r"de\s+(\d+)", text)
             if match:
                 return int(match.group(1))
@@ -308,21 +258,16 @@ def expand_all_records_lowcode(driver, wait):
 
     except TimeoutException:
         logger.error("Aviso: Dropdown 'pageSize' não encontrado a tempo. Seguindo com a página atual.")
-        # salvar_screenshot(driver, "ERRO_timeout")
         return 0
     except Exception as e:
         logger.error(f"Erro ao expandir registros: {e}")
-        # salvar_screenshot(driver, "ERRO_excecao")
         return 0
 
 def clean_html_comment(html_str):
     if not html_str:
         return ""
-    # Remove tags HTML
     txt = re.sub(r'<[^>]*>', ' ', html_str)
-    # Decodifica entidades HTML
     txt = html.unescape(txt)
-    # Remove linhas vazias redundantes
     lines = [line.strip() for line in txt.splitlines() if line.strip()]
     return "\n".join(lines)
 
@@ -333,9 +278,6 @@ def _list_rows(driver):
         return []
 
 def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
-    # Nota: Já estamos no iframe correto, não precisa de switch_to_incidents
-    
-    # 1. TENTA EXTRAÇÃO ULTRARRÁPIDA VIA JSON INTERCEPTADO NO XHR
     try:
         captured = driver.execute_script("return window.__captured_tickets__;")
         if captured and isinstance(captured, list) and len(captured) > 0:
@@ -349,25 +291,21 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         
                     solicitante_nome = ticket.get("ticket_requester", "")
                     
-                    # Extração do ID do Cliente (username do email_solicitante)
                     id_cliente = ""
                     email_solicitante = ticket.get("email_solicitante", "")
                     if email_solicitante and "@" in email_solicitante:
                         id_cliente = email_solicitante.split("@")[0].strip()
                     
-                    # Tratamento inteligente de Data
                     data_criacao = ""
                     iso_str = ticket.get("ticket_creationdate_str", "")
                     if iso_str:
                         try:
-                            # "2026-05-07T11:12:07.396Z" -> "07/05/2026 11:12"
                             clean_iso = iso_str.split(".")[0].replace("Z", "")
                             dt = datetime.strptime(clean_iso, "%Y-%m-%dT%H:%M:%S")
                             data_criacao = dt.strftime("%d/%m/%Y %H:%M")
                         except Exception:
                             data_criacao = iso_str
 
-                    # Carrega comentários do cache
                     comments_list = []
                     if cache and cid in cache:
                         cached_comments_str = cache[cid].get('Comentários', '[]')
@@ -376,7 +314,6 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         except:
                             pass
 
-                    # Tenta extrair o último comentário do JSON atual
                     ticket_ocorrencia = ticket.get("ticket_ocorrencia")
                     if ticket_ocorrencia and ticket_ocorrencia.strip():
                         texto_limpo = clean_html_comment(ticket_ocorrencia)
@@ -389,7 +326,6 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                             "texto": texto_limpo
                         }
                         
-                        # Evita duplicidade comparando data e conteúdo
                         exists = False
                         for existing in comments_list:
                             if existing.get('data') == new_comment['data'] and existing.get('texto') == new_comment['texto']:
@@ -400,13 +336,11 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
 
                     comments_json = json.dumps(comments_list, ensure_ascii=False)
 
-                    # Verificação de Cache
                     if cache and cid in cache:
                         cached_ip = cache[cid].get('IP_Origem') or ""
                         cached_unidade = cache[cid].get('Unidade') or ""
                         cached_desc = cache[cid].get('Descrição') or ""
                         cached_hostname = cache[cid].get('Hostname') or ""
-                        # Se temos o IP no cache, aproveitamos 100% (trazendo também o Hostname do cache)
                         if cached_ip:
                             collected.append({
                                 "Chamado#": cid,
@@ -423,7 +357,6 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE MATCH] Chamado {cid} (com IP: {cached_ip}) recuperado do cache anterior!")
                             continue
                         else:
-                            # Se não temos o IP, reaproveitamos os outros dados do cache e apenas buscamos o IP e Hostname
                             sccm_ip = ""
                             sccm_hostname = ""
                             if id_cliente:
@@ -446,7 +379,6 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                             logger.info(f"[{idx+1}/{len(captured)}] ⚡ [CACHE PARCIAL] Chamado {cid} recuperado do cache anterior, consultando IP no SCCM...")
                             continue
                      
-                    # Enriquecimento AD se disponível, senão usa unidade nativa do JSON
                     localidade = "Não encontrada no AD"
                     if ad_conn:
                         if id_cliente:
@@ -462,7 +394,7 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                         from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
                         sccm_ip = fetch_ip_from_sccm(id_cliente)
                         sccm_hostname = fetch_hostname_from_sccm(id_cliente)
- 
+
                     collected.append({
                         "Chamado#": cid,
                         "ID do Cliente": id_cliente,
@@ -483,10 +415,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
     except Exception as e:
         logger.warning(f"Aviso: Não foi possível usar extração ultrarrápida JS ({e}). Usando modo tradicional...")
 
-    # 2. SE NÃO HOUVER JSON, SEGUI COM O MÉTODO TRADICIONAL DE RASPAGEM DO DOM
     rows = _list_rows(driver)
     
-    # Se não achou linhas, espera um pouco e tenta de novo (carregamento lento)
     if not rows:
         logger.info("Nenhuma linha encontrada na tabela. Aguardando 3s...")
         time.sleep(3)
@@ -497,29 +427,25 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
 
     for idx, row in enumerate(rows):
         try:
-            # Função auxiliar para pegar texto de colunas ng-switch
             def get_val(key, is_description=False):
                 try:
                     xpath = f".//div[@ng-switch-when='{key}']"
                     element = row.find_element(By.XPATH, xpath)
                     if is_description:
-                        # Descrição costuma estar num title de span
                         return element.find_element(By.TAG_NAME, "span").get_attribute("title") or element.text.strip()
                     return element.get_attribute("textContent").strip()
                 except:
                     return ""
 
-            # --- Extração ---
             num_bruto = get_val("1")
             num_match = re.search(r'\d+', num_bruto)
             cid = num_match.group(0) if num_match else ""
 
-            if not cid: continue # Pula linhas inválidas
+            if not cid: continue
 
             solicitante_full = get_val("6")
             data_criacao = get_val("9")
 
-            # --- Tratamento inteligente de login/id_cliente ---
             solicitante_nome = solicitante_full
             id_cliente = ""
             
@@ -531,10 +457,8 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                 except:
                     pass
 
-            # Carrega comentários do cache se existirem no DOM
             comments_json = cache[cid].get('Comentários', '[]') if (cache and cid in cache) else '[]'
 
-            # Verificação de Cache
             if cache and cid in cache:
                 cached_ip = cache[cid].get('IP_Origem') or ""
                 cached_unidade = cache[cid].get('Unidade') or ""
@@ -581,11 +505,9 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
 
             descricao = get_val("10", is_description=True)
 
-            # --- Enriquecimento AD ---
             localidade = "Não encontrada no AD"
             if ad_conn:
                 if id_cliente:
-                    # Consulta direta pelo sAMAccountName (login) extraído dos parênteses do DOM
                     localidade = fetch_setor_temp(ad_conn, id_cliente, is_username=True)
                 else:
                     localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
@@ -618,22 +540,18 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
 
 def ir_para_proxima_pagina(driver, wait):
     try:
-        # Busca o botão da seta "Próximo" (›)
         btn_next_container = wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, "li.pagination-next")
         ))
 
-        # Se tiver a classe 'disabled', acabaram as páginas
         if "disabled" in btn_next_container.get_attribute("class"):
             logger.info("Paginação encerrada: Botão 'Próximo' está desabilitado.")
             return False
 
-        # Clica no link dentro do LI
         link_next = btn_next_container.find_element(By.TAG_NAME, "a")
         driver.execute_script("arguments[0].click();", link_next)
         logger.info("Navegando para a próxima página...")
 
-        # Aguarda tabela atualizar
         time.sleep(3)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#table tbody tr")))
         return True
@@ -642,11 +560,7 @@ def ir_para_proxima_pagina(driver, wait):
         logger.error(f"Fim da paginação ou erro: {e}")
         return False
 
-# ---------------------------
-# Fluxo principal
-# ---------------------------
 def scrape_citsmart():
-    # Carrega cache do último arquivo de CitSmart gerado
     cache = {}
     try:
         out_dir = Path("01 - Dados Brutos")
@@ -700,13 +614,11 @@ def scrape_citsmart():
             else:
                 logger.info("Aviso: Página retornou 0 registros.")
 
-            # Tenta ir para próxima página
             if not ir_para_proxima_pagina(driver, wait):
                 break
             
             pagina += 1
 
-        # Exportação Final
         if todos_os_dados:
             out_dir = Path("01 - Dados Brutos")
             out_dir.mkdir(exist_ok=True)
@@ -733,7 +645,6 @@ def scrape_citsmart():
 
             logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")
             
-            # Limpeza de arquivos antigos (mantém no máximo os 10 últimos do CitSmart)
             cleanup_old_files(out_dir, "Chamados_CitSmart_*.xlsx", keep_count=10)
             return True
         else:
@@ -760,7 +671,6 @@ def scrape_citsmart():
                 logger.warning(f"Aviso ao fechar driver: {quit_error}")
 
 if __name__ == "__main__":
-    import sys
     if scrape_citsmart():
         sys.exit(0)
     else:

@@ -12,7 +12,7 @@ from src.components.pagination import (
     render_pagination_controls
 )
 from src.components.status_banner import render_log_expander
-from src.sync_fiscalizacao import check_fiscalizacao_sync_running, read_fiscalizacao_last_log_lines
+from src.syncs.sync_fiscalizacao import check_fiscalizacao_sync_running, read_fiscalizacao_last_log_lines
 from src.database import (
     get_fiscalizacao_indicacoes_df,
     get_fiscalizacao_publicacoes_df,
@@ -145,11 +145,11 @@ def _consultar_portaria_mpms(nome_portaria: str, fiscal_titular: str = "", fisca
                         data=resp_dl.content,
                         file_name=nome_arquivo,
                         mime="application/pdf",
-                        use_container_width=True,
+                        width='stretch',
                         key=f"dl_portaria_{atocod}_{idx}",
                     )
                 except Exception:
-                    st.link_button("🔗 Abrir no MPMS", download_url, use_container_width=True)
+                    st.link_button("🔗 Abrir no MPMS", download_url, width='stretch')
         elif nome_arquivo:
             st.markdown("---")
             st.info(f"📎 **Arquivo anexo:** {nome_arquivo}")
@@ -242,11 +242,11 @@ def render_contracts_page():
     st.sidebar.markdown("---")
     st.sidebar.markdown("## ⚙️ Ações e Sincronização")
     if fiscalizacao_ativo:
-        st.sidebar.button("🤖 Sincronizando...", use_container_width=True, disabled=True)
+        st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
     else:
-        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", use_container_width=True, help="Busca atualizações na planilha do SharePoint em segundo plano."):
+        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
             import sys, subprocess, time
-            subprocess.Popen([sys.executable, "src/sync_fiscalizacao.py"])
+            subprocess.Popen([sys.executable, "src/syncs/sync_fiscalizacao.py"])
             time.sleep(0.5)
             st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
             st.rerun()
@@ -320,7 +320,7 @@ def render_contracts_page():
                     data=excel_bytes,
                     file_name="contratos_fiscais_filtrados.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    width='stretch'
                 )
 
         if not df_filtered_ind.empty:
@@ -332,7 +332,7 @@ def render_contracts_page():
 
             st.dataframe(
                 df_page_ind,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "nº Saj": st.column_config.TextColumn("Nº SAJ"),
@@ -372,14 +372,14 @@ def render_contracts_page():
             g_col1, g_col2 = st.columns(2)
             with g_col1:
                 st.markdown("#### 📌 Distribuição de Titularidades")
-                st.bar_chart(df_comp.set_index("Fiscal")[["Como Titular"]], use_container_width=True)
+                st.bar_chart(df_comp.set_index("Fiscal")[["Como Titular"]], width='stretch')
             with g_col2:
                 st.markdown("#### 🔄 Distribuição de Suplências")
-                st.bar_chart(df_comp.set_index("Fiscal")[["Como Suplente"]], use_container_width=True)
+                st.bar_chart(df_comp.set_index("Fiscal")[["Como Suplente"]], width='stretch')
                 
             st.markdown("---")
             st.markdown("#### 📊 Carga Total Comparativa de Fiscais")
-            st.bar_chart(df_comp.set_index("Fiscal")[["Como Titular", "Como Suplente"]], use_container_width=True)
+            st.bar_chart(df_comp.set_index("Fiscal")[["Como Titular", "Como Suplente"]], width='stretch')
 
             st.markdown("---")
             st.subheader("📦 Agrupamento por Tipo de Objeto / Equipamento")
@@ -419,7 +419,7 @@ def render_contracts_page():
                 
                 o_col1, o_col2 = st.columns([2, 1])
                 with o_col1:
-                    st.bar_chart(counts_obj.set_index("Categoria"), use_container_width=True)
+                    st.bar_chart(counts_obj.set_index("Categoria"), width='stretch')
                 with o_col2:
                     st.markdown("##### 📌 Quantidade por Tipo:")
                     for _, r in counts_obj.iterrows():
@@ -454,7 +454,7 @@ def render_contracts_page():
 
             selection_pub = st.dataframe(
                 df_page_pub,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "nº Saj": st.column_config.TextColumn("Nº SAJ"),
@@ -500,7 +500,7 @@ def render_contracts_page():
     elif selected_subtab == "📊 Tabela Contadora":
         st.subheader("📊 Tabela de Contagem Geral")
         if not df_contador.empty:
-            st.dataframe(df_contador, use_container_width=True, hide_index=True)
+            st.dataframe(df_contador, width='stretch', hide_index=True)
         else:
             st.info("Aba Contador indisponível ou vazia na planilha.")
 

@@ -125,6 +125,65 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
         body.dark-mode .modal-body strong { color: #f0f6fc; }
         body.dark-mode .close-btn { color: #8b949e; }
 
+        /* POPOVER "+X MAIS" (FULLCALENDAR MORE-POPOVER) - DARK MODE */
+        body.dark-mode .fc {
+          --fc-page-bg-color: #161b22;
+          --fc-neutral-bg-color: #21262d;
+          --fc-border-color: #262730;
+        }
+        body.dark-mode .fc-popover {
+          background-color: #161b22 !important;
+          border: 1px solid #30363d !important;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.8) !important;
+          border-radius: 10px !important;
+          color: #e6edf3 !important;
+        }
+        body.dark-mode .fc-popover-header {
+          background-color: #21262d !important;
+          color: #f0f6fc !important;
+          border-bottom: 1px solid #30363d !important;
+          border-top-left-radius: 9px !important;
+          border-top-right-radius: 9px !important;
+          padding: 8px 12px !important;
+        }
+        body.dark-mode .fc-popover-title {
+          color: #f0f6fc !important;
+          font-weight: 600 !important;
+          font-size: 0.95rem !important;
+        }
+        body.dark-mode .fc-popover-close {
+          color: #8b949e !important;
+          opacity: 0.8 !important;
+          cursor: pointer !important;
+        }
+        body.dark-mode .fc-popover-close:hover {
+          color: #f0f6fc !important;
+          opacity: 1 !important;
+        }
+        body.dark-mode .fc-popover-body {
+          background-color: #161b22 !important;
+          border-bottom-left-radius: 9px !important;
+          border-bottom-right-radius: 9px !important;
+          padding: 8px !important;
+        }
+        body.dark-mode .fc-popover .fc-daygrid-event {
+          background-color: #21262d;
+          border: 1px solid #30363d;
+          color: #e6edf3 !important;
+          margin-bottom: 4px !important;
+          border-radius: 6px !important;
+          padding: 4px 6px !important;
+        }
+        body.dark-mode .fc-popover .fc-daygrid-event:hover {
+          filter: brightness(1.15);
+        }
+        body.dark-mode .fc-popover .fc-event-title,
+        body.dark-mode .fc-popover .fc-event-time,
+        body.dark-mode .fc-popover .fc-event-main,
+        body.dark-mode .fc-popover .fc-daygrid-event-dot {
+          color: #e6edf3 !important;
+        }
+
         /* TEMA CLARO (LIGHT MODE) */
         body.light-mode {
           background-color: #ffffff;
@@ -180,6 +239,64 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
         body.light-mode .modal-body p { color: #334155; }
         body.light-mode .modal-body strong { color: #0f172a; }
         body.light-mode .close-btn { color: #64748b; }
+
+        /* POPOVER "+X MAIS" (FULLCALENDAR MORE-POPOVER) - LIGHT MODE */
+        body.light-mode .fc {
+          --fc-page-bg-color: #ffffff;
+          --fc-neutral-bg-color: #f8fafc;
+          --fc-border-color: #e2e8f0;
+        }
+        body.light-mode .fc-popover {
+          background-color: #ffffff !important;
+          border: 1px solid #cbd5e1 !important;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
+          border-radius: 10px !important;
+          color: #0f172a !important;
+        }
+        body.light-mode .fc-popover-header {
+          background-color: #f8fafc !important;
+          color: #0f172a !important;
+          border-bottom: 1px solid #e2e8f0 !important;
+          border-top-left-radius: 9px !important;
+          border-top-right-radius: 9px !important;
+          padding: 8px 12px !important;
+        }
+        body.light-mode .fc-popover-title {
+          color: #0f172a !important;
+          font-weight: 600 !important;
+          font-size: 0.95rem !important;
+        }
+        body.light-mode .fc-popover-close {
+          color: #64748b !important;
+          opacity: 0.8 !important;
+          cursor: pointer !important;
+        }
+        body.light-mode .fc-popover-close:hover {
+          color: #0f172a !important;
+          opacity: 1 !important;
+        }
+        body.light-mode .fc-popover-body {
+          background-color: #ffffff !important;
+          border-bottom-left-radius: 9px !important;
+          border-bottom-right-radius: 9px !important;
+          padding: 8px !important;
+        }
+        body.light-mode .fc-popover .fc-daygrid-event {
+          background-color: #f8fafc;
+          border: 1px solid #e2e8f0;
+          color: #0f172a !important;
+          margin-bottom: 4px !important;
+          border-radius: 6px !important;
+          padding: 4px 6px !important;
+        }
+        body.light-mode .fc-popover .fc-daygrid-event:hover {
+          background-color: #f1f5f9;
+        }
+        body.light-mode .fc-popover .fc-event-title,
+        body.light-mode .fc-popover .fc-event-time,
+        body.light-mode .fc-popover .fc-event-main {
+          color: inherit !important;
+        }
 
         .fc-event {
           cursor: pointer;
@@ -697,4 +814,4 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
     </html>
     """
     calendar_html = html_template.replace("__EVENTS_JSON__", events_json)
-    components.html(calendar_html, height=height_px, scrolling=scrolling_enabled)
+    st.components.v1.html(calendar_html, height=height_px, scrolling=scrolling_enabled)

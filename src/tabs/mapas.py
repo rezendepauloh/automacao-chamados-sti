@@ -319,7 +319,7 @@ def render_mapa_page():
         st.subheader("🎯 Salas")
     with col_clear:
         st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
-        if st.button("🧹 Limpar", use_container_width=True):
+        if st.button("🧹 Limpar", width='stretch'):
             st._global_route["origem"] = ""
             st._global_route["destino"] = ""
             st.session_state.sb_sala = "-- Selecione uma Sala --"
@@ -371,7 +371,7 @@ def render_mapa_page():
             st.subheader("🚶 Rota Interna")
         with col_clear_route:
             st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
-            if st.button("🧹 Limpar", key="btn_limpar_rota", use_container_width=True):
+            if st.button("🧹 Limpar", key="btn_limpar_rota", width='stretch'):
                 st._global_route["origem"] = ""
                 st._global_route["destino"] = ""
                 st.session_state.sb_origem = "-- Selecione a Origem --"
@@ -865,4 +865,4 @@ def render_mapa_page():
     """
     
     leaflet_html += f"\n<!-- key: map_{url_origem}_{url_destino}_{pavimento_id} -->"
-    components.html(leaflet_html, height=670)
+    st.components.v1.html(leaflet_html, height=670)

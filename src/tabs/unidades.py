@@ -16,8 +16,8 @@ from src.database import (
     get_ramais_df,
     update_unidade_manual_by_id
 )
-from src.unidades_scraper import check_unidades_sync_running, read_unidades_last_log_lines
-from src.ramais_scraper import check_ramais_sync_running, read_ramais_last_log_lines
+from src.scrapers.unidades_scraper import check_unidades_sync_running, read_unidades_last_log_lines
+from src.scrapers.ramais_scraper import check_ramais_sync_running, read_ramais_last_log_lines
 from src.components.status_banner import render_log_expander
 from src.components.subtabs import render_subtabs
 from src.components.pagination import (
@@ -60,9 +60,9 @@ def modal_detalhes_unidade(row_data: dict):
             st.markdown("<br>", unsafe_allow_html=True)
             col_sub, col_del = st.columns([2, 1])
             with col_sub:
-                submitted = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("💾 Salvar Alterações", type="primary", width='stretch')
             with col_del:
-                btn_delete = st.form_submit_button("🗑️ Excluir Registro", use_container_width=True)
+                btn_delete = st.form_submit_button("🗑️ Excluir Registro", width='stretch')
 
             if submitted:
                 if not setor or not cidade:
@@ -111,7 +111,7 @@ def modal_novo_setor_manual():
     telefone = st.text_input("📞 Telefone / Ramal", placeholder="Ex: (67) 3318-3939 / Ramal 3939")
     url = st.text_input("🔗 Link / Portal", placeholder="https://...")
 
-    if st.button("💾 Salvar no Banco Local", type="primary", use_container_width=True):
+    if st.button("💾 Salvar no Banco Local", type="primary", width='stretch'):
         if not setor or not cidade:
             st.error("Preencha ao menos Cidade e Nome do Setor!")
             return
@@ -153,7 +153,7 @@ def modal_detalhes_ramal(row_data: dict):
         st.markdown(f"**🔄 Atualizado em:** {dt_formatada}")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("Fechar", use_container_width=True):
+    if st.button("Fechar", width='stretch'):
         st.rerun()
 
 
@@ -208,35 +208,35 @@ def render_unidades_page():
     st.sidebar.markdown("## ⚙️ Ações e Gestão")
 
     if selected_tab == "🏢 Relação Unificada de Unidades":
-        if st.sidebar.button("➕ Novo Setor Interno", type="primary", use_container_width=True):
+        if st.sidebar.button("➕ Novo Setor Interno", type="primary", width='stretch'):
             modal_novo_setor_manual()
 
         st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
         if unidades_ativo:
-            st.sidebar.button("🤖 Unidades em Atualização...", use_container_width=True, disabled=True)
+            st.sidebar.button("🤖 Unidades em Atualização...", width='stretch', disabled=True)
         else:
-            if st.sidebar.button("🔄 Rodar Scraper Completo (Web)", use_container_width=True, help="Executa o scraper completo buscando dados atualizados no portal do MPMS em segundo plano."):
+            if st.sidebar.button("🔄 Rodar Scraper Completo (Web)", width='stretch', help="Executa o scraper completo buscando dados atualizados no portal do MPMS em segundo plano."):
                 import time
-                subprocess.Popen([sys.executable, "src/unidades_scraper.py"])
+                subprocess.Popen([sys.executable, "src/scrapers/unidades_scraper.py"])
                 time.sleep(0.8)
                 st.toast("🚀 Scraper Completo de Unidades iniciado em segundo plano!", icon="🤖")
                 st.rerun()
 
-            if st.sidebar.button("⚡ Atualização Rápida (Só Manuais)", use_container_width=True, help="Atualiza a base unificada de unidades com as unidades manuais do banco."):
+            if st.sidebar.button("⚡ Atualização Rápida (Só Manuais)", width='stretch', help="Atualiza a base unificada de unidades com as unidades manuais do banco."):
                 import time
-                subprocess.Popen([sys.executable, "src/unidades_scraper.py", "--only-manual"])
+                subprocess.Popen([sys.executable, "src/scrapers/unidades_scraper.py", "--only-manual"])
                 time.sleep(0.8)
                 st.toast("⚡ Sincronização rápida de manuais iniciada!", icon="⚡")
                 st.rerun()
 
     elif selected_tab == "📞 Lista de Ramais (Telefonia)":
         if ramais_ativo:
-            st.sidebar.button("🤖 Ramais em Sincronização...", use_container_width=True, disabled=True)
+            st.sidebar.button("🤖 Ramais em Sincronização...", width='stretch', disabled=True)
         else:
-            if st.sidebar.button("🔄 Atualizar Ramais (Intranet)", use_container_width=True, help="Executa o robô de extração de ramais em PDF da Intranet do MPMS em segundo plano."):
+            if st.sidebar.button("🔄 Atualizar Ramais (Intranet)", width='stretch', help="Executa o robô de extração de ramais em PDF da Intranet do MPMS em segundo plano."):
                 import time
-                subprocess.Popen([sys.executable, "src/ramais_scraper.py"])
+                subprocess.Popen([sys.executable, "src/scrapers/ramais_scraper.py"])
                 time.sleep(0.5)
                 st.toast("🚀 Sincronização de ramais iniciada em segundo plano!", icon="📞")
                 st.rerun()
@@ -363,7 +363,7 @@ def render_unidades_page():
                 },
                 column_order=["Origem", "Cidade", "Tipo", "Setor", "Sigla", "Titular", "Unidade (Prédio)", "Telefone", "URL"],
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 on_select="rerun",
                 selection_mode="single-row"
             )
@@ -434,7 +434,7 @@ def render_unidades_page():
                     "data_atualizacao": st.column_config.DatetimeColumn("Última Atualização", format="DD/MM/YYYY HH:mm"),
                 },
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 on_select="rerun",
                 selection_mode="single-row"
             )

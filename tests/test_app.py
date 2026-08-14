@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 # Importação dos módulos do projeto
 from src.preprocess_chamados import clean_otrs_description, normalize_text
 from src.tag_classifier import clean_text, normalize_for_extraction, detect_and_update_remote_locations
-from src.unidades_scraper import make_sigla
+from src.scrapers.unidades_scraper import make_sigla
 from src.manual_entries import set_city_into_unidade
 from src.config import save_df_to_excel_formatted, cleanup_old_files
 
@@ -219,14 +219,14 @@ class TestRequestsBasedUnidadesScraper(unittest.TestCase):
     """Testes para o unidades_scraper utilizando mocks de requisições HTTP."""
 
     def test_clean_url_prepends_domain(self):
-        from src.unidades_scraper import clean_url
+        from src.scrapers.unidades_scraper import clean_url
         self.assertEqual(clean_url("/promotorias/agua-clara"), "https://www.mpms.mp.br/promotorias/agua-clara")
         self.assertEqual(clean_url("https://www.mpms.mp.br/outro"), "https://www.mpms.mp.br/outro")
         self.assertEqual(clean_url(""), "")
 
     def test_get_cities_parses_html_correctly(self):
         from unittest.mock import patch
-        from src.unidades_scraper import get_cities
+        from src.scrapers.unidades_scraper import get_cities
 
         fake_html = """
         <div class="innerpage">
@@ -248,7 +248,7 @@ class TestRequestsBasedUnidadesScraper(unittest.TestCase):
 
     def test_scrape_promotoria_parses_html_correctly(self):
         from unittest.mock import patch
-        from src.unidades_scraper import scrape_promotoria
+        from src.scrapers.unidades_scraper import scrape_promotoria
 
         fake_html = """
         <div id="promotorias">
@@ -457,5 +457,45 @@ class TestAdLookupRobustness(unittest.TestCase):
         self.assertEqual(dept, 'Promotoria de Três Lagoas')
 
 
+class TestCloseMissingTickets(unittest.TestCase):
+    """Testes unitários para a funcionalidade de fechamento automático de chamados ausentes."""
+
+    def test_close_missing_tickets_by_base(self):
+        from src.database import save_tickets_to_db, close_missing_tickets_by_base, load_data
+        
+        df_fake = pd.DataFrame([
+            {
+                'Chamado#': '99901',
+                'Título': 'Teste Fechamento 1',
+                'Nome do Usuário': 'Usuário Teste',
+                'Base': 'OTRS'
+            },
+            {
+                'Chamado#': '99902',
+                'Título': 'Teste Fechamento 2',
+                'Nome do Usuário': 'Usuário Teste 2',
+                'Base': 'OTRS'
+            },
+            {
+                'Chamado#': '99903',
+                'Título': 'Teste Fechamento 3',
+                'Nome do Usuário': 'Usuário Teste 3',
+                'Base': 'OTRS'
+            }
+        ])
+        save_tickets_to_db(df_fake)
+        
+        # Simula nova rodada de raspagem onde o chamado 99902 foi fechado no OTRS e não está mais nos ativos
+        active_ids_otrs = ['99901', '99903', '99904']
+        closed_count = close_missing_tickets_by_base(active_ids_otrs, 'OTRS')
+        self.assertGreaterEqual(closed_count, 1)
+        
+        df_updated = load_data()
+        ticket_99902 = df_updated[df_updated['id'] == '99902']
+        if not ticket_99902.empty:
+            self.assertEqual(ticket_99902.iloc[0]['status'], 'Fechado')
+
+
 if __name__ == '__main__':
     unittest.main()
+

@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-# promotorias_procuradorias_scraper.py
+# -*- coding: utf-8 -*-
+import sys
+from pathlib import Path
 
-# Para rodar apenas manuais, use:
-# python .\unidades_scraper.py --only-manual ou python .\unidades_scraper.py -m
-
-# Para rodar a extração completa em tempo real + manuais, use:
-# python .\unidades_scraper.py
+# Adiciona o diretório raiz e o diretório src ao sys.path para suportar importações diretas
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 import re
 import time
 import unidecode
 import argparse
 import pandas as pd
-from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 import os
@@ -21,27 +24,17 @@ import tempfile
 import logging
 import urllib3
 
-root_dir = Path(__file__).parent.parent
-from database import get_unidades_manuais
-from config import *
-
-# ---------------------------
-# Utilitários e Log
-# ---------------------------
-# --- Configuração de logging ---
+from src.database import get_unidades_manuais, save_unidades_to_db
+from src.config import *
 
 urllib3.disable_warnings()
 
-# Configuração de Logging para o scraper de unidades
 logger = setup_logging(DEBUG_DIR_UNIDADES / "unidades_scraper.log", __name__)
 
-# (Opcional) Manter o silenciador do Selenium/urllib3 nos scripts de scraping
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-# -----------------------------------------------------------------
 
 def check_unidades_sync_running() -> bool:
-    """Verifica se o processo de sincronização de unidades está ativo analisando o arquivo de lock."""
     lock_file = Path(tempfile.gettempdir()) / "automated_unidades_sync.lock"
     if not lock_file.exists():
         return False
@@ -57,15 +50,13 @@ def check_unidades_sync_running() -> bool:
             exit_code = ctypes.c_ulong()
             if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
                 kernel32.CloseHandle(handle)
-                return exit_code.value == 259  # STILL_ACTIVE
+                return exit_code.value == 259
             kernel32.CloseHandle(handle)
     except Exception:
         pass
     return False
 
-
 def read_unidades_last_log_lines(n: int = 15) -> str:
-    """Lê as últimas N linhas do arquivo de log do scraper de unidades."""
     log_path = DEBUG_DIR_UNIDADES / "unidades_scraper.log"
     if not log_path.exists():
         return "Nenhum log gerado ainda. Aguardando início..."
@@ -90,7 +81,6 @@ def clean_url(url):
     return url
 
 def load_manual_entries_from_db():
-    """Busca as unidades manuais do SQLite e formata para o padrão exportado no Excel."""
     df_db = get_unidades_manuais()
     if df_db.empty:
         return []
@@ -113,17 +103,10 @@ def load_manual_entries_from_db():
         })
     return entries
 
-# ----------------------------------------
-# SLUG
-# ----------------------------------------
 def slugify(text: str) -> str:
-    """Remove acentos, coloca lowercase e troca espaços por hífen."""
     s = unidecode.unidecode(text).lower()
     return s.replace(" ", "-")
 
-# ----------------------------------------
-# SCRAPE PROMOTORIAS
-# ----------------------------------------
 def get_cities():
     r = requests.get(PROMOTORIAS_URL, headers=HEADERS, verify=False, timeout=15)
     soup = BeautifulSoup(r.text, 'html.parser')
@@ -240,9 +223,6 @@ def scrape_promotoria(city_name, promo_url):
         "URL": promo_url
     }
 
-# ----------------------------------------
-# SCRAPE PROCURADORIAS
-# ----------------------------------------
 def get_procuradorias():
     r = requests.get(PROCURADORIAS_URL, headers=HEADERS, verify=False, timeout=15)
     soup = BeautifulSoup(r.text, 'html.parser')
@@ -301,9 +281,6 @@ def scrape_procuradoria(url):
         "URL": url
     }
 
-# ----------------------------------------
-# CALCULA SIGLA
-# ----------------------------------------
 def make_sigla(row: pd.Series) -> str:
     tipo     = row["Tipo"]
     city     = row["Cidade"]
@@ -331,25 +308,14 @@ def make_sigla(row: pd.Series) -> str:
     
     return ""
 
-# ----------------------------------------
-# FUNÇÃO AUXILIAR: SALVAR EXCEL (Para não repetir código)
-# ----------------------------------------
-from database import get_unidades_manuais, save_unidades_to_db
-
 def save_final_excel(df: pd.DataFrame, output_path: Path):
-    """
-    Recebe o DataFrame pronto e salva com a formatação correta e persiste no banco SQLite.
-    """
-    # Reordenar as colunas para garantir consistência
     colunas_desejadas = [
         "Cidade", "Tipo", "Sigla", "Setor",
         "Titular", "Unidade (Prédio)", "Telefone", "URL"
     ]
-    # Filtra apenas colunas que existem no DF (para evitar erros se algo faltar)
     cols_to_use = [c for c in colunas_desejadas if c in df.columns]
     df = df.reindex(columns=cols_to_use)
 
-    # Persiste na tabela unificada 'unidades' do SQLite
     try:
         save_unidades_to_db(df)
         logger.info("[OK] Dados de unidades atualizados com sucesso no banco de dados SQLite!")
@@ -369,11 +335,7 @@ def save_final_excel(df: pd.DataFrame, output_path: Path):
     
     logger.info("Concluído!")
 
-# ----------------------------------------
-# FLUXO PRINCIPAL
-# ----------------------------------------
 def main():
-    # 1. Configura os argumentos de linha de comando
     parser = argparse.ArgumentParser(description="Scraper de Unidades do MPMS")
     parser.add_argument(
         "--only-manual", "-m", 
@@ -382,12 +344,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # Caminho do arquivo de saída
     out_file = INPUT_DIR_BRUTOS / "Unidades_MPMS.xlsx"
 
-    # =========================================================
-    # MODO 1: ATUALIZAÇÃO RÁPIDA (SÓ MANUAIS)
-    # =========================================================
     if args.only_manual:
         logger.info("\n=== MODO RÁPIDO: ATUALIZANDO APENAS ENTRADAS MANUAIS ===")
         
@@ -396,7 +354,6 @@ def main():
             logger.error("Execute o script sem parâmetros primeiro para criar a base.")
             return
 
-        # Carrega o Excel existente
         try:
             df_existing = pd.read_excel(out_file, sheet_name="Unidades")
         except Exception as e:
@@ -405,33 +362,23 @@ def main():
 
         logger.info(f"Lidos {len(df_existing)} registros do arquivo atual.")
 
-        # Filtra para manter APENAS o que veio do Selenium
-        # Lógica: O Selenium traz apenas 'Promotoria' e 'Procuradoria'.
-        # Tudo que for diferente disso assumimos que é manual e vamos substituir.
         tipos_selenium = ["Promotoria", "Procuradoria"]
         df_web = df_existing[df_existing["Tipo"].isin(tipos_selenium)].copy()
         
         logger.info(f"Mantendo {len(df_web)} registros obtidos via Web (Promotorias/Procuradorias).")
 
-        # Carrega as novas entradas manuais do SQLite
         manual = load_manual_entries_from_db()
         df_manual = pd.DataFrame(manual)
         
-        # Junta Web Antigo + Manual Novo
         df_final = pd.concat([df_web, df_manual], ignore_index=True)
         
-        # Salva
         save_final_excel(df_final, out_file)
         return
 
-    # =========================================================
-    # MODO 2: COMPLETO (REAL-TIME VIA REQUESTS)
-    # =========================================================
     logger.info("\n=== MODO COMPLETO: INICIANDO SCRAPER (WEB REQUESTS EM TEMPO REAL) ===")
     
     all_data = []
 
-    # 1) Promotorias
     cities = get_cities()
     logger.info(f"Encontradas {len(cities)} comarcas.")
     
@@ -444,7 +391,6 @@ def main():
             logger.info(f"    [OK] {all_data[-1]['Setor']}")
             time.sleep(0.05)
         
-    # 2) Procuradorias
     proc_urls = get_procuradorias()
     logger.info(f"\nEncontradas {len(proc_urls)} procuradorias.")
     
@@ -453,19 +399,14 @@ def main():
         logger.info(f"    [OK] {all_data[-1]['Setor']}")
         time.sleep(0.05)    
 
-    # 3) Processa dados da Web
     df = pd.DataFrame(all_data)
-    # Calcula sigla para os dados da Web
     df["Sigla"] = df.apply(make_sigla, axis=1)
 
-    # 4) Adiciona manuais do SQLite
     manual = load_manual_entries_from_db()
     df_manual = pd.DataFrame(manual)
     
-    # Unifica
     df = pd.concat([df, df_manual], ignore_index=True)
 
-    # Salva
     save_final_excel(df, out_file)
 
 if __name__ == "__main__":

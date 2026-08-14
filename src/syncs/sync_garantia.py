@@ -3,12 +3,12 @@ import tempfile
 import os
 from pathlib import Path
 
-# Garante importações dos módulos do projeto
-root_dir = Path(__file__).parent.parent
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
-if str(root_dir / "src") not in sys.path:
-    sys.path.insert(0, str(root_dir / "src"))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import WARRANTY_FILE_PATH, setup_logging, DEBUG_DIR_GARANTIA
@@ -16,18 +16,15 @@ from src.database import sync_garantia_from_excel
 
 logger = setup_logging(DEBUG_DIR_GARANTIA / "garantia.log", "sync_garantia")
 
-
 def check_garantia_sync_running() -> bool:
     """Verifica se o processo de sincronização de garantias está em execução."""
     lock_file = Path(tempfile.gettempdir()) / "garantia_sync.lock"
     return check_process_running(lock_file)
 
-
 def read_garantia_last_log_lines(n: int = 15) -> str:
     """Lê as últimas N linhas do arquivo de log de garantias."""
     log_path = DEBUG_DIR_GARANTIA / "garantia.log"
     return read_log_lines(log_path, n)
-
 
 def run_garantia_sync():
     """Executa a leitura da planilha de garantias e salva no banco de dados SQLite."""
@@ -38,7 +35,6 @@ def run_garantia_sync():
     except Exception as e:
         logger.error(f"Erro durante a sincronização de garantias: {e}")
         raise e
-
 
 if __name__ == "__main__":
     lock_path = Path(tempfile.gettempdir()) / "garantia_sync.lock"

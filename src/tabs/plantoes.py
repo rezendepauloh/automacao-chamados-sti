@@ -11,7 +11,7 @@ root_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(root_dir))
 
 from src.database import get_plantoes_matutino, get_plantoes_semanal
-from src.plantoes_scraper import check_plantoes_sync_running, read_plantoes_last_log_lines
+from src.scrapers.plantoes_scraper import check_plantoes_sync_running, read_plantoes_last_log_lines
 from src.components.status_banner import render_log_expander
 from src.components.subtabs import render_subtabs
 from src.components.calendar import render_master_calendar
@@ -82,11 +82,11 @@ def render_plantoes_page():
     with col_b:
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         if plantoes_ativo:
-            st.button("🤖 Sincronizando...", use_container_width=True, disabled=True)
+            st.button("🤖 Sincronizando...", width='stretch', disabled=True)
         else:
-            if st.button("🔄 Sincronizar Tudo", type="primary", use_container_width=True, help="Executa sincronização completa do Matutino e SIMP em segundo plano."):
+            if st.button("🔄 Sincronizar Tudo", type="primary", width='stretch', help="Executa sincronização completa do Matutino e SIMP em segundo plano."):
                 import time
-                subprocess.Popen([sys.executable, "src/plantoes_scraper.py"])
+                subprocess.Popen([sys.executable, "src/scrapers/plantoes_scraper.py"])
                 time.sleep(0.8)
                 st.session_state["was_plantoes_syncing"] = True
                 st.toast("🚀 Robô de plantões iniciado em segundo plano!", icon="🤖")
@@ -269,7 +269,7 @@ def render_plantoes_page():
 
             st.dataframe(
                 df_page_mat,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "Data ISO": st.column_config.DateColumn("Data", format="DD/MM/YYYY")
@@ -320,7 +320,7 @@ def render_plantoes_page():
 
             st.dataframe(
                 df_page_sem,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "Início": st.column_config.DatetimeColumn("Início", format="DD/MM/YYYY HH:mm:ss"),

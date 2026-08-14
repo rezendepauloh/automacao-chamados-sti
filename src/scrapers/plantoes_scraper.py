@@ -8,13 +8,18 @@ import ctypes
 import logging
 from pathlib import Path
 from datetime import datetime
+
+# Adiciona o diretório raiz e o diretório src ao sys.path para suportar importações diretas
+root_dir = Path(__file__).resolve().parent.parent.parent
+src_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 import pandas as pd
 import requests
 import keyring
-
-root_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(root_dir))
-sys.path.insert(0, str(root_dir / "src"))
 
 from src.config import (
     setup_logging, DEBUG_DIR_PLANTOES,
@@ -33,9 +38,7 @@ MESES_PT = {
     "outubro": 10, "novembro": 11, "dezembro": 12
 }
 
-
 def check_plantoes_sync_running() -> bool:
-    """Verifica se o processo de sincronização de plantões está ativo analisando o arquivo de lock."""
     lock_file = Path(tempfile.gettempdir()) / "automated_plantoes_sync.lock"
     if not lock_file.exists():
         return False
@@ -51,15 +54,13 @@ def check_plantoes_sync_running() -> bool:
             exit_code = ctypes.c_ulong()
             if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
                 kernel32.CloseHandle(handle)
-                return exit_code.value == 259  # STILL_ACTIVE
+                return exit_code.value == 259
             kernel32.CloseHandle(handle)
     except Exception:
         pass
     return False
 
-
 def create_plantoes_lock():
-    """Cria o arquivo de lock para o processo de plantões."""
     lock_file = Path(tempfile.gettempdir()) / "automated_plantoes_sync.lock"
     try:
         with open(lock_file, "w") as f:
@@ -67,9 +68,7 @@ def create_plantoes_lock():
     except Exception as e:
         logger.warning(f"Erro ao criar arquivo de lock: {e}")
 
-
 def remove_plantoes_lock():
-    """Remove o arquivo de lock do processo de plantões."""
     lock_file = Path(tempfile.gettempdir()) / "automated_plantoes_sync.lock"
     try:
         if lock_file.exists():
@@ -77,9 +76,7 @@ def remove_plantoes_lock():
     except Exception as e:
         logger.warning(f"Erro ao remover arquivo de lock: {e}")
 
-
 def read_plantoes_last_log_lines(n: int = 15) -> str:
-    """Lê as últimas N linhas do log de plantões."""
     log_path = DEBUG_DIR_PLANTOES / "plantoes.log"
     if not log_path.exists():
         return "Nenhum log de plantões gerado ainda. Aguardando início..."
@@ -90,12 +87,7 @@ def read_plantoes_last_log_lines(n: int = 15) -> str:
     except Exception as e:
         return f"Erro ao ler log de plantões: {e}"
 
-
 def parse_data_matutino_string(data_raw: str, ano: int) -> tuple[str, str]:
-    """
-    Converte strings do tipo 'Segunda-feira - 12 de Janeiro' ou 'Terça-feira - 03 de Fevereiro'
-    em uma data ISO (YYYY-MM-DD) e nome do dia da semana.
-    """
     if not data_raw or pd.isna(data_raw):
         return "", ""
         
@@ -115,12 +107,7 @@ def parse_data_matutino_string(data_raw: str, ano: int) -> tuple[str, str]:
             
     return "", s
 
-
 def parse_simp_periodo(periodo_raw: str, ano: int) -> tuple[str, str]:
-    """
-    Converte strings do tipo '06/07/2026 19:01 a 13/07/2026 11:59'
-    em tuplas de data de início (ISO) e fim (ISO).
-    """
     if not periodo_raw or pd.isna(periodo_raw):
         return "", ""
         
@@ -136,12 +123,7 @@ def parse_simp_periodo(periodo_raw: str, ano: int) -> tuple[str, str]:
             
     return "", ""
 
-
 def sync_matutino_from_excel(excel_path_or_buffer) -> int:
-    """
-    Lê a planilha Excel de escala do plantão matutino (todas as abas por ano)
-    e salva os registros no banco SQLite.
-    """
     from src.database import save_plantoes_matutino
     
     logger.info("🚀 Iniciando parsing do arquivo Excel de Plantão Matutino DIT...")
@@ -220,11 +202,7 @@ def sync_matutino_from_excel(excel_path_or_buffer) -> int:
         
     return len(records)
 
-
 def download_sharepoint_matutino_file() -> Path | None:
-    """
-    Realiza o download da planilha oficial de Plantão Matutino diretamente da URL do SharePoint DIT.
-    """
     url = SHAREPOINT_MATUTINO_URL
     logger.info(f"🌐 Iniciando tentativa de obtenção da planilha via URL do SharePoint DIT: {url}")
     
@@ -339,11 +317,7 @@ def download_sharepoint_matutino_file() -> Path | None:
         
     return None
 
-
 def sync_matutino_from_sharepoint() -> int:
-    """
-    Sincroniza a planilha de Plantão Matutino a partir da URL do SharePoint DIT.
-    """
     create_plantoes_lock()
     logger.info("🔍 Iniciando processo de sincronização do Plantão Matutino DIT...")
     
@@ -368,12 +342,7 @@ def sync_matutino_from_sharepoint() -> int:
     remove_plantoes_lock()
     return count
 
-
 def scrape_simp_plantoes(ano: int = 2026) -> list[dict]:
-    """
-    Realiza o login no portal SIMP (https://simp.mpms.mp.br/),
-    acessa o iframe interno https://simp.mpms.mp.br/sistemas/plantao e extrai as escalas do PrimeVue.
-    """
     create_plantoes_lock()
     logger.info(f"🌐 [SIMP SCRAPER] Iniciando raspagem das escalas do SIMP para {ano}...")
     
@@ -425,7 +394,6 @@ def scrape_simp_plantoes(ano: int = 2026) -> list[dict]:
         driver.get(plantao_url)
         time.sleep(4)
         
-        # Alterna o contexto do Selenium para dentro do IFRAME que contém o aplicativo real
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
         if iframes:
             logger.info(f"🖼️ IFRAME DETECTADO! Alternando contexto para o iframe 'frame-sistema-Plantao-STI' ({len(iframes)} iframe(s)...)")
@@ -438,12 +406,10 @@ def scrape_simp_plantoes(ano: int = 2026) -> list[dict]:
             
         logger.info(f"📍 URL/Contexto ativo no navegador.")
         
-        # Salva a captura da tela interna do iframe para auditoria
         img_iframe = DEBUG_DIR_PLANTOES / "debug_simp_iframe.png"
         driver.save_screenshot(str(img_iframe))
         logger.info(f"📸 Print do interior do IFRAME salvo em: '{img_iframe}'")
 
-        # Procura os 12 botões dos meses dentro do IFRAME
         month_buttons = driver.find_elements(By.XPATH, "//div[contains(@class,'p-selectbutton')]//div[@role='button'] | //div[contains(@class,'p-selectbutton')]//div[contains(@class,'p-button')]")
         logger.info(f"🗓️ Total de {len(month_buttons)} botões de meses encontrados DENTRO DO IFRAME!")
 
@@ -538,7 +504,6 @@ def scrape_simp_plantoes(ano: int = 2026) -> list[dict]:
         logger.info(f"💾 {len(records)} plantões semanais salvos no banco de dados SQLite.")
         
     return records
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scraper & Sincronizador de Plantões STI")
