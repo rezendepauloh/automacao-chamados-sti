@@ -26,8 +26,10 @@ from src.config import (
     SHAREPOINT_MATUTINO_URL, CITSMART_EMAIL, PASSWORD,
     HEADLESS, EXPLICIT_WAIT, USERNAME, get_chrome_driver, cleanup_old_files
 )
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 logger = setup_logging(DEBUG_DIR_PLANTOES / "plantoes.log", "plantoes")
+
 
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
@@ -318,6 +320,7 @@ def download_sharepoint_matutino_file() -> Path | None:
     return None
 
 def sync_matutino_from_sharepoint() -> int:
+    print_header("WORKER - SINCRONIZAÇÃO DE PLANTÃO MATUTINO", color=CYAN)
     create_plantoes_lock()
     logger.info("🔍 Iniciando processo de sincronização do Plantão Matutino DIT...")
     
@@ -342,9 +345,14 @@ def sync_matutino_from_sharepoint() -> int:
     remove_plantoes_lock()
     return count
 
-def scrape_simp_plantoes(ano: int = 2026) -> list[dict]:
+def scrape_simp_plantoes(ano: int = 2026):
+    print_header("SCRAPER PLANTÕES - SIMP STI", color=CYAN)
+    if check_plantoes_sync_running():
+        logger.warning("⚠️ Sincronização de plantões já em execução em outra instância.")
+        return []
+
     create_plantoes_lock()
-    logger.info(f"🌐 [SIMP SCRAPER] Iniciando raspagem das escalas do SIMP para {ano}...")
+    logger.info(f"🤖 === INICIANDO RASPAGEM SIMP PLANTÕES STI (ANO {ano}) ===")
     
     driver = None
     records = []

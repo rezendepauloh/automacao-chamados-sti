@@ -1,3 +1,8 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="streamlit")
+warnings.filterwarnings("ignore", message=".*use_container_width.*")
+warnings.filterwarnings("ignore", message=".*st.components.v1.html.*")
+
 import sys
 import asyncio
 import locale
@@ -14,12 +19,32 @@ sys.path.insert(0, str(root_dir / "src"))
 # Carrega variáveis do arquivo .env
 load_dotenv()
 
+# Inicialização de cores ANSI e UTF-8 no terminal
+from src.terminal import log, print_header, CYAN, GREEN, YELLOW
+
 # Silencia o aviso WinError 10054 (Connection Reset) comum no Windows asyncio
 if sys.platform == 'win32':
     try:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     except Exception:
         pass
+
+def handle_asyncio_exception(loop, context):
+    exception = context.get('exception')
+    if isinstance(exception, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+        return
+    # Ignora também pelo texto caso venha do proactor do Windows
+    message = context.get('message', '')
+    if 'ConnectionResetError' in message or '10054' in message:
+        return
+    loop.default_exception_handler(context)
+
+try:
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(handle_asyncio_exception)
+except Exception:
+    pass
+
 
 # Configuração do locale para Português do Brasil
 try:

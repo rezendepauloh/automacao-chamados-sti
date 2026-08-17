@@ -16,8 +16,10 @@ if str(src_dir) not in sys.path:
 db_path = root_dir / "chamados.db"
 
 from src.config import setup_logging, DEBUG_DIR_FAQ
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 logger = setup_logging(DEBUG_DIR_FAQ / "faq_scraper.log", __name__)
+
 
 def init_faq_schema():
     """Garante que a tabela faqs possui a estrutura completa no SQLite."""
@@ -127,27 +129,34 @@ def scrape_all_faqs():
         logging.error("Biblioteca 'playwright' não encontrada. Execute 'pip install playwright' e 'playwright install chromium'.")
         return
 
+    print_header("SCRAPER FAQ - BASE DE CONHECIMENTO", color=CYAN)
+    logger.info("🤖 Iniciando raspagem de FAQs e Manuais do SharePoint...")
     init_faq_schema()
-
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, titulo, url FROM faqs")
+
+    cursor.execute("""
+        SELECT id, titulo, url 
+        FROM faqs 
+        WHERE conteudo IS NULL OR conteudo = ''
+    """)
     pending_faqs = cursor.fetchall()
     
     if not pending_faqs:
-        logging.info("Nenhum FAQ encontrado no banco para raspar.")
+        logger.info("🎉 Todos os FAQs já estão com conteúdo raspado no banco de dados!")
         conn.close()
         return
 
-    logging.info(f"Iniciando processo de raspagem para {len(pending_faqs)} FAQs...")
+    logger.info(f"📄 Encontrados {len(pending_faqs)} FAQs pendentes de raspagem completa.")
+
+    first_url = pending_faqs[0][2]
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
         page = context.new_page()
 
-        first_url = pending_faqs[0][2]
-        logging.info(f"🔑 Acessando portal para autenticação inicial...")
+        logger.info("🔑 Acessando portal para autenticação inicial...")
         page.goto(first_url, wait_until="domcontentloaded", timeout=40000)
         perform_microsoft_login(page)
         
@@ -156,7 +165,7 @@ def scrape_all_faqs():
 
         for faq_id, titulo, url in pending_faqs:
             try:
-                logging.info(f"⏳ Raspando: '{titulo}' ({url})")
+                logger.info(f"⏳ Raspando: '{titulo}' ({url})")
                 page.goto(url, wait_until="networkidle", timeout=35000)
                 
                 if "login.microsoftonline.com" in page.url:
@@ -185,18 +194,18 @@ def scrape_all_faqs():
                     """, (cleaned_html, faq_id))
                     conn.commit()
                     sucessos += 1
-                    logging.info(f"✅ Salvo com sucesso: '{titulo}'")
+                    logger.info(f"✅ Salvo com sucesso: '{titulo}'")
                 else:
                     erros += 1
-                    logging.warning(f"⚠️ Não foi possível isolar o contêiner de texto em: '{titulo}'")
+                    logger.warning(f"⚠️ Não foi possível isolar o contêiner de texto em: '{titulo}'")
             except Exception as e:
                 erros += 1
-                logging.error(f"❌ Erro ao processar '{titulo}': {e}")
+                logger.error(f"❌ Erro ao processar '{titulo}': {e}")
 
         browser.close()
 
     conn.close()
-    logging.info(f"✨ Raspagem concluída! Sucessos: {sucessos} | Erros/Pendentes: {erros}")
+    logger.info(f"✨ Raspagem concluída! Sucessos: {sucessos} | Erros/Pendentes: {erros}")
 
 if __name__ == "__main__":
     scrape_all_faqs()

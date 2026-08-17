@@ -144,7 +144,8 @@ def render_impressoras_page():
         else:
             if st.sidebar.button("🔄 Sincronizar Impressoras", type="primary", width='stretch', help="Executa a coleta e unificação de dados do PaperCut em segundo plano."):
                 import sys, subprocess, time
-                subprocess.Popen([sys.executable, "src/scrapers/papercut_scraper.py"])
+                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                subprocess.Popen([sys.executable, "src/scrapers/papercut_scraper.py"], creationflags=creationflags)
                 time.sleep(1.0)
                 st.toast("🚀 Sincronização do PaperCut iniciada em segundo plano!", icon="🤖")
                 st.rerun()

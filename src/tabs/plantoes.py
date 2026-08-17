@@ -86,7 +86,8 @@ def render_plantoes_page():
         else:
             if st.button("🔄 Sincronizar Tudo", type="primary", width='stretch', help="Executa sincronização completa do Matutino e SIMP em segundo plano."):
                 import time
-                subprocess.Popen([sys.executable, "src/scrapers/plantoes_scraper.py"])
+                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                subprocess.Popen([sys.executable, "src/scrapers/plantoes_scraper.py"], creationflags=creationflags)
                 time.sleep(0.8)
                 st.session_state["was_plantoes_syncing"] = True
                 st.toast("🚀 Robô de plantões iniciado em segundo plano!", icon="🤖")

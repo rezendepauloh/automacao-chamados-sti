@@ -242,7 +242,8 @@ def render_chamados_page():
             if run_orquestrador:
                 import subprocess
                 import time
-                subprocess.Popen([sys.executable, "orquestrador.py"])
+                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                subprocess.Popen([sys.executable, "orquestrador.py"], creationflags=creationflags)
                 time.sleep(0.8)
                 st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
                 st.cache_data.clear()

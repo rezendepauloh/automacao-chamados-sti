@@ -13,6 +13,7 @@ if str(src_dir) not in sys.path:
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import setup_logging, DEBUG_DIR_FISCALIZACAO
 from src.database import sync_fiscalizacao_from_excel
+from terminal import print_header, CYAN
 
 logger = setup_logging(DEBUG_DIR_FISCALIZACAO / "sync.log", "fiscalizacao_sync")
 
@@ -28,6 +29,7 @@ def read_fiscalizacao_last_log_lines(n: int = 15) -> str:
 
 def run_fiscalizacao_sync():
     """Executa a leitura da planilha do OneDrive/SharePoint e grava no SQLite."""
+    print_header("WORKER - SINCRONIZAÇÃO DE FISCALIZAÇÃO", color=CYAN)
     logger.info("Iniciando sincronização de fiscalização em segundo plano...")
     relative_path = os.getenv("FISCAL_EXCEL_RELATIVE_PATH", "")
     excel_file = Path.home() / relative_path if relative_path else None

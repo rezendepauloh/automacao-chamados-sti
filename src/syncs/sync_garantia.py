@@ -13,6 +13,7 @@ if str(src_dir) not in sys.path:
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import WARRANTY_FILE_PATH, setup_logging, DEBUG_DIR_GARANTIA
 from src.database import sync_garantia_from_excel
+from terminal import print_header, CYAN
 
 logger = setup_logging(DEBUG_DIR_GARANTIA / "garantia.log", "sync_garantia")
 
@@ -28,6 +29,7 @@ def read_garantia_last_log_lines(n: int = 15) -> str:
 
 def run_garantia_sync():
     """Executa a leitura da planilha de garantias e salva no banco de dados SQLite."""
+    print_header("WORKER - SINCRONIZAÇÃO DE GARANTIAS", color=CYAN)
     logger.info("Iniciando sincronização de garantias em segundo plano...")
     try:
         sync_garantia_from_excel(str(WARRANTY_FILE_PATH))

@@ -30,10 +30,12 @@ from config import (
     BACKUP_PATH_OTRS, TEMP_PATH_OTRS, setup_logging, save_df_to_excel_formatted,
     setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
 )
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade', 'Nome do Usuário', 'ID do Cliente', 'Descrição', 'IP_Origem', 'Hostname', 'Link', 'Comentários']
 
 logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
+
 
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
@@ -519,13 +521,15 @@ def brute_data(data):
     logger.info(f"SUCESSO! Total de {len(df)} chamados salvos em: {file}")
 
 def scrape_otrs():
+    print_header("SCRAPER OTRS - COLETA DE CHAMADOS", color=CYAN)
+    logger.info("🤖 Iniciando processo de raspagem do OTRS...")
     cache = {}
     try:
         out_dir = Path("01 - Dados Brutos")
         existing_files = sorted(out_dir.glob("Chamados_OTRS_*.xlsx"))
         if existing_files:
             latest_file = existing_files[-1]
-            logger.info(f"Carregando cache de descrições, IPs e comentários do arquivo mais recente: {latest_file.name}")
+            logger.info(f"📂 Carregando cache de descrições, IPs e comentários do arquivo mais recente: {latest_file.name}")
             df_old = pd.read_excel(latest_file, dtype=str)
             for _, row_old in df_old.iterrows():
                 cid = str(row_old.get('Chamado#', '')).strip()
@@ -540,27 +544,31 @@ def scrape_otrs():
                         'Link': str(link).strip() if pd.notna(link) else '',
                         'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
                     }
-            logger.info(f"Sucesso! {len(cache)} descrições, IPs e comentários carregados no cache de memória do OTRS.")
+            logger.info(f"⚡ Sucesso! {len(cache)} descrições, IPs e comentários carregados no cache de memória do OTRS.")
     except Exception as cache_err:
-        logger.warning(f"Aviso: Não foi possível carregar cache do OTRS: {cache_err}")
+        logger.warning(f"⚠️ Aviso: Não foi possível carregar cache do OTRS: {cache_err}")
 
     driver = None
     try:
         driver = get_chrome_driver(headless=HEADLESS, block_media=True)
         driver.implicitly_wait(IMPLICIT_WAIT)
 
+        logger.info("🔑 Realizando login e navegando nas filas...")
         login_page(driver)
         navigation_queue(driver)
         all_chamados(driver)
         
         has_pagination = pagination_or_not(driver)
 
+        logger.info("📥 Extraindo dados da tabela...")
         data = data_extract(driver, has_pagination, cache=cache)
         
+        logger.info("💾 Processando dados e salvando planilha...")
         brute_data(data)
         
         cleanup_old_files(INPUT_DIR_BRUTOS, "Chamados_OTRS_*.xlsx", keep_count=10)
         
+        logger.info("✅ Coleta do OTRS finalizada com SUCESSO!")
         return True
 
     except Exception as e:
@@ -568,6 +576,7 @@ def scrape_otrs():
         error_dir = DEBUG_DIR_OTRS / f"erros"
         error_dir.mkdir(exist_ok=True)
         
+        logger.error(f"❌ ERRO CRÍTICO no OTRS: {str(e)}")
         print(f"ERRO CRÍTICO: {str(e)}")
         if driver:
             driver.save_screenshot(str(error_dir / f'erro_final_{timestamp}.png'))
@@ -580,7 +589,7 @@ def scrape_otrs():
             try:
                 driver.quit()
             except Exception as quit_error:
-                print(f"AVISO: Erro ao fechar driver - {str(quit_error)}")
+                logger.warning(f"⚠️ Erro ao fechar driver: {str(quit_error)}")
 
 if __name__ == "__main__":
     if scrape_otrs():

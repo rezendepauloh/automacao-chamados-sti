@@ -1,3 +1,10 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import sys
 import re
 import logging
@@ -20,12 +27,20 @@ from typing import cast, Dict, Any
 import spacy
 from spacy.lang.pt.stop_words import STOP_WORDS
 
+root_dir = Path(__file__).resolve().parent.parent
+src_dir = Path(__file__).resolve().parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from config import (
     TREINO_PATH, MODEL_PATH, DEBUG_DIR_TAG,
     OUTPUT_DIR_TRATADOS, OUTPUT_DIR_PRONTO,
     setup_logging, cleanup_old_files,
     clean_otrs_description
 )
+from terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 # --------------------------------------------------------------------------
 # Configuração de Logging
@@ -322,19 +337,19 @@ def needs_retrain(treino_path: Path, model_path: Path) -> bool:
 # Pipeline Principal
 # --------------------------------------------------------------------------
 def main():
-    logger.info("=== INICIANDO CLASSIFICADOR DE TAGS (NLP/ML) ===")
+    print_header("CLASSIFICADOR DE TAGS POR IA (NLP/ML)", color=CYAN)
+    logger.info("🧠 Iniciando classificação inteligente de chamados com IA...")
     
     # 1. Busca arquivo unificado mais recente
     arquivos = list(OUTPUT_DIR_TRATADOS.glob("Chamados_Unificados_*.xlsx"))
     if not arquivos:
-        logger.error("Nenhum arquivo Unificado encontrado.")
+        logger.error("⚠️ Nenhum arquivo Unificado encontrado.")
         sys.exit(1)
     
     recente = max(arquivos, key=lambda p: p.stat().st_mtime)
-    logger.info(f"Lendo base para classificação: {recente.name}")
+    logger.info(f"📂 Lendo base para classificação: {recente.name}")
     df_unificado = pd.read_excel(recente)
     
-    # Prepara descrições integrando os comentários de acompanhamento para classificação rica em contexto
     if 'Comentários' not in df_unificado.columns:
         df_unificado['Comentários'] = '[]'
     df_unificado['Descrição_Limpa'] = (
@@ -344,7 +359,7 @@ def main():
 
     # 2. Carrega ou Treina o Modelo
     if not TREINO_PATH.exists():
-        logger.error(f"Arquivo de treino não encontrado em {TREINO_PATH}.")
+        logger.error(f"❌ Arquivo de treino não encontrado em {TREINO_PATH}.")
         sys.exit(1)
 
     df_train = pd.read_excel(TREINO_PATH)
@@ -356,35 +371,30 @@ def main():
         df_train['Comentários'].apply(extract_comments_text)
     ).apply(clean_text)
 
-    # Se já existir modelo salvo, reutiliza. Senão, treina um novo.
     if needs_retrain(TREINO_PATH, MODEL_PATH):
-        logger.info("Base de treino atualizada ou modelo inexistente. Iniciando retreinamento...")
+        logger.info("⚡ Base de treino atualizada ou modelo inexistente. Iniciando retreinamento...")
         pipeline = train_and_tune_model(df_train)
         joblib.dump(pipeline, MODEL_PATH)
         logger.info(f"Novo modelo salvo em: {MODEL_PATH}")
     else:
-        logger.info("Usando modelo IA existente (Nenhuma alteração na base de treino).")
+        logger.info("🤖 Usando modelo IA existente (Nenhuma alteração na base de treino).")
         pipeline = joblib.load(MODEL_PATH)       
 
     # 3. Classifica
+    logger.info(f"🏷️ Classificando {len(df_unificado)} chamados...")
     df_tagged = predict_tags(df_unificado, pipeline)
     df_tagged.drop(columns=['Descrição_Limpa'], inplace=True, errors='ignore')
 
-    # 3.5 Redirecionamento inteligente de Técnicos Remotos
     df_tagged = detect_and_update_remote_locations(df_tagged)
 
-    # --- Persistência no SQLite ---
     try:
         from database import save_tickets_to_db, close_missing_tickets_by_base, sync_closed_tickets_to_train_dataset
-        logger.info("Salvando dados no banco SQLite...")
+        logger.info("💾 Salvando dados no banco SQLite...")
         save_tickets_to_db(df_tagged)
         
-        # Pega a lista de IDs ativos dividida por base para fechar os que sumiram de forma segura
         active_ids_otrs = df_tagged[df_tagged['Base'] == 'OTRS']['Chamado#'].dropna().astype(str).tolist()
         active_ids_citsmart = df_tagged[df_tagged['Base'] == 'CitSmart']['Chamado#'].dropna().astype(str).tolist()
         
-        # Só fecha chamados se o respectivo scraper tiver trazido um volume mínimo confiável (mínimo de 5 chamados)
-        # Isso protege contra "falhas silenciosas" que trazem apenas 1 ou 2 chamados por erro de paginação/rede
         MIN_CONFIDENCE_THRESHOLD = 5
         
         if len(active_ids_otrs) >= MIN_CONFIDENCE_THRESHOLD:
@@ -399,24 +409,21 @@ def main():
         else:
             logger.warning(f"⚠️ Coleta CitSmart abaixo do limite de segurança ({len(active_ids_citsmart)} < {MIN_CONFIDENCE_THRESHOLD}). Nenhum chamado CitSmart foi fechado para evitar falsos positivos.")
             
-        # Sincroniza os chamados fechados no banco com o dataset de treino Excel para que o aprendizado continue
         logger.info("Sincronizando chamados fechados com o dataset de treino (Chamados_Treino.xlsx)...")
         sync_closed_tickets_to_train_dataset()
         
         logger.info("Banco SQLite e Dataset de Treino atualizados com sucesso.")
     except Exception as db_err:
-        logger.error(f"Erro ao atualizar banco SQLite/Treino: {db_err}")
+        logger.error(f"⚠️ Erro ao atualizar banco SQLite/Treino: {db_err}")
 
-    # 4. Salva a saída final do classificador (removendo a coluna Título para a planilha final do usuário)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out = OUTPUT_DIR_PRONTO / f"Chamados_Tagged_{ts}.xlsx"
     df_export = df_tagged.drop(columns=['Título'], errors='ignore')
     df_export.to_excel(out, index=False)
 
-    # Limpeza de planilhas Tagged antigas (mantém no máximo as 10 mais recentes)
     cleanup_old_files(OUTPUT_DIR_PRONTO, "Chamados_Tagged_*.xlsx", keep_count=10)
     
-    logger.info(f"Classificação concluída. Salvo em: {out.name}")
+    logger.info(f"✅ Classificação por IA finalizada com SUCESSO! Salvo em: {out.name}")
     logger.info("=== FIM DA CLASSIFICAÇÃO ===")
 
 if __name__ == "__main__":

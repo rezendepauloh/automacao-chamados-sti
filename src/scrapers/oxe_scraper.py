@@ -28,6 +28,8 @@ from src.config import (
     setup_logging, save_df_to_excel_formatted,
     get_chrome_driver, cleanup_old_files
 )
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
+
 
 logger = setup_logging(DEBUG_DIR_OXE / "oxe_scraper.log", __name__)
 
@@ -449,7 +451,8 @@ def extrair_dados_assinantes(driver):
     return registros_finais
 
 def scrape_oxe():
-    logger.info("=== Iniciando Scraper da Central Telefônica (OXE) ===")
+    print_header("SCRAPER OXE - CENTRAL TELEFÔNICA", color=CYAN)
+    logger.info("🤖 Iniciando raspagem de ramais do OXE...")
     
     if not OXE_PASS:
         logger.error("❌ A senha do OXE (OXE_PASS) não foi configurada!")
@@ -484,14 +487,8 @@ def scrape_oxe():
             "Grupo de Captura": 18,
             "Cat. Rede Pública": 18,
             "Login Externo": 18,
-            "E-mail": 30,
-            "Centro de Custo": 18,
-            "Função Adm": 20,
-            "Rack": 10,
-            "Placa": 10,
-            "Terminal": 10,
-            "Endereço IP": 18,
-            "MAC Address": 20
+            "Item": 8, "Extension": 12, "Node": 8, "SetType": 18,
+            "DirName": 30, "SubNet": 10, "Domain": 10, "AnnuName": 30
         }
 
         save_df_to_excel_formatted(
@@ -499,7 +496,7 @@ def scrape_oxe():
             widths=widths
         )
 
-        logger.info(f"✅ SUCESSO! Total de {len(dados)} ramais salvos em: {excel_file}")
+        logger.info(f"✅ SUCESSO! Total de {len(dados)} ramais salvos em: {excel_file.name}")
 
         cleanup_old_files(out_dir, "Central_Telefonica_OXE_*.xlsx", keep_count=10)
         return True

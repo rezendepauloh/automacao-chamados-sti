@@ -213,30 +213,54 @@ class SafeStreamWrapper:
     def __getattr__(self, name):
         return getattr(self.stream, name)
 
+class ANSIColoredFormatter(logging.Formatter):
+    """Formatador de logging com cores ANSI automáticas baseadas no nível da mensagem para o terminal."""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    
+    COLORS = {
+        logging.DEBUG: "\033[90m",                      # Cinza Escuro
+        logging.INFO: "\033[36m",                       # Ciano
+        logging.WARNING: "\033[33m",                    # Amarelo
+        logging.ERROR: "\033[31m\033[1m",               # Vermelho com Negrito
+        logging.CRITICAL: "\033[41m\033[37m\033[1m",    # Fundo Vermelho / Texto Branco Negrito
+    }
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelno, self.RESET)
+        log_fmt = f"{color}[%(asctime)s] [%(levelname)s]{self.RESET} %(message)s"
+        formatter = logging.Formatter(log_fmt, datefmt='%Y-%m-%d %H:%M:%S')
+        return formatter.format(record)
+
 def setup_logging(log_file: Path, name: str = __name__) -> logging.Logger:
-    """Configura o logging rotativo e para terminal de forma unificada e centralizada com proteção Unicode."""
+    """Configura o logging rotativo e para terminal de forma unificada e centralizada com proteção Unicode e cores ANSI."""
     log_file.parent.mkdir(parents=True, exist_ok=True)
     
+    # Handler para Arquivo (Log Puro em disco sem códigos ANSI)
     file_handler = RotatingFileHandler(
         filename=log_file,
         maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
         backupCount=3,             # Mantém apenas 3 arquivos de histórico
         encoding='utf-8'
     )
+    plain_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(plain_formatter)
     
-    # Envelopa sys.stdout com nosso wrapper de proteção unicode
+    # Handler para Terminal (Console com Cores ANSI e proteção Unicode)
     safe_stdout = SafeStreamWrapper(sys.stdout)
     stream_handler = logging.StreamHandler(safe_stdout)
+    color_formatter = ANSIColoredFormatter()
+    stream_handler.setFormatter(color_formatter)
     
-    # Configura o basicConfig. force=True reinicia handlers anteriores
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='[%(asctime)s] [%(levelname)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[file_handler, stream_handler],
-        force=True
-    )
-    return logging.getLogger(name)
+    # Configura o logger raiz/específico com handlers separados
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    logger.handlers = []  # Limpa handlers anteriores para evitar duplicidades
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    logger.propagate = False
+    
+    return logger
 
 
 def save_df_to_excel_formatted(

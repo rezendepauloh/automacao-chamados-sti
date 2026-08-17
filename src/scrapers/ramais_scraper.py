@@ -22,10 +22,12 @@ if str(src_dir) not in sys.path:
 
 from src.database import save_ramais_to_db
 from src.config import USERNAME, PASSWORD, setup_logging, DEBUG_DIR_RAMAIS
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = setup_logging(DEBUG_DIR_RAMAIS / "ramais_scraper.log", __name__)
+
 
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
@@ -174,59 +176,54 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
     return records
 
 def run_ramais_scraper():
-    load_dotenv()
-    
-    otrs_user = USERNAME or os.getenv("OTRS_USER")
-    otrs_pass = PASSWORD or os.getenv("OTRS_PASS")
-
-    if not otrs_user or not otrs_pass:
-        logger.error("Credenciais USERNAME / PASSWORD não encontradas no config.py ou .env!")
-        return
+    print_header("SCRAPER RAMAIS - TELEFONIA MPMS", color=CYAN)
+    logger.info("🤖 Iniciando coleta e extração de ramais da Intranet...")
+    logger.info("=== INICIANDO SCRAPER DE RAMAIS ===")
 
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     })
 
-    logger.info("🔑 Efetuando login na Intranet MPMS...")
-
-    login_url = "https://www.mpms.mp.br/intranet/login"
-    login_data = {
-        "user": otrs_user,
-        "password": otrs_pass
-    }
-
-    try:
-        resp_login = session.post(login_url, data=login_data, verify=False, timeout=15)
-        resp_login.raise_for_status()
-        logger.info("Login efetuado com sucesso!")
-    except Exception as e:
-        logger.error(f"Falha ao realizar login na intranet: {e}")
+    # Tenta autenticação se usuário e senha estiverem disponíveis (silencia 404 se a rota não existir)
+    if USERNAME and PASSWORD:
+        login_url = "https://www.mpms.mp.br/intranet"
+        login_data = {
+            "usuario": USERNAME,
+            "senha": PASSWORD
+        }
+        try:
+            logger.info("🔑 Tentando autenticação opcional na Intranet...")
+            resp_login = session.post(login_url, data=login_data, verify=False, timeout=10)
+            if resp_login.status_code == 200:
+                logger.info("Sessão autenticada ou mantida com sucesso!")
+            else:
+                logger.warning(f"Aviso de login (HTTP {resp_login.status_code}). Prosseguindo em modo público...")
+        except Exception as e:
+            logger.warning(f"Não foi possível autenticar na intranet ({e}). Prosseguindo com download público...")
 
     intranet_url = "https://www.mpms.mp.br/intranet"
     pdf_links = {}
 
     try:
         resp_intra = session.get(intranet_url, verify=False, timeout=15)
-        soup = BeautifulSoup(resp_intra.text, "html.parser")
+        if resp_intra.status_code == 200:
+            soup = BeautifulSoup(resp_intra.text, "html.parser")
+            for a_tag in soup.find_all("a", href=True):
+                text = a_tag.get_text().strip()
+                title = a_tag.get("title", "").strip()
+                combined_text = f"{text} {title}".lower()
 
-        for a_tag in soup.find_all("a", href=True):
-            text = a_tag.get_text().strip()
-            title = a_tag.get("title", "").strip()
-            combined_text = f"{text} {title}".lower()
-
-            if "ramais das comarcas do interior" in combined_text or "interior" in combined_text and "ramais" in combined_text:
-                pdf_links["Interior"] = a_tag["href"]
-            elif "ramais pgj" in combined_text or "campo grande" in combined_text and "ramais" in combined_text:
-                pdf_links["Capital / PGJ"] = a_tag["href"]
-
+                if "lista de ramais das comarcas do interior" in combined_text or "ramais das comarcas do interior" in combined_text or ("interior" in combined_text and "ramais" in combined_text):
+                    pdf_links["Interior"] = a_tag["href"]
+                elif "lista de ramais pgj" in combined_text or "ramais pgj" in combined_text or ("campo grande" in combined_text and "ramais" in combined_text):
+                    pdf_links["Capital / PGJ"] = a_tag["href"]
     except Exception as e:
-        logger.error(f"Erro ao buscar links de ramais na página da Intranet: {e}")
+        logger.warning(f"Aviso ao buscar links dinâmicos de ramais na página da Intranet: {e}")
 
     fallback_links = {
-        "Interior": "/anexo/MTAxMDYxNDE2ODMyMWQ0MjFjZmEyZTJkODEzYzI5ZDUzZWUzNTllMDJkM2VhLTAyMg",
-        "Capital / PGJ": "/anexo/MTAxMDYxNDI3NTAyMWVmZWY2MjA4MjRhN2FiZDY2ZDU5ZTQxMmUyZDVjODJmLTAyMg"
+        "Interior": "/anexo/MTMzMDYxNDI3NTAwODYzMjkwNDNmYmI5MGYwYjU2ZGE5ZWI5M2ZmN2EwMTQxLTA0MQ",
+        "Capital / PGJ": "/anexo/MTMzMDYxNDE2ODMwOGI3MjcxZWQ2YzhkYjYyODkwOGFlMDRjNTUzYWFmY2ZhLTA0MQ"
     }
 
     for k, v in fallback_links.items():
@@ -238,26 +235,31 @@ def run_ramais_scraper():
     for tipo, path_or_url in pdf_links.items():
         full_url = path_or_url if path_or_url.startswith("http") else f"https://www.mpms.mp.br{path_or_url if path_or_url.startswith('/') else '/' + path_or_url}"
         
-        logger.info(f"Baixando PDF de ramais ({tipo}): {full_url}")
+        logger.info(f"📥 Baixando PDF de ramais ({tipo}): {full_url}")
 
         try:
             resp_pdf = session.get(full_url, verify=False, timeout=30)
             if resp_pdf.status_code == 200:
-                recs = extract_ramais_from_pdf(resp_pdf.content, tipo)
-                logger.info(f"Extraídos {len(recs)} registros do PDF [{tipo}]")
-                all_records.extend(recs)
+                content = resp_pdf.content
+                # Validação rigorosa dos bytes do arquivo PDF (%PDF-)
+                if content and content.startswith(b"%PDF-"):
+                    recs = extract_ramais_from_pdf(content, tipo)
+                    logger.info(f"📄 Extraídos {len(recs)} registros do PDF [{tipo}]")
+                    all_records.extend(recs)
+                else:
+                    logger.warning(f"⚠️ O link retornado para {tipo} não é um PDF válido (resposta HTML/redirecionamento retornado).")
             else:
-                logger.error(f"HTTP {resp_pdf.status_code} ao baixar {full_url}")
+                logger.warning(f"⚠️ HTTP {resp_pdf.status_code} ao baixar {full_url}")
         except Exception as e_pdf:
-            logger.error(f"Erro ao baixar/processar PDF ({tipo}): {e_pdf}")
+            logger.warning(f"⚠️ Erro ao baixar/processar PDF ({tipo}): {e_pdf}")
 
     if all_records:
         df_ramais = pd.DataFrame(all_records)
         df_ramais.drop_duplicates(subset=["localidade", "setor_nome", "telefone_ramal"], inplace=True)
         save_ramais_to_db(df_ramais)
-        logger.info(f"Sincronização concluída com {len(df_ramais)} ramais salvos no SQLite!")
+        logger.info(f"✅ Sincronização concluída com {len(df_ramais)} ramais salvos no SQLite!")
     else:
-        logger.warning("Nenhum registro de ramal foi extraído dos PDFs!")
+        logger.warning("⚠️ Nenhum registro de ramal pôde ser extraído dos PDFs nesta rodada.")
 
 if __name__ == "__main__":
     import tempfile

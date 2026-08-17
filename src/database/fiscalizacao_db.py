@@ -21,11 +21,10 @@ def sync_fiscalizacao_from_excel(file_path: str) -> bool:
 
     try:
         shutil.copy2(file_path, temp_path)
-        excel_data = pd.ExcelFile(temp_path)
-
-        df_indicacoes = pd.read_excel(excel_data, sheet_name="Indicações") if "Indicações" in excel_data.sheet_names else pd.DataFrame()
-        df_publicacoes = pd.read_excel(excel_data, sheet_name="Publicações") if "Publicações" in excel_data.sheet_names else pd.DataFrame()
-        df_contador = pd.read_excel(excel_data, sheet_name="Contador") if "Contador" in excel_data.sheet_names else pd.DataFrame()
+        with pd.ExcelFile(temp_path) as excel_data:
+            df_indicacoes = pd.read_excel(excel_data, sheet_name="Indicações") if "Indicações" in excel_data.sheet_names else pd.DataFrame()
+            df_publicacoes = pd.read_excel(excel_data, sheet_name="Publicações") if "Publicações" in excel_data.sheet_names else pd.DataFrame()
+            df_contador = pd.read_excel(excel_data, sheet_name="Contador") if "Contador" in excel_data.sheet_names else pd.DataFrame()
 
         conn = get_connection()
         try:
@@ -42,7 +41,10 @@ def sync_fiscalizacao_from_excel(file_path: str) -> bool:
         logger.error(f"Erro ao ler/salvar planilha de fiscalização: {e}")
         raise e
     finally:
-        Path(temp_path).unlink(missing_ok=True)
+        try:
+            Path(temp_path).unlink(missing_ok=True)
+        except Exception as unlink_err:
+            logger.warning(f"Aviso ao remover temporário de fiscalização: {unlink_err}")
 
 def get_fiscalizacao_indicacoes_df() -> pd.DataFrame:
     """Retorna um DataFrame com os dados da tabela fiscalizacao_indicacoes do SQLite."""

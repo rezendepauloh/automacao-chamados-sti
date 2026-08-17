@@ -13,6 +13,7 @@ if str(src_dir) not in sys.path:
 from src.database import add_notification
 from src.config import setup_logging, DEBUG_DIR_FAQ
 from src.components.status_banner import check_process_running, read_log_lines
+from terminal import print_header, CYAN
 
 logger = setup_logging(DEBUG_DIR_FAQ / "sync_portarias.log", "sync_portarias")
 
@@ -27,6 +28,7 @@ def read_portarias_last_log_lines(n: int = 15) -> str:
 def sync_portarias_and_generate_alerts():
     """Busca as portarias da API do MPMS e gera notificações para novas ocorrências."""
     from src.tabs.portarias import fetch_portarias_bancada
+    print_header("WORKER - SINCRONIZAÇÃO DE PORTARIAS", color=CYAN)
     logger.info("Iniciando verificação de novas Portarias da Bancada...")
     
     portarias = fetch_portarias_bancada()

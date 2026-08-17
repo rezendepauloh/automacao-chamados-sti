@@ -26,10 +26,12 @@ import urllib3
 
 from src.database import get_unidades_manuais, save_unidades_to_db
 from src.config import *
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 urllib3.disable_warnings()
 
 logger = setup_logging(DEBUG_DIR_UNIDADES / "unidades_scraper.log", __name__)
+
 
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
@@ -336,28 +338,28 @@ def save_final_excel(df: pd.DataFrame, output_path: Path):
     logger.info("Concluído!")
 
 def main():
-    parser = argparse.ArgumentParser(description="Scraper de Unidades do MPMS")
-    parser.add_argument(
-        "--only-manual", "-m", 
-        action="store_true", 
-        help="Atualiza apenas as entradas manuais (sem rodar Selenium)."
-    )
+    print_header("SCRAPER UNIDADES - CATÁLOGO MPMS", color=CYAN)
+    logger.info("🤖 Iniciando raspagem e catálogo de Unidades e Promotorias...")
+    
+    parser = argparse.ArgumentParser(description="Scraper de Unidades do MPMS (Promotorias e Procuradorias)")
+    parser.add_argument("--fast", action="store_true", help="Atualiza apenas entradas manuais mantendo registros web existentes")
     args = parser.parse_args()
 
-    out_file = INPUT_DIR_BRUTOS / "Unidades_MPMS.xlsx"
+    out_file = BASE_DIR / "01 - Dados Brutos" / "unidades_mpms.xlsx"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
 
-    if args.only_manual:
-        logger.info("\n=== MODO RÁPIDO: ATUALIZANDO APENAS ENTRADAS MANUAIS ===")
+    if args.fast:
+        logger.info("⚡ === MODO RÁPIDO: ATUALIZANDO APENAS ENTRADAS MANUAIS ===")
         
         if not out_file.exists():
-            logger.error(f"ERRO: O arquivo {out_file} não existe.")
+            logger.error(f"❌ ERRO: O arquivo {out_file.name} não existe.")
             logger.error("Execute o script sem parâmetros primeiro para criar a base.")
             return
 
         try:
             df_existing = pd.read_excel(out_file, sheet_name="Unidades")
         except Exception as e:
-            logger.error(f"Erro ao ler o Excel existente: {e}")
+            logger.error(f"❌ Erro ao ler o Excel existente: {e}")
             return
 
         logger.info(f"Lidos {len(df_existing)} registros do arquivo atual.")
@@ -365,22 +367,21 @@ def main():
         tipos_selenium = ["Promotoria", "Procuradoria"]
         df_web = df_existing[df_existing["Tipo"].isin(tipos_selenium)].copy()
         
-        logger.info(f"Mantendo {len(df_web)} registros obtidos via Web (Promotorias/Procuradorias).")
-
         manual = load_manual_entries_from_db()
         df_manual = pd.DataFrame(manual)
         
         df_final = pd.concat([df_web, df_manual], ignore_index=True)
         
         save_final_excel(df_final, out_file)
+        logger.info("✅ Entradas manuais atualizadas com SUCESSO!")
         return
 
-    logger.info("\n=== MODO COMPLETO: INICIANDO SCRAPER (WEB REQUESTS EM TEMPO REAL) ===")
+    logger.info("🌐 === MODO COMPLETO: INICIANDO SCRAPER (WEB REQUESTS EM TEMPO REAL) ===")
     
     all_data = []
 
     cities = get_cities()
-    logger.info(f"Encontradas {len(cities)} comarcas.")
+    logger.info(f"🏢 Encontradas {len(cities)} comarcas.")
     
     for city, link, slug in cities:
         urls = get_promotoria_urls(link, slug)
@@ -388,15 +389,13 @@ def main():
         logger.info(f"  {city}: {len(urls)} {label}")
         for u in urls:
             all_data.append(scrape_promotoria(city, u))
-            logger.info(f"    [OK] {all_data[-1]['Setor']}")
             time.sleep(0.05)
         
     proc_urls = get_procuradorias()
-    logger.info(f"\nEncontradas {len(proc_urls)} procuradorias.")
+    logger.info(f"🏛️ Encontradas {len(proc_urls)} procuradorias.")
     
     for u in proc_urls:
         all_data.append(scrape_procuradoria(u))
-        logger.info(f"    [OK] {all_data[-1]['Setor']}")
         time.sleep(0.05)    
 
     df = pd.DataFrame(all_data)
@@ -408,6 +407,7 @@ def main():
     df = pd.concat([df, df_manual], ignore_index=True)
 
     save_final_excel(df, out_file)
+    logger.info(f"✅ Catálogo de Unidades salvo com SUCESSO! Total de {len(df)} registros em {out_file.name}")
 
 if __name__ == "__main__":
     lock_file = Path(tempfile.gettempdir()) / "automated_unidades_sync.lock"

@@ -31,11 +31,13 @@ from config import (
     setup_logging, save_df_to_excel_formatted,
     setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
 )
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 # ---------------------------
 # Utilitários e Log
 # ---------------------------
 logger = setup_logging(DEBUG_DIR_CITSMART / "citsmart_scraper.log", __name__)
+
 
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
@@ -561,13 +563,16 @@ def ir_para_proxima_pagina(driver, wait):
         return False
 
 def scrape_citsmart():
+    print_header("SCRAPER CITSMART - COLETA DE CHAMADOS", color=CYAN)
+    logger.info("🤖 Iniciando processo de raspagem do CitSmart...")
+    
     cache = {}
     try:
         out_dir = Path("01 - Dados Brutos")
         existing_files = sorted(out_dir.glob("Chamados_CitSmart_*.xlsx"))
         if existing_files:
             latest_file = existing_files[-1]
-            logger.info(f"Carregando cache de descrições e comentários do arquivo mais recente de CitSmart: {latest_file.name}")
+            logger.info(f"📂 Carregando cache de descrições e comentários do arquivo mais recente: {latest_file.name}")
             df_old = pd.read_excel(latest_file, dtype=str)
             for _, row_old in df_old.iterrows():
                 cid = str(row_old.get('Chamado#', '')).strip()
@@ -585,9 +590,9 @@ def scrape_citsmart():
                         'Link': str(link).strip() if pd.notna(link) else '',
                         'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
                     }
-            logger.info(f"Sucesso! {len(cache)} chamados carregados no cache do CitSmart.")
+            logger.info(f"⚡ Sucesso! {len(cache)} chamados carregados no cache do CitSmart.")
     except Exception as cache_err:
-        logger.warning(f"Aviso: Não foi possível carregar cache do CitSmart: {cache_err}")
+        logger.warning(f"⚠️ Aviso: Não foi possível carregar cache do CitSmart: {cache_err}")
 
     ad_conn = None
     try:
@@ -600,12 +605,13 @@ def scrape_citsmart():
     todos_os_dados = []
 
     try:
+        logger.info("🔑 Navegando até a caixa de entrada do CitSmart...")
         navigate_to_caixa_entrada(driver, wait)
         expand_all_records_lowcode(driver, wait)
 
         pagina = 1
         while True:
-            logger.info(f"--- Processando Página {pagina} ---")
+            logger.info(f"📄 --- Processando Página {pagina} do CitSmart ---")
             
             dados_pagina = process_page(driver, wait, filtro_grupo=None, ad_conn=ad_conn, cache=cache)
             if dados_pagina:
@@ -643,12 +649,12 @@ def scrape_citsmart():
                 widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
             )
 
-            logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")
+            logger.info(f"✅ SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file.name}")
             
             cleanup_old_files(out_dir, "Chamados_CitSmart_*.xlsx", keep_count=10)
             return True
         else:
-            logger.info("Nenhum dado foi coletado.")
+            logger.warning("⚠️ Nenhum dado foi coletado do CitSmart.")
             return False
 
     except Exception as e:

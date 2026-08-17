@@ -54,9 +54,9 @@ def render_donations_page():
         st.sidebar.button("🤖 Atualizando...", type="primary", width='stretch', disabled=True)
     else:
         if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
-            import sys, subprocess, time
-            subprocess.Popen([sys.executable, "src/syncs/sync_donations.py"])
-            time.sleep(0.5)
+            import sys, subprocess
+            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            subprocess.Popen([sys.executable, "src/syncs/sync_donations.py"], creationflags=creationflags)
             st.toast("🚀 Sincronização de doações iniciada em segundo plano!", icon="🤖")
             st.rerun()
 

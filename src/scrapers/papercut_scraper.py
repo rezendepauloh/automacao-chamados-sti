@@ -29,8 +29,10 @@ from src.config import (
     cleanup_old_files
 )
 from src.database import save_impressoras_to_db
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 logger = setup_logging(DEBUG_DIR_PAPERCUT / "papercut_scraper.log", __name__)
+
 
 logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
@@ -298,8 +300,10 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
     return df_merged
 
 def run_papercut_scraper():
+    print_header("SCRAPER PAPERCUT - IMPRESSORAS E DISPOSITIVOS", color=CYAN)
+    logger.info("🤖 Iniciando raspagem de impressoras do PaperCut...")
     logger.info("============================================================")
-    logger.info("INICIANDO PROCESSO DE RASPAGEM E SINCRONIZAÇÃO DO PAPERCUT")
+    logger.info("=== INICIANDO SCRAPER DE IMPRESSORAS PAPERCUT ===")
     logger.info("============================================================")
     logger.info(f"URL de Login: '{PAPERCUT_URL}'")
     logger.info(f"URL PrinterList: '{PAPERCUT_PRINTER_LIST_URL}'")

@@ -13,6 +13,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 import sys
 
+# Adiciona a raiz do projeto e a pasta src ao sys.path para suporte a chamadas diretas ou via subprocesso
+root_dir = Path(__file__).resolve().parent.parent
+src_dir = Path(__file__).resolve().parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 from config import (
     INPUT_DIR_BRUTOS,
     OUTPUT_DIR_TRATADOS,
@@ -22,6 +30,8 @@ from config import (
     cleanup_old_files,
     clean_otrs_description
 )
+from terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
+
 
 try:
     import win32com.client as win32
@@ -30,6 +40,7 @@ except ImportError:
 
 # --- Configuração de logging ---
 logger = setup_logging(DEBUG_DIR_PREPROCESS / "preprocess_chamados.log", __name__)
+
 
 # --- Excel auto-fit via COM on Windows ---
 def autofit_excel_rows(filepath: Path):
@@ -205,10 +216,12 @@ def process_otrs(ts: str) -> pd.DataFrame:
     files = sorted(INPUT_DIR_BRUTOS.glob("Chamados_OTRS_*.xlsx"))
     
     if not files:
+        log("Nenhum arquivo OTRS encontrado em '01 - Dados Brutos'.", symbol="⚠️", color=YELLOW)
         logger.info("Nenhum arquivo OTRS encontrado")
-        sys.exit(1)
+        return pd.DataFrame()
     path = files[-1]
     
+    log(f"Tratando dados brutos do OTRS: {path.name}", symbol="⚙️", color=WHITE)
     logger.info(f"Processando OTRS: {path.name}")
     
     df = safe_read_excel(path)
@@ -216,7 +229,6 @@ def process_otrs(ts: str) -> pd.DataFrame:
     df['Base'] = 'OTRS'
     df = enrich_with_unidades(df, base='OTRS')
     
-    # Adiciona fallback para Título caso não exista por algum motivo
     df['Título'] = df.get('Título', '').fillna('')
     
     if 'Data Criação' in df.columns:
@@ -231,7 +243,6 @@ def process_otrs(ts: str) -> pd.DataFrame:
     if 'Link' not in df.columns:
         df['Link'] = ""
     
-    # colunas finais
     cols = ["Chamado#","Nome do Usuário","ID do Cliente","Data Criação",
             "Cidade - Prédio","Unidade","Descrição","Base","Título","IP_Origem","Hostname","Link","Comentários"]
     
@@ -243,10 +254,12 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     files = sorted(INPUT_DIR_BRUTOS.glob("Chamados_CitSmart_*.xlsx"))
     
     if not files:
+        log("Nenhum arquivo CitSmart encontrado em '01 - Dados Brutos'.", symbol="⚠️", color=YELLOW)
         logger.info("Nenhum arquivo CitSmart encontrado")
-        sys.exit(1)
+        return pd.DataFrame()
     path = files[-1]
     
+    log(f"Tratando dados brutos do CitSmart: {path.name}", symbol="⚙️", color=WHITE)
     logger.info(f"Processando CitSmart: {path.name}")
     
     df = safe_read_excel(path)
@@ -277,28 +290,33 @@ def process_citsmart(ts: str) -> pd.DataFrame:
 
 # --- Main ---
 def main():
+    print_header("PRÉ-PROCESSAMENTO DE CHAMADOS UNIFICADOS", color=CYAN)
+    logger.info("🧹 Iniciando tratamento e unificação de dados brutos...")
     
-    otrs_df = process_otrs(ts)
-    citsmart_df = process_citsmart(ts)
+    ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
+    df_otrs = process_otrs(ts)
+    df_cs = process_citsmart(ts)
+
+    if df_otrs.empty and df_cs.empty:
+        logger.warning("⚠️ Nenhum dado encontrado nos diretórios brutos para unificar.")
+        return
+
+    # Salva arquivos individuais tratados
+    for name, df in [('OTRS', df_otrs), ('CitSmart', df_cs)]:
+        if not df.empty:
+            out_indiv = OUTPUT_DIR_TRATADOS / f"{name}_tratado_{ts}.xlsx"
+            widths = {col: 25 for col in df.columns}
+            widths['Descrição'] = 100
+            save_df_to_excel_formatted(
+                df, out_indiv, sheet_name=name,
+                widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
+            )
+            autofit_excel_rows(out_indiv)
+
+    logger.info("⚙️ Unificando bases OTRS e CitSmart...")
+    combined = pd.concat([df_otrs, df_cs], ignore_index=True)
     
-    # salvar ambos
-    for name, df in [('OTRS', otrs_df), ('CitSmart', citsmart_df)]:
-        out = OUTPUT_DIR_TRATADOS / f"{name}_tratado_{ts}.xlsx"
-        widths = {col: 25 for col in df.columns}
-        widths['Descrição'] = 100
-        save_df_to_excel_formatted(
-            df, out, sheet_name=name,
-            widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
-        )
-        autofit_excel_rows(out)
-    
-    # unificar
-    combined = pd.concat([otrs_df, citsmart_df], ignore_index=True)
-    
-    # =========================================================
-    # NOVO: Padronização de datas e estrutura no pré-processamento
-    # =========================================================
-    # 1. Remove chamados repetidos, mantendo apenas a ocorrência mais recente
     tamanho_antes = len(combined)
     combined = combined.drop_duplicates(subset=['Chamado#'], keep='last')
     tamanho_depois = len(combined)
@@ -306,32 +324,23 @@ def main():
     if tamanho_antes != tamanho_depois:
         logger.info(f"⚠️ {tamanho_antes - tamanho_depois} chamados duplicados foram removidos!")
     
-    # 2. Padroniza a Data de Criação em formato ISO (YYYY-MM-DD HH:MM:SS) sem sobrescrever com parsing ambíguo
     if 'Data Criação' in combined.columns:
         combined['Data Criação'] = combined['Data Criação'].apply(parse_date_safely)
 
-    # 3. Limpa espaços extras no começo e no fim dos IDs e Nomes
-    #if 'Chamado#' in combined.columns:
-    #    combined['Chamado#'] = combined['Chamado#'].astype(str).str.strip()
-        
     if 'Nome do Usuário' in combined.columns:
-        # Tira espaços em branco sobrando e deixa a primeira letra de cada nome maiúscula
         combined['Nome do Usuário'] = combined['Nome do Usuário'].astype(str).str.strip().str.title()
 
-    # 4. Adiciona as colunas vazias para manter o padrão estrutural da Master
     for col in ['Ramal', 'Andamento']:
         if col not in combined.columns:
             combined[col] = ""
             
-    # 5. Organiza a ordem base das colunas (O classificador só vai espremer a TAG no meio depois)
     colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base', 'Título', 'IP_Origem', 'Hostname', 'Link', 'Comentários']
     colunas_existentes = [c for c in colunas_ordem if c in combined.columns]
     combined = combined[colunas_existentes]
-    # =========================================================
     
     out = OUTPUT_DIR_TRATADOS / f"Chamados_Unificados_{ts}.xlsx"
 
-    logger.info(f"Processando Unificado: Chamados_Unificados_{ts}.xlsx")
+    logger.info(f"💾 Salvando base tratada unificada ({len(combined)} chamados em {out.name})...")
     
     widths = {col: 25 for col in combined.columns}
     widths['Descrição'] = 100
@@ -341,18 +350,16 @@ def main():
     )
     autofit_excel_rows(out)
     
-    # Limpeza de planilhas unificadas antigas (mantém no máximo as 10 mais recentes)
     cleanup_old_files(OUTPUT_DIR_TRATADOS, "Chamados_Unificados_*.xlsx", keep_count=10)
     cleanup_old_files(OUTPUT_DIR_TRATADOS, "OTRS_tratado_*.xlsx", keep_count=10)
     cleanup_old_files(OUTPUT_DIR_TRATADOS, "CitSmart_tratado_*.xlsx", keep_count=10)
     
-    logger.info("Script finalizado!")
-    # logger.info(f"SUCESSO! Total de {len(todos_os_dados)} chamados salvos em: {file}")
+    logger.info(f"✅ Pré-processamento finalizado com SUCESSO! Salvo em: {out.name}")
 
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        logger.exception(f"Erro crítico no pré-processamento de chamados: {e}")
+        logger.error(f"❌ Erro fatal no pré-processamento: {e}")
         sys.exit(1)

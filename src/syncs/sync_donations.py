@@ -13,6 +13,7 @@ if str(src_dir) not in sys.path:
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import DONATIONS_FILE_PATH, setup_logging, DEBUG_DIR_DONATIONS
 from src.database import sync_donations_from_excel
+from terminal import print_header, CYAN
 
 logger = setup_logging(DEBUG_DIR_DONATIONS / "donations.log", "sync_donations")
 
@@ -28,6 +29,7 @@ def read_donations_last_log_lines(n: int = 15) -> str:
 
 def run_donations_sync():
     """Executa a sincronização da planilha de doações."""
+    print_header("WORKER - SINCRONIZAÇÃO DE DOAÇÕES", color=CYAN)
     logger.info("Iniciando sincronização de doações em segundo plano...")
     try:
         sync_donations_from_excel(str(DONATIONS_FILE_PATH))

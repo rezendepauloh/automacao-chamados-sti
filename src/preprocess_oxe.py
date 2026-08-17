@@ -13,6 +13,7 @@ from config import (
     save_df_to_excel_formatted,
     cleanup_old_files
 )
+from terminal import print_header, CYAN
 
 # ---------------------------
 # Logging
@@ -52,6 +53,7 @@ def preprocess_oxe() -> bool:
     """
     Pré-processa e normaliza os dados brutos da Central Telefônica OXE.
     """
+    print_header("PRÉ-PROCESSAMENTO OXE - CENTRAL TELEFÔNICA", color=CYAN)
     logger.info("=== Iniciando Pré-processamento dos dados da Central Telefônica (OXE) ===")
 
     files = sorted(INPUT_DIR_BRUTOS.glob("Central_Telefonica_OXE_*.xlsx"), key=lambda f: f.stat().st_mtime)

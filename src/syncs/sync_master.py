@@ -16,6 +16,7 @@ from config import (
     MASTER_FILE_PATH, TREINO_PATH,
     setup_logging
 )
+from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 try:
     import win32com.client as win32
@@ -288,28 +289,30 @@ def sync_to_master(novo_excel_path: Path, master_excel_path: Path) -> Tuple[Any,
     return excel, wb_master, True, was_already_open
 
 def main():
+    print_header("WORKER - SINCRONIZAÇÃO DA BASE MASTER", color=CYAN)
+    logger.info("🔄 Iniciando sincronização dos chamados com a planilha Master...")
     logger.info("=== INICIANDO SINCRONIZAÇÃO MASTER ===")
     
     arquivos = list(OUTPUT_DIR_PRONTO.glob("Chamados_Tagged_*.xlsx"))
     if not arquivos:
-        logger.error("Nenhum arquivo Tagged encontrado.")
+        logger.error("⚠️ Nenhum arquivo Tagged encontrado em '03 - Dados prontos'.")
         sys.exit(1)
         
     recente = max(arquivos, key=lambda p: p.stat().st_mtime)
-    logger.info(f"Lendo base classificada: {recente.name}")
+    logger.info(f"📂 Lendo base classificada mais recente: {recente.name}")
 
     if not MASTER_FILE_PATH.exists():
-        logger.warning(f"Master não encontrado. Usando arquivo atual como base.")
+        logger.warning("⚠️ Master não encontrado no caminho SharePoint. Usando arquivo atual como base.")
         shutil.copy(recente, MASTER_FILE_PATH)
 
     excel_app, wb_master, changed, was_already_open = sync_to_master(recente, MASTER_FILE_PATH)
 
     if changed:
-        logger.info("Houve alterações, aplicando formatação visual...")
+        logger.info("✨ Houve alterações. Aplicando formatação visual no Excel...")
         format_excel((excel_app, wb_master), fechar_apos=not was_already_open)
-        logger.info("Sincronização e formatação concluídas com sucesso!")
+        logger.info("✅ Sincronização e formatação concluídas com SUCESSO!")
     else:
-        logger.info("Sem alterações. Fechando recursos...")
+        logger.info("ℹ️ Sem alterações detectadas. Fechando recursos...")
         if not was_already_open:
             wb_master.Close(SaveChanges=True)
             try:
