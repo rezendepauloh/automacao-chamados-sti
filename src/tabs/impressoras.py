@@ -39,7 +39,8 @@ def ping_host(host: str, count: int = 4, timeout_ms: int = 1000) -> tuple[bool, 
     command = ["ping", param, str(count)] + timeout_param + [clean_host]
 
     try:
-        output = subprocess.check_output(command, stderr=subprocess.STDOUT, universal_newlines=True, timeout=6)
+        creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        output = subprocess.check_output(command, stderr=subprocess.STDOUT, universal_newlines=True, timeout=6, creationflags=creationflags)
         is_success = ("0% loss" in output or "0% de perda" in output or "bytes=" in output.lower())
         return is_success, output
     except subprocess.CalledProcessError as e:

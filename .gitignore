@@ -48,3 +48,6 @@ temp/
 # Server IP
 src/js
 src/js/server-info.js
+
+# Scripts de Automação PowerShell
+src/scripts_powershell

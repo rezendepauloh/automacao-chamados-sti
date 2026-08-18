@@ -3,6 +3,7 @@ import sys
 import re
 import time
 import shutil
+import tempfile
 import threading
 import subprocess
 import webbrowser
@@ -13,6 +14,7 @@ import streamlit.components.v1 as components
 from src.components.status_banner import render_log_expander
 
 from src.config import (
+    PS_SCRIPTS_DIR,
     PS_SCRIPT_ANALISADOR,
     PS_SCRIPT_MANUTENCAO,
     PS_SCRIPT_REMOVER_USUARIOS,
@@ -20,6 +22,7 @@ from src.config import (
     DEBUG_DIR_SCRIPTS,
     setup_logging
 )
+from src.terminal import print_header, CYAN
 
 logger = setup_logging(DEBUG_DIR_SCRIPTS / "scripts_automacao.log", __name__)
 
@@ -50,38 +53,27 @@ def _get_powershell_exe() -> str:
     return "powershell.exe"
 
 
-def _read_file_safe_utf8(file_path: Path) -> str:
-    """
-    Lê um arquivo de texto garantindo a decodificação correta de caracteres acentuados
-    e corrigindo eventuais problemas de codificação dupla (ex: Ã³ -> ó).
-    """
-    if not file_path or not file_path.exists():
+def _clean_ansi(text: str) -> str:
+    """Remove sequências de escape ANSI de uma string para exibição limpa no Streamlit."""
+    return ANSI_ESCAPE.sub('', text)
+
+
+def _read_file_safe_utf8(filepath: Path) -> str:
+    """Lê um arquivo de texto testando encodings comuns para evitar UnicodeDecodeError."""
+    if not filepath.exists():
         return ""
-
-    with open(file_path, "rb") as f:
-        raw_bytes = f.read()
-
-    try:
-        content = raw_bytes.decode("utf-8-sig")
-    except UnicodeDecodeError:
+    for enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
         try:
-            content = raw_bytes.decode("cp1252")
+            return filepath.read_text(encoding=enc)
         except UnicodeDecodeError:
-            content = raw_bytes.decode("latin-1", errors="replace")
-
-    if "Ã" in content or "â€" in content:
-        try:
-            content = content.encode("latin-1").decode("utf-8")
-        except Exception:
-            pass
-
-    return content
+            continue
+    return filepath.read_text(encoding="utf-8", errors="replace")
 
 
 def _ensure_cred_admin_xml():
     """
-    Verifica e regenera o cred_admin.xml em TODAS as pastas de scripts caso o arquivo
-    não possa ser descriptografado pelo usuário atual do Windows (falha DPAPI).
+    Verifica e regenera o cred_admin.xml na pasta interna src/scripts_powershell/ e nas pastas dos scripts
+    caso o arquivo não possa ser descriptografado pelo usuário atual do Windows (falha DPAPI).
     Utiliza as credenciais salvas do SCCM_ADMIN_USER no cofre do Windows (keyring).
     """
     admin_user = os.getenv("SCCM_ADMIN_USER", "")
@@ -90,6 +82,11 @@ def _ensure_cred_admin_xml():
 
     script_paths = [PS_SCRIPT_ANALISADOR, PS_SCRIPT_MANUTENCAO, PS_SCRIPT_REMOVER_USUARIOS]
     target_xmls = set()
+    # Adiciona explicitamente o cred_admin.xml da pasta interna do projeto
+    if PS_SCRIPTS_DIR:
+        PS_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        target_xmls.add(PS_SCRIPTS_DIR / "cred_admin.xml")
+
     for sp in script_paths:
         if sp and sp.exists():
             target_xmls.add(sp.parent / "cred_admin.xml")
@@ -160,8 +157,10 @@ def _get_latest_html_report(output_dir: Path) -> Path | None:
 
 def start_background_ps_job(job_id: str, script_name: str, host: str, script_path: Path, args: list, out_folder: Path = None):
     """
-    Dispara o script PowerShell em uma thread/processo em segundo plano desacoplada da sessão do Streamlit.
+    Dispara o script PowerShell em uma thread/processo em segundo plano desacoplada da sessão do Streamlit,
+    copiando toda a pasta de scripts para um diretório temporário exclusivo e limpando-o após a execução.
     """
+    print_header("SCRIPTS DE AUTOMAÇÃO - POWERSHELL", color=CYAN)
     if not script_path or not script_path.exists():
         st.error(f"❌ Arquivo de script não encontrado no caminho: `{script_path}`")
         return None
@@ -169,15 +168,27 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
     _ensure_cred_admin_xml()
     ps_exe = _get_powershell_exe()
 
+    # Cria diretório temporário exclusivo e copia toda a pasta de scripts
+    try:
+        temp_dir = Path(tempfile.mkdtemp(prefix="ps_scripts_"))
+        logger.info(f"📁 Criando diretório temporário para scripts: {temp_dir}")
+        logger.info(f"📥 Copiando scripts e arquivos de suporte para o diretório temporário...")
+        shutil.copytree(PS_SCRIPTS_DIR, temp_dir, dirs_exist_ok=True)
+        target_script_path = temp_dir / script_path.name
+    except Exception as copy_err:
+        logger.error(f"Erro ao copiar pasta de scripts para diretório temporário: {copy_err}")
+        temp_dir = PS_SCRIPTS_DIR
+        target_script_path = script_path
+
     formatted_args = [f'"{a}"' if " " in str(a) else str(a) for a in args]
     args_str = " ".join(formatted_args)
     ps_cmd_str = (
         f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
         f"$OutputEncoding = [System.Text.Encoding]::UTF8; "
-        f"& '{script_path}' {args_str}"
+        f"& '{target_script_path}' {args_str}"
     )
 
-    cmd = [ps_exe, "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd_str]
+    cmd = [ps_exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd_str]
 
     job_data = {
         "job_id": job_id,
@@ -186,7 +197,11 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
         "script_path": script_path,
         "out_folder": out_folder,
         "status": "running",
-        "logs": [f"🚀 [{time.strftime('%H:%M:%S')}] Processo iniciado em segundo plano ({ps_exe})..."],
+        "logs": [
+            f"🚀 [{time.strftime('%H:%M:%S')}] Processo iniciado em segundo plano ({ps_exe})...",
+            f"📁 [{time.strftime('%H:%M:%S')}] Diretório temporário exclusivo criado: `{temp_dir}`",
+            f"📥 [{time.strftime('%H:%M:%S')}] Arquivos de suporte copiados de `{PS_SCRIPTS_DIR}`"
+        ],
         "start_time": time.time(),
         "end_time": None,
         "return_code": None
@@ -200,6 +215,7 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
 
     def _worker():
         logger.info(f"🚀 [BACKGROUND TASK START] {job_id} ({script_name}) host={host}")
+        logger.info(f"⚙️ Disparando processo no diretório de trabalho temporário (cwd): {temp_dir}")
         try:
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             process = subprocess.Popen(
@@ -210,7 +226,8 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
-                creationflags=creationflags
+                creationflags=creationflags,
+                cwd=str(temp_dir)
             )
 
             while True:
@@ -245,6 +262,14 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
             job_data["end_time"] = time.time()
             job_data["logs"].append(f"❌ Exceção na thread do script: {e}")
             logger.error(f"❌ [BACKGROUND TASK EXCEPTION] {job_id}: {e}")
+        finally:
+            if temp_dir and temp_dir != PS_SCRIPTS_DIR and temp_dir.exists():
+                try:
+                    logger.info(f"🧹 Limpando e removendo diretório temporário: {temp_dir}")
+                    job_data["logs"].append(f"🧹 Diretório temporário e seu conteúdo foram removidos com segurança: `{temp_dir}`")
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception as clean_err:
+                    logger.warning(f"⚠️ Erro ao remover diretório temporário {temp_dir}: {clean_err}")
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()

@@ -14,10 +14,11 @@ import ctypes
 from datetime import datetime
 from src.config import setup_logging, LOG_FILE_ORQUESTRADOR
 
-# CREATE_NO_WINDOW = 0x08000000 é um comando da API do Windows que proíbe a criação de janelas de terminal para subprocessos
 CREATE_NO_WINDOW = 0x08000000
 
-python_exe = os.path.join("venv", "Scripts", "pythonw.exe")
+# Prefere pythonw.exe da venv se existir para garantia total de ausência de janelas
+pythonw_candidate = os.path.join("venv", "Scripts", "pythonw.exe")
+python_exe = pythonw_candidate if os.path.exists(pythonw_candidate) else sys.executable
 
 # Inicializa o logging usando a biblioteca central unificada com proteção de encoding
 logger = setup_logging(LOG_FILE_ORQUESTRADOR, "ORQUESTRADOR")

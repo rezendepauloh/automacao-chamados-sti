@@ -1,7 +1,25 @@
 import os
+import sys
+import asyncio
 import keyring
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Silencia exceção WinError 10054 no asyncio/Proactor ao fechar abas/conexões no Windows
+if sys.platform == 'win32':
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+        _orig_call_connection_lost = _ProactorBasePipeTransport._call_connection_lost
+
+        def _silenced_call_connection_lost(self, exc):
+            try:
+                _orig_call_connection_lost(self, exc)
+            except (ConnectionResetError, ConnectionAbortedError, OSError):
+                pass
+
+        _ProactorBasePipeTransport._call_connection_lost = _silenced_call_connection_lost
+    except Exception:
+        pass
 
 # Carrega as variáveis do arquivo .env para a memória do script
 load_dotenv()
@@ -23,10 +41,15 @@ PAPERCUT_DEVICE_LIST_URL = os.getenv("PAPERCUT_DEVICE_LIST_URL", "")
 
 OXE_URL = os.getenv("OXE_URL", "")
 
-# Scripts de Automação PowerShell
-PS_SCRIPT_ANALISADOR = Path(os.getenv("PS_SCRIPT_ANALISADOR", ""))
-PS_SCRIPT_MANUTENCAO = Path(os.getenv("PS_SCRIPT_MANUTENCAO", ""))
-PS_SCRIPT_REMOVER_USUARIOS = Path(os.getenv("PS_SCRIPT_REMOVER_USUARIOS", ""))
+# Pega automaticamente a pasta do usuário e a raiz do projeto
+USER_HOME = Path.home()
+BASE_DIR = Path(__file__).parent.parent
+
+# Scripts de Automação PowerShell (Padrão: src/scripts_powershell/)
+PS_SCRIPTS_DIR = BASE_DIR / "src" / "scripts_powershell"
+PS_SCRIPT_ANALISADOR = PS_SCRIPTS_DIR / "Analisador.ps1"
+PS_SCRIPT_MANUTENCAO = PS_SCRIPTS_DIR / "Manutencao.ps1"
+PS_SCRIPT_REMOVER_USUARIOS = PS_SCRIPTS_DIR / "RemoverUsuarios.ps1"
 
 
 USERNAME = os.getlogin()
@@ -72,10 +95,6 @@ MAX_RETRIES = 5     # Número de tentativas por página
 # Diretórios
 # -----------------------------------------------------------------------------
 
-# Pega automaticamente a pasta do usuário atual
-USER_HOME = Path.home()
-
-BASE_DIR              = Path(__file__).parent.parent
 INPUT_DIR_BRUTOS      = BASE_DIR / "01 - Dados Brutos"
 INPUT_DIR_BRUTOS.mkdir(exist_ok=True)
 OUTPUT_DIR_TRATADOS   = BASE_DIR / "02 - Dados tratados"
@@ -647,7 +666,11 @@ def get_chrome_driver(
     else:
         opts.add_argument("--start-maximized")
         
-    driver = webdriver.Chrome(options=opts)
+    from selenium.webdriver.chrome.service import Service
+    import sys
+    creationflags = 0x08000000 if sys.platform == "win32" else 0
+    service = Service(creationflags=creationflags)
+    driver = webdriver.Chrome(service=service, options=opts)
     return driver
 
 

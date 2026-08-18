@@ -25,17 +25,25 @@ from src.terminal import log, print_header, CYAN, GREEN, YELLOW
 # Silencia o aviso WinError 10054 (Connection Reset) comum no Windows asyncio
 if sys.platform == 'win32':
     try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+        _orig_call_connection_lost = _ProactorBasePipeTransport._call_connection_lost
+
+        def _silenced_call_connection_lost(self, exc):
+            try:
+                _orig_call_connection_lost(self, exc)
+            except (ConnectionResetError, ConnectionAbortedError, OSError):
+                pass
+
+        _ProactorBasePipeTransport._call_connection_lost = _silenced_call_connection_lost
     except Exception:
         pass
 
 def handle_asyncio_exception(loop, context):
     exception = context.get('exception')
-    if isinstance(exception, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+    if isinstance(exception, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError)):
         return
-    # Ignora também pelo texto caso venha do proactor do Windows
     message = context.get('message', '')
-    if 'ConnectionResetError' in message or '10054' in message:
+    if 'ConnectionResetError' in message or '10054' in message or 'connection_lost' in message:
         return
     loop.default_exception_handler(context)
 
