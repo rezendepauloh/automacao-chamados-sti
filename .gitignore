@@ -49,5 +49,8 @@ temp/
 src/js
 src/js/server-info.js
 
-# Scripts de Automação PowerShell
-src/scripts_powershell
+# Cred_admin Powershell
+src/scripts_powershell/cred_admin.xml
+src/scripts_powershell/analisador/cred_admin.xml
+src/scripts_powershell/perfis/cred_admin.xml
+src/scripts_powershell/manutencao/cred_admin.xml

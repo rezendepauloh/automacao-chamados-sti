@@ -97,15 +97,26 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Tratamento de Encodings e Limpeza Automática:** Processamento inteligente com detecção de encodings (`latin1`, `utf-8-sig`), leitura estruturada de delimitadores (`;`), rotação de 10 backups e remoção de temporários em Downloads.
 - **Visualização & Filtros no Dashboard (`impressoras.py`):** Interface dedicada no painel com cards KPI em tempo real (Total de Ativos, Filas, MFDs, Status OK e Alertas/Erros), busca textual e filtros dinâmicos por Tipo, Status, Localização e Modelo.
 
-### 13. Módulo de Scripts de Automação PowerShell (Background Worker)
+### 13. Módulo de Scripts de Automação PowerShell & Relatórios Interativos
 
 - **Execução Remota de Rotinas de TI (`scripts_automacao.py`):**
-  - _Analisador de Dispositivos_: Coleta inventário de hardware, BIOS, discos, drivers e programas de máquinas remotas via CIM/WSMan, gerando relatórios em HTML, PDF e Excel.
+  - _Analisador de Dispositivos_: Coleta inventário de hardware, BIOS, discos, drivers e programas de máquinas remotas via CIM/WSMan, gerando relatórios ricos em HTML, PDF e Excel.
   - _Manutenção e Limpeza Remota_: Limpeza remota de temporários, Prefetch, Lixeira, cache de atualizações, Windows.old, Delivery Optimization, Crash Dumps e otimização/defrag de disco.
   - _Remoção de Perfis de Usuário_: Purga remota de contas e pastas de usuários inativos (`C:\Users`) via `Win32_UserProfile` e `StdRegProv`.
+- **Relatórios HTML Dinâmicos e Interativos (`GeradorHtml.ps1`):**
+  - _Design Moderno e Responsivo_: Identificação visual completa no cabeçalho com modelo e nome da máquina.
+  - _Ordenação Interativa de Tabelas (`<th>`)_: Clique em qualquer coluna para ordenar dados numéricos, datas (formato pt-BR) e texto.
+  - _Filtros de Pesquisa por Tabela (`.table-filter`)_: Inputs de busca individuais para seções de alta densidade (Programas, Serviços, Processos e Drivers).
+  - _ScrollSpy & Sub-links de Gráficos_: Menu lateral com classe `.active` dinâmica e links diretos para seções de tabelas e para cada gráfico individual.
+  - _Seções Accordion Expansíveis (`.section-card`)_: Todos os cards podem ser recolhidos ou expandidos ao clicar no título ou no ícone `▼`.
+  - _Scrollbars Personalizadas_: Estilização elegante de barras de rolagem para Chrome, Edge, Safari (`::-webkit-scrollbar`) e Firefox (`scrollbar-width`).
+  - _Gráficos Interativos_: Visualizações completas com Chart.js (slots de RAM, discos, espaço por perfil, programas por ano, tipo de inicialização de serviços, consumo de RAM por processo e origem de drivers) e fallback offline em CSS.
+- **Download Direto para a Máquina do Usuário (Pronto para Docker):**
+  - Botões de download instantâneo para relatórios **HTML (`.html`)**, **PDF (`.pdf`)** e **Excel (`.xlsx`)** na interface web Streamlit, permitindo que o usuário salve os arquivos diretamente na sua máquina local mesmo se a aplicação rodar em um contêiner Docker/Linux no Red Hat.
 - **Background Task Persistence (Execução Assíncrona):** Dispara o script em uma thread/processo em segundo plano desacoplada do navegador. Permite que o usuário navegue por outras abas do dashboard ou pressione **F5** sem interromper o script no Windows.
 - **Detecção Dinâmica do PowerShell Engine:** Detecta automaticamente a presença do `pwsh.exe` (PowerShell Core 7+) no sistema; caso contrário, faz o fallback seguro para o `powershell.exe` (Windows PowerShell 5.1).
 - **Auto-Fix de Credenciais DPAPI (`cred_admin.xml`):** Identifica falhas de criptografia DPAPI e regenera automaticamente os arquivos de credenciais usando as credenciais administrativas do `SCCM_ADMIN_USER` salvas no Keyring do Windows.
+
 
 ### 14. Catálogo Unificado de Unidades, Ramais (PDF / Intranet) & Monitoramento de Robôs
 

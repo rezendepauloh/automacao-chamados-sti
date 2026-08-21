@@ -12,7 +12,7 @@ from src.database import (
     save_evento_manual,
     get_eventos_manuais
 )
-from src.tabs.plantoes import format_phone_number
+from src.tabs.plantoes import format_phone_number, is_bancada_member
 from src.tabs.garantia import parse_date_to_iso_and_br
 from src.tabs.portarias import fetch_portarias_bancada
 
@@ -180,6 +180,13 @@ def render_calendario_geral_page():
     st.sidebar.markdown("---")
     st.sidebar.markdown("## 🔍 Opções Adicionais")
 
+    opcoes_servidores = [
+        "🟢 Apenas Bancada (Paulo, Reginaldo, Luiz, Murillo)",
+        "🌐 Todos os Servidores da STI"
+    ]
+    selected_servidor_mode = st.sidebar.radio("👥 Servidores Exibidos (Plantões):", opcoes_servidores)
+    bancada_only = "Apenas Bancada" in selected_servidor_mode
+
     search_query = st.sidebar.text_input("🔎 Pesquisar Evento:", placeholder="Ex: Paulo, impressora, #4645...").strip().lower()
 
     anos_disponiveis = [2026, 2025, 2024]
@@ -225,6 +232,9 @@ def render_calendario_geral_page():
         if not df_matutino.empty:
             for _, row in df_matutino.iterrows():
                 servidor = str(row.get('servidor', '')).strip()
+                if bancada_only and not is_bancada_member(servidor):
+                    continue
+
                 dt_iso = str(row.get('data_iso', '')).strip()
                 if not dt_iso:
                     continue
@@ -284,7 +294,14 @@ def render_calendario_geral_page():
                 except Exception:
                     pass
 
-                display_name = manut.split()[0] if manut else "STI"
+                if bancada_only:
+                    bancada_na_escala = [s for s in [manut, sdesk, infra, dev] if is_bancada_member(s)]
+                    if not bancada_na_escala:
+                        continue
+                    display_name = ", ".join([s.split()[0] for s in bancada_na_escala])
+                else:
+                    display_name = manut.split()[0] if manut else "STI"
+
                 details_html = (
                     f"<b>Manutenção:</b> {manut if manut else 'Não informado'}<br>"
                     f"<b>Service Desk:</b> {sdesk if sdesk else 'Não informado'}<br>"

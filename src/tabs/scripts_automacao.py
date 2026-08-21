@@ -42,11 +42,16 @@ SUBTAB_MAP = {
 SUBTAB_REVERSE = {v: k for k, v in SUBTAB_MAP.items()}
 
 
-def _get_powershell_exe() -> str:
+def _get_powershell_exe(selected_option: str = None) -> str:
     """
-    Detecta se o PowerShell Core 7+ (pwsh.exe) está disponível no sistema.
-    Caso contrário, faz o fallback para o Windows PowerShell 5.1 (powershell.exe).
+    Detecta se o PowerShell Core 7+ (pwsh.exe) ou Windows PowerShell 5.1 (powershell.exe)
+    deve ser utilizado com base na opção selecionada ou detecção automática.
     """
+    if selected_option == "PowerShell 7+ (pwsh.exe)":
+        return shutil.which("pwsh") or "pwsh.exe"
+    elif selected_option == "Windows PowerShell 5.1 (powershell.exe)":
+        return "powershell.exe"
+
     pwsh_path = shutil.which("pwsh")
     if pwsh_path:
         return pwsh_path
@@ -72,7 +77,7 @@ def _read_file_safe_utf8(filepath: Path) -> str:
 
 def _ensure_cred_admin_xml():
     """
-    Verifica e regenera o cred_admin.xml na pasta interna src/scripts_powershell/ e nas pastas dos scripts
+    Verifica e regenera o cred_admin.xml na pasta interna src/scripts_powershell/ e nas subpastas dos scripts
     caso o arquivo não possa ser descriptografado pelo usuário atual do Windows (falha DPAPI).
     Utiliza as credenciais salvas do SCCM_ADMIN_USER no cofre do Windows (keyring).
     """
@@ -82,13 +87,15 @@ def _ensure_cred_admin_xml():
 
     script_paths = [PS_SCRIPT_ANALISADOR, PS_SCRIPT_MANUTENCAO, PS_SCRIPT_REMOVER_USUARIOS]
     target_xmls = set()
-    # Adiciona explicitamente o cred_admin.xml da pasta interna do projeto
+    # Adiciona explicitamente o cred_admin.xml da pasta raiz interna de scripts
     if PS_SCRIPTS_DIR:
         PS_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
         target_xmls.add(PS_SCRIPTS_DIR / "cred_admin.xml")
 
+    # Adiciona o cred_admin.xml dentro de cada subpasta específica
     for sp in script_paths:
-        if sp and sp.exists():
+        if sp:
+            sp.parent.mkdir(parents=True, exist_ok=True)
             target_xmls.add(sp.parent / "cred_admin.xml")
 
     ps_exe = _get_powershell_exe()
@@ -142,23 +149,24 @@ def _ensure_cred_admin_xml():
                 logger.error(f"❌ Falha ao gerar cred_admin.xml em '{target_xml}': {gen_res.stderr}")
 
 
-def _get_latest_html_report(output_dir: Path) -> Path | None:
-    """Busca o relatório HTML mais recente gerado no diretório especificado."""
+def _get_latest_report_files(output_dir: Path) -> dict:
+    """Busca os relatórios mais recentes (HTML, PDF, XLSX) gerados no diretório de saída."""
+    res = {"html": None, "pdf": None, "xlsx": None}
     if not output_dir.exists():
-        return None
+        return res
     
-    html_files = list(output_dir.glob("*.html"))
-    if not html_files:
-        return None
-    
-    html_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-    return html_files[0]
+    for ext in ["html", "pdf", "xlsx"]:
+        files = list(output_dir.glob(f"*.{ext}"))
+        if files:
+            files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            res[ext] = files[0]
+    return res
 
 
-def start_background_ps_job(job_id: str, script_name: str, host: str, script_path: Path, args: list, out_folder: Path = None):
+def start_background_ps_job(job_id: str, script_name: str, host: str, script_path: Path, args: list, out_folder: Path = None, ps_option: str = None):
     """
     Dispara o script PowerShell em uma thread/processo em segundo plano desacoplada da sessão do Streamlit,
-    copiando toda a pasta de scripts para um diretório temporário exclusivo e limpando-o após a execução.
+    copiando apenas a subpasta específica da ferramenta para um diretório temporário exclusivo e limpando-o após a execução.
     """
     print_header("SCRIPTS DE AUTOMAÇÃO - POWERSHELL", color=CYAN)
     if not script_path or not script_path.exists():
@@ -166,18 +174,23 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
         return None
 
     _ensure_cred_admin_xml()
-    ps_exe = _get_powershell_exe()
+    ps_exe = _get_powershell_exe(ps_option)
 
-    # Cria diretório temporário exclusivo e copia toda a pasta de scripts
+    # Identifica a subpasta dedicada do script (ex: src/scripts_powershell/analisador/)
+    script_source_dir = script_path.parent
+    if not script_source_dir.exists():
+        script_source_dir = PS_SCRIPTS_DIR
+
+    # Cria diretório temporário exclusivo e copia APENAS a subpasta específica da ferramenta
     try:
-        temp_dir = Path(tempfile.mkdtemp(prefix="ps_scripts_"))
-        logger.info(f"📁 Criando diretório temporário para scripts: {temp_dir}")
-        logger.info(f"📥 Copiando scripts e arquivos de suporte para o diretório temporário...")
-        shutil.copytree(PS_SCRIPTS_DIR, temp_dir, dirs_exist_ok=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"ps_{script_source_dir.name}_"))
+        logger.info(f"📁 Criando diretório temporário exclusivo para [{script_name}]: {temp_dir}")
+        logger.info(f"📥 Copiando módulo dedicado de `{script_source_dir}` para `{temp_dir}`...")
+        shutil.copytree(script_source_dir, temp_dir, dirs_exist_ok=True)
         target_script_path = temp_dir / script_path.name
     except Exception as copy_err:
-        logger.error(f"Erro ao copiar pasta de scripts para diretório temporário: {copy_err}")
-        temp_dir = PS_SCRIPTS_DIR
+        logger.error(f"Erro ao copiar subpasta de scripts para diretório temporário: {copy_err}")
+        temp_dir = script_source_dir
         target_script_path = script_path
 
     formatted_args = [f'"{a}"' if " " in str(a) else str(a) for a in args]
@@ -200,7 +213,7 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
         "logs": [
             f"🚀 [{time.strftime('%H:%M:%S')}] Processo iniciado em segundo plano ({ps_exe})...",
             f"📁 [{time.strftime('%H:%M:%S')}] Diretório temporário exclusivo criado: `{temp_dir}`",
-            f"📥 [{time.strftime('%H:%M:%S')}] Arquivos de suporte copiados de `{PS_SCRIPTS_DIR}`"
+            f"📥 [{time.strftime('%H:%M:%S')}] Módulo e arquivos de suporte copiados de `{script_source_dir}`"
         ],
         "start_time": time.time(),
         "end_time": None,
@@ -244,6 +257,19 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
                     job_data["logs"].append(cleaned_line)
                     logger.info(f"[{job_id}] {cleaned_line}")
 
+                    # Auditoria de caminhos de arquivos gerados (HTML, PDF, XLSX e Diretório)
+                    lower_line = cleaned_line.lower()
+                    if (
+                        "relatorio_html_path:" in lower_line
+                        or "relatorio_pdf_path:" in lower_line
+                        or "relatorio_excel_path:" in lower_line
+                        or "relatório salvo em:" in lower_line
+                        or "pdf gerado em:" in lower_line
+                        or "arquivo excel gerado em:" in lower_line
+                        or "diretório de saída" in lower_line
+                    ):
+                        logger.info(f"🎯 [AUDITORIA DE DESTINO] [{job_id}] {cleaned_line}")
+
             rc = process.poll()
             job_data["return_code"] = rc
             job_data["end_time"] = time.time()
@@ -263,7 +289,7 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
             job_data["logs"].append(f"❌ Exceção na thread do script: {e}")
             logger.error(f"❌ [BACKGROUND TASK EXCEPTION] {job_id}: {e}")
         finally:
-            if temp_dir and temp_dir != PS_SCRIPTS_DIR and temp_dir.exists():
+            if temp_dir and temp_dir != script_source_dir and temp_dir.exists():
                 try:
                     logger.info(f"🧹 Limpando e removendo diretório temporário: {temp_dir}")
                     job_data["logs"].append(f"🧹 Diretório temporário e seu conteúdo foram removidos com segurança: `{temp_dir}`")
@@ -333,53 +359,89 @@ def render_background_jobs_widget():
                     _BACKGROUND_JOBS.pop(job_id, None)
                     st.rerun()
 
-            # Exibe botões do relatório HTML se for o Analisador de Dispositivos e tiver concluído
+            # Exibe botões dos relatórios gerados (HTML, PDF, XLSX) prontos para download na máquina do usuário
             if out_folder and Path(out_folder).exists():
-                latest_html = _get_latest_html_report(Path(out_folder))
-                if latest_html and latest_html.exists():
+                reports = _get_latest_report_files(Path(out_folder))
+                latest_html = reports["html"]
+                latest_pdf = reports["pdf"]
+                latest_xlsx = reports["xlsx"]
+
+                if latest_html or latest_pdf or latest_xlsx:
                     st.markdown("---")
-                    st.markdown(f"#### 📄 Relatório HTML Gerado (`{latest_html.name}`)")
-                    col_btn1, col_btn2 = st.columns(2)
-                    with col_btn1:
-                        if st.button("🌐 Abrir no Navegador", key=f"bg_open_html_{job_id}", width='stretch'):
-                            try:
-                                os.startfile(str(latest_html))
-                            except Exception:
-                                webbrowser.open(f"file:///{latest_html}")
-                            st.toast("Relatório HTML aberto no navegador!", icon="🌐")
-                    with col_btn2:
-                        html_content = _read_file_safe_utf8(latest_html)
-                        st.download_button(
-                            label="📥 Baixar Relatório HTML",
-                            data=html_content,
-                            file_name=latest_html.name,
-                            mime="text/html",
-                            width='stretch',
-                            key=f"bg_download_html_{job_id}"
-                        )
-                    with st.expander("👁️ Pré-visualizar Relatório HTML no Painel", expanded=False):
-                        html_content = _read_file_safe_utf8(latest_html)
-                        st.components.v1.html(html_content, height=700, scrolling=True)
+                    st.markdown("#### 📥 Relatórios Gerados (Baixar no seu Computador)")
+                    
+                    dl_cols = st.columns(3)
+                    if latest_html and latest_html.exists():
+                        with dl_cols[0]:
+                            html_bytes = latest_html.read_bytes()
+                            st.download_button(
+                                label="🌐 Baixar Relatório HTML",
+                                data=html_bytes,
+                                file_name=latest_html.name,
+                                mime="text/html",
+                                width='stretch',
+                                key=f"bg_download_html_{job_id}"
+                            )
+                    if latest_pdf and latest_pdf.exists():
+                        with dl_cols[1]:
+                            pdf_bytes = latest_pdf.read_bytes()
+                            st.download_button(
+                                label="📄 Baixar Relatório PDF",
+                                data=pdf_bytes,
+                                file_name=latest_pdf.name,
+                                mime="application/pdf",
+                                width='stretch',
+                                key=f"bg_download_pdf_{job_id}"
+                            )
+                    if latest_xlsx and latest_xlsx.exists():
+                        with dl_cols[2]:
+                            xlsx_bytes = latest_xlsx.read_bytes()
+                            st.download_button(
+                                label="📊 Baixar Relatório Excel",
+                                data=xlsx_bytes,
+                                file_name=latest_xlsx.name,
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                width='stretch',
+                                key=f"bg_download_xlsx_{job_id}"
+                            )
+
+                    if latest_html and latest_html.exists():
+                        with st.expander("👁️ Pré-visualizar Relatório HTML no Painel", expanded=False):
+                            html_content = _read_file_safe_utf8(latest_html)
+                            st.components.v1.html(html_content, height=700, scrolling=True)
+
 
 
 def render_scripts_automacao_page():
     """Renderiza a página principal de execução dos scripts de automação PowerShell."""
-    ps_engine = _get_powershell_exe()
-    engine_badge = "⚡ PowerShell 7+ (pwsh)" if "pwsh" in ps_engine.lower() else "💻 Windows PowerShell 5.1"
+    col_hdr1, col_hdr2 = st.columns([2, 1])
+    with col_hdr2:
+        selected_ps_version = st.selectbox(
+            "⚙️ Interpretador PowerShell",
+            options=[
+                "Detectar Automaticamente (Padrão)",
+                "PowerShell 7+ (pwsh.exe)",
+                "Windows PowerShell 5.1 (powershell.exe)"
+            ],
+            key="ps_version_selector"
+        )
+    with col_hdr1:
+        ps_engine = _get_powershell_exe(selected_ps_version)
+        engine_badge = "⚡ PowerShell 7+ (pwsh)" if "pwsh" in ps_engine.lower() else "💻 Windows PowerShell 5.1"
 
-    st.markdown(f"""
-        <div style="background: var(--metric-bg, #1e293b); padding: 20px; border-radius: 12px; border-left: 6px solid #3b82f6; border-top: 1px solid var(--metric-border, #2d3139); border-right: 1px solid var(--metric-border, #2d3139); border-bottom: 1px solid var(--metric-border, #2d3139); margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="color: var(--metric-value-color, #ffffff); margin: 0; font-size: 24px; font-weight: 700;">⚡ Scripts de Automação PowerShell</h2>
-                <span style="background-color: var(--secondary-background-color, rgba(56, 189, 248, 0.15)); color: var(--text-color, #38bdf8); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid #0284c7;">
-                    {engine_badge}
-                </span>
+        st.markdown(f"""
+            <div style="background: var(--metric-bg, #1e293b); padding: 15px 20px; border-radius: 12px; border-left: 6px solid #3b82f6; border-top: 1px solid var(--metric-border, #2d3139); border-right: 1px solid var(--metric-border, #2d3139); border-bottom: 1px solid var(--metric-border, #2d3139); margin-bottom: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="color: var(--metric-value-color, #ffffff); margin: 0; font-size: 22px; font-weight: 700;">⚡ Scripts de Automação PowerShell</h2>
+                    <span style="background-color: var(--secondary-background-color, rgba(56, 189, 248, 0.15)); color: var(--text-color, #38bdf8); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid #0284c7;">
+                        {engine_badge}
+                    </span>
+                </div>
+                <p style="color: var(--metric-title-color, #94a3b8); margin: 4px 0 0 0; font-size: 13px;">
+                    Execute rotinas remotas em segundo plano com suporte a navegação livre, F5 e acompanhamento de logs em tempo real.
+                </p>
             </div>
-            <p style="color: var(--metric-title-color, #94a3b8); margin: 6px 0 0 0; font-size: 14px;">
-                Execute rotinas remotas em segundo plano com suporte a navegação livre, F5 e acompanhamento de logs em tempo real.
-            </p>
-        </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
 
     # Renderiza o widget de tarefas em segundo plano (se houver)
@@ -411,14 +473,21 @@ def render_scripts_automacao_page():
     # =========================================================================
     if selected_subtab_title == "📊 Analisador de Dispositivos":
         st.markdown("### 📊 Analisador de Dispositivos de Máquina Remota")
-        st.caption("Coleta inventário completo de hardware, drivers, serviços e gera relatórios em HTML, PDF e Excel.")
+        st.caption("Coleta inventário completo de hardware, drivers, serviços e gera relatórios em HTML, PDF e Excel para download direto na sua máquina.")
 
         col1, col2 = st.columns([2, 1])
         with col1:
             comp_analisador = st.text_input("💻 Nome ou IP da Máquina Remota", key="input_analisador_host", placeholder="Ex: PJCHA-54491 ou 10.x.x.x")
         with col2:
-            default_out = str(USER_HOME / "DeviceReports")
-            out_folder = st.text_input("📁 Pasta de Destino dos Relatórios", value=default_out, key="input_analisador_out")
+            user_profile = os.getenv("USERPROFILE") or str(Path.home())
+            default_out = str(Path(user_profile) / "DeviceReports")
+            out_folder = st.text_input(
+                "📁 Pasta de Saída no Servidor",
+                value=default_out,
+                key="input_analisador_out",
+                help="Os relatórios serão gerados nesta pasta no servidor e disponibilizados automaticamente nos botões de Download para você salvar onde quiser na sua máquina."
+            )
+
 
         col_opt1, col_opt2 = st.columns([1, 2])
         with col_opt1:
@@ -431,7 +500,15 @@ def render_scripts_automacao_page():
             if not comp_analisador.strip():
                 st.warning("⚠️ Por favor, informe o Nome ou IP da máquina remota.")
             else:
-                args = ["-ComputerName", comp_analisador.strip(), "-OutputFolder", out_folder.strip(), "-TimeoutSec", str(timeout_sec)]
+                chosen_out = out_folder.strip()
+                if not chosen_out or chosen_out == default_out or chosen_out == str(Path.home() / "DeviceReports"):
+                    out_path_arg = r"$env:USERPROFILE\DeviceReports"
+                    out_folder_obj = Path(default_out)
+                else:
+                    out_path_arg = chosen_out
+                    out_folder_obj = Path(chosen_out)
+
+                args = ["-ComputerName", comp_analisador.strip(), "-OutputFolder", out_path_arg, "-TimeoutSec", str(timeout_sec)]
                 if skip_major:
                     args.append("-SkipMajorData")
 
@@ -442,7 +519,8 @@ def render_scripts_automacao_page():
                     host=comp_analisador.strip(),
                     script_path=PS_SCRIPT_ANALISADOR,
                     args=args,
-                    out_folder=Path(out_folder.strip())
+                    out_folder=out_folder_obj,
+                    ps_option=selected_ps_version
                 )
                 st.toast(f"🚀 Análise da máquina {comp_analisador.strip()} iniciada em segundo plano!", icon="🤖")
                 st.rerun()
@@ -488,7 +566,8 @@ def render_scripts_automacao_page():
                     script_name="Manutenção e Limpeza Remota",
                     host=comp_manutencao.strip(),
                     script_path=PS_SCRIPT_MANUTENCAO,
-                    args=args
+                    args=args,
+                    ps_option=selected_ps_version
                 )
                 st.toast(f"🚀 Limpeza remota da máquina {comp_manutencao.strip()} iniciada em segundo plano!", icon="🧹")
                 st.rerun()
@@ -522,7 +601,8 @@ def render_scripts_automacao_page():
                     script_name="Remoção de Perfis de Usuários",
                     host=comp_perfis.strip(),
                     script_path=PS_SCRIPT_REMOVER_USUARIOS,
-                    args=args
+                    args=args,
+                    ps_option=selected_ps_version
                 )
                 st.toast(f"🚀 Remoção de perfis na máquina {comp_perfis.strip()} iniciada em segundo plano!", icon="👥")
                 st.rerun()

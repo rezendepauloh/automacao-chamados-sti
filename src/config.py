@@ -47,9 +47,9 @@ BASE_DIR = Path(__file__).parent.parent
 
 # Scripts de Automação PowerShell (Padrão: src/scripts_powershell/)
 PS_SCRIPTS_DIR = BASE_DIR / "src" / "scripts_powershell"
-PS_SCRIPT_ANALISADOR = PS_SCRIPTS_DIR / "Analisador.ps1"
-PS_SCRIPT_MANUTENCAO = PS_SCRIPTS_DIR / "Manutencao.ps1"
-PS_SCRIPT_REMOVER_USUARIOS = PS_SCRIPTS_DIR / "RemoverUsuarios.ps1"
+PS_SCRIPT_ANALISADOR = PS_SCRIPTS_DIR / "analisador" / "Analisador.ps1"
+PS_SCRIPT_MANUTENCAO = PS_SCRIPTS_DIR / "manutencao" / "Manutencao.ps1"
+PS_SCRIPT_REMOVER_USUARIOS = PS_SCRIPTS_DIR / "perfis" / "RemoverUsuarios.ps1"
 
 
 USERNAME = os.getlogin()
