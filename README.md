@@ -239,47 +239,101 @@ automated-OTRS-and-CitSmart/
 
 ---
 
-## 📦 Como Instalar e Configurar
+## 📦 Como Instalar e Executar
+
+O sistema pode ser executado em três ambientes diferentes: **Windows Nativo**, **WSL (Linux/Ubuntu)** e **Docker (Red Hat Enterprise Linux / UBI 9)**.
+
+---
+
+### 🪟 1. Execução no Windows (Nativo)
 
 1. **Clone o repositório:**
-
-   ```bash
-   git clone https://github.com/rezendepauloh/automacao-chamados-sti
+   ```cmd
+   git clone https://github.com/rezendepauloh/automacao-chamados-sti.git
+   cd automacao-chamados-sti
    ```
 
-2. **Instale os requisitos:**
-
-   ```bash
+2. **Crie e ative o ambiente virtual (`venv`):**
+   ```cmd
    python -m venv venv
-   venv\Scripts\activate
+   call venv\Scripts\activate.bat
+   ```
+
+3. **Instale as dependências:**
+   ```cmd
    pip install -r requirements.txt
    playwright install chromium
    python -m spacy download pt_core_news_sm
    ```
 
-3. **Configure as Variáveis de Ambiente:**
-   Copie o arquivo `.env.example` para `.env` e preencha as variáveis e caminhos dos scripts PowerShell correspondentes:
+4. **Configure as Variáveis de Ambiente:**
+   Copie `.env.example` para `.env` e preencha as credenciais:
+   ```cmd
+   copy .env.example .env
+   ```
 
+5. **Inicie o sistema via Atalho/Batch:**
+   Basta dar duplo clique em `00-iniciar.cmd` ou rodar no prompt:
+   ```cmd
+   00-iniciar.cmd
+   ```
+
+---
+
+### 🐧 2. Execução no WSL Linux (Ubuntu)
+
+> 💡 **Aviso Importante para Linux/WSL:** A biblioteca `pywin32` é exclusiva do Windows. No Linux/WSL, se você for instalar via `pip install -r requirements.txt` e encontrar erro com a `pywin32`, utilize o comando com filtro ou remova a linha `pywin32==311` temporariamente (o código já possui tratamento seguro via `try/except` e não falha sem o win32com no Linux).
+
+1. **Clone o repositório no diretório do WSL:**
+   ```bash
+   git clone https://github.com/rezendepauloh/automacao-chamados-sti.git
+   cd automacao-chamados-sti
+   ```
+
+2. **Crie o ambiente virtual e instale as dependências:**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+
+   # Instalação filtrando dependências exclusivas do Windows (como pywin32)
+   grep -v "pywin32" requirements.txt | pip install -r /dev/stdin
+   
+   playwright install chromium
+   playwright install-deps
+   python -m spacy download pt_core_news_sm
+   ```
+
+3. **Configure as Variáveis de Ambiente:**
    ```bash
    cp .env.example .env
    ```
 
-4. **Configure as credenciais criptografadas do Windows (Keyring):**
-
+4. **Inicie a aplicação via Script Shell (`iniciar.sh`):**
    ```bash
-   venv\Scripts\python.exe src/salvar_senha.py
+   chmod +x iniciar.sh
+   ./iniciar.sh
    ```
 
-5. **Executar a Orquestração em Segundo Plano:**
-
+5. **(Opcional) Atalho para a Área de Trabalho / Menu do Linux:**
    ```bash
-   venv\Scripts\python.exe orquestrador.py
+   chmod +x sistema-bancada.desktop
+   cp sistema-bancada.desktop ~/.local/share/applications/
    ```
 
-6. **Executar o Dashboard Web:**
+---
+
+### 🐳 3. Execução em Container Docker (Red Hat UBI 9)
+
+O projeto já inclui um `Dockerfile` baseado na imagem oficial **Red Hat UBI 9 (Python 3.12)** e um `docker-compose.yml` com banco de dados PostgreSQL integrado.
+
+1. **Subir os serviços via Docker Compose:**
    ```bash
-   streamlit run dashboard.py
+   docker compose up -d --build
    ```
+
+2. **Acessar a Aplicação:**
+   - **Dashboard Streamlit:** [http://localhost:8501](http://localhost:8501)
+   - **Banco PostgreSQL Interno:** Porta `5432`
 
 ---
 
@@ -290,3 +344,4 @@ Para rodar todos os testes unitários integrados da aplicação e validar os mó
 ```bash
 python -m unittest discover -s tests
 ```
+

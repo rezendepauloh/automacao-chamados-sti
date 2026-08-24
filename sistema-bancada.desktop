@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Sistema Bancada
+Comment=Inicializa o serviço Streamlit do Sistema Bancada
+Exec=bash -c '/home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/iniciar.sh; exec bash'
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;Utility;
+Path=/home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart
