@@ -246,8 +246,8 @@ def render_contracts_page():
     else:
         if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
             import sys, subprocess, time
-            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            subprocess.Popen([sys.executable, "src/syncs/sync_fiscalizacao.py"], creationflags=creationflags)
+            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+            subprocess.Popen([sys.executable, "src/syncs/sync_fiscalizacao.py"], **popen_kwargs)
             time.sleep(0.5)
             st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
             st.rerun()

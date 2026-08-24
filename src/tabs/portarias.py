@@ -192,8 +192,8 @@ def render_portarias_page():
         else:
             if st.button("🔄 Atualizar Dados (API)", width='stretch', help="Busca novas portarias em segundo plano."):
                 import sys, subprocess, time
-                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                subprocess.Popen([sys.executable, "src/syncs/sync_portarias.py"], creationflags=creationflags)
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/syncs/sync_portarias.py"], **popen_kwargs)
                 time.sleep(0.8)
                 st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
                 st.rerun()

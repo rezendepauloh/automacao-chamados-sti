@@ -62,8 +62,8 @@ def render_garantia_page():
     else:
         if st.sidebar.button("🔄 Sincronizar com Excel", type="primary", width='stretch', help="Busca atualizações na planilha de garantia em segundo plano."):
             import sys, subprocess, time
-            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            subprocess.Popen([sys.executable, "src/syncs/sync_garantia.py"], creationflags=creationflags)
+            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+            subprocess.Popen([sys.executable, "src/syncs/sync_garantia.py"], **popen_kwargs)
             time.sleep(0.5)
             st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
             st.rerun()

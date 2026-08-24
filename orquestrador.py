@@ -69,14 +69,19 @@ def format_duration(seconds: float) -> str:
     return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
 def run_script(script_name: str) -> subprocess.CompletedProcess:
-    # Executa o sub-processo de forma oculta capturando a saída
+    # Executa o sub-processo capturando a saída de forma segura multiplataforma
+    kwargs = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    if sys.platform == "win32":
+        kwargs["creationflags"] = CREATE_NO_WINDOW
+
     return subprocess.run(
         [python_exe, script_name],
-        creationflags=CREATE_NO_WINDOW,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace'
+        **kwargs
     )
 
 def main():

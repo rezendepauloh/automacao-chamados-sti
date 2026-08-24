@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 root_dir = Path(__file__).parent.parent.parent
@@ -240,11 +241,10 @@ def render_chamados_page():
                 type="primary"
             )
             if run_orquestrador:
-                import subprocess
                 import time
-                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                exe_to_run = sys.executable
-                subprocess.Popen([exe_to_run, "orquestrador.py"], creationflags=creationflags)
+                import subprocess
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "orquestrador.py"], **popen_kwargs)
                 time.sleep(0.8)
                 st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
                 st.cache_data.clear()

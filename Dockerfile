@@ -16,13 +16,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Diretório base de trabalho da aplicação
 WORKDIR /app
 
-# Instalação de dependências do sistema operacional e certificados
+# Instalação de dependências do sistema operacional, certificados e Chromium para Selenium/Playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     ca-certificates \
     tzdata \
     libpq-dev \
+    chromium \
+    chromium-driver \
     && update-ca-certificates \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*

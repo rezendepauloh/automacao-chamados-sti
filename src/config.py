@@ -52,7 +52,25 @@ PS_SCRIPT_MANUTENCAO = PS_SCRIPTS_DIR / "manutencao" / "Manutencao.ps1"
 PS_SCRIPT_REMOVER_USUARIOS = PS_SCRIPTS_DIR / "perfis" / "RemoverUsuarios.ps1"
 
 
-USERNAME = os.getlogin()
+def _get_username() -> str:
+    """Obtém o nome de usuário do sistema de forma segura para Docker, Linux e Windows."""
+    env_user = os.getenv("AD_USER") or os.getenv("CITSMART_USER") or os.getenv("USER") or os.getenv("USERNAME")
+    if env_user and env_user.strip():
+        return env_user.strip()
+    try:
+        import getpass
+        user = getpass.getuser()
+        if user and user.strip():
+            return user.strip()
+    except Exception:
+        pass
+    try:
+        return os.getlogin()
+    except Exception:
+        pass
+    return "usuario"
+
+USERNAME = _get_username()
 CITSMART_EMAIL = f"{USERNAME}@{os.getenv('AD_EMAIL', '')}"
 
 # Tenta pegar senha do keyring, ou deixa vazia se falhar (para não quebrar no PC de outros)
@@ -481,13 +499,18 @@ def fetch_sccm_data(username: str) -> dict:
     res_data = {"ip": "", "hostname": ""}
     
     try:
+        run_kwargs = {
+            "capture_output": True,
+            "text": True,
+            "timeout": 15,
+            "encoding": "cp1252",
+        }
+        if sys.platform == "win32":
+            run_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_command],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            encoding='cp1252',
-            creationflags=subprocess.CREATE_NO_WINDOW
+            **run_kwargs
         )
         
         if result.returncode != 0:
@@ -661,15 +684,37 @@ def get_chrome_driver(
     if headless:
         opts.add_argument("--headless=new")
         opts.add_argument("--window-size=1920,1080")
-        if disable_gpu:
-            opts.add_argument("--disable-gpu")
     else:
         opts.add_argument("--start-maximized")
-        
+    # Configurações essenciais para execução em containers Docker/Linux e headless
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-software-rasterizer")
+
+    # Localiza binário do Chromium no Linux (incluindo o cache do Playwright)
+    if sys.platform != "win32":
+        possible_binaries = [
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+        ]
+        playwright_cache = Path.home() / ".cache" / "ms-playwright"
+        if playwright_cache.exists():
+            for p in sorted(playwright_cache.glob("chromium-*/chrome-linux/chrome"), reverse=True):
+                possible_binaries.insert(0, str(p))
+
+        for binary in possible_binaries:
+            if Path(binary).exists():
+                opts.binary_location = str(binary)
+                break
+
     from selenium.webdriver.chrome.service import Service
-    import sys
-    creationflags = 0x08000000 if sys.platform == "win32" else 0
-    service = Service(creationflags=creationflags)
+    if sys.platform == "win32":
+        service = Service(creationflags=0x08000000)
+    else:
+        service = Service()
     driver = webdriver.Chrome(service=service, options=opts)
     return driver
 

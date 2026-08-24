@@ -1,6 +1,7 @@
 import io
 import re
 import sys
+import time
 import platform
 import subprocess
 import pandas as pd
@@ -39,8 +40,10 @@ def ping_host(host: str, count: int = 4, timeout_ms: int = 1000) -> tuple[bool, 
     command = ["ping", param, str(count)] + timeout_param + [clean_host]
 
     try:
-        creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        output = subprocess.check_output(command, stderr=subprocess.STDOUT, universal_newlines=True, timeout=6, creationflags=creationflags)
+        cmd_kwargs = {"stderr": subprocess.STDOUT, "universal_newlines": True, "timeout": 6}
+        if sys.platform == "win32":
+            cmd_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        output = subprocess.check_output(command, **cmd_kwargs)
         is_success = ("0% loss" in output or "0% de perda" in output or "bytes=" in output.lower())
         return is_success, output
     except subprocess.CalledProcessError as e:
@@ -144,9 +147,8 @@ def render_impressoras_page():
             st.sidebar.button("🤖 Sincronizando PaperCut...", width='stretch', disabled=True)
         else:
             if st.sidebar.button("🔄 Sincronizar Impressoras", type="primary", width='stretch', help="Executa a coleta e unificação de dados do PaperCut em segundo plano."):
-                import sys, subprocess, time
-                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                subprocess.Popen([sys.executable, "src/scrapers/papercut_scraper.py"], creationflags=creationflags)
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/scrapers/papercut_scraper.py"], **popen_kwargs)
                 time.sleep(1.0)
                 st.toast("🚀 Sincronização do PaperCut iniciada em segundo plano!", icon="🤖")
                 st.rerun()

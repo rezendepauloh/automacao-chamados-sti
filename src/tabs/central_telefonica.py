@@ -82,8 +82,8 @@ def render_central_telefonica_page():
         else:
             if st.button("🔄 Sincronizar Ramais (OXE)", type="primary", width='stretch', help="Executa o scraper e o pré-processamento em segundo plano."):
                 import subprocess, time
-                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                subprocess.Popen([sys.executable, "src/scrapers/oxe_scraper.py"], creationflags=creationflags)
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/scrapers/oxe_scraper.py"], **popen_kwargs)
                 time.sleep(1.0)
                 st.toast("🚀 Scraper do OXE iniciado em segundo plano!", icon="🤖")
                 st.rerun()

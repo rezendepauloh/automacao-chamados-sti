@@ -109,11 +109,12 @@ def _ensure_cred_admin_xml():
             logger.info(f"O arquivo '{target_xml}' não existe. Será gerado...")
             need_regenerate = True
         else:
-            test_ps = f"try {{ $c = Import-Clixml -Path '{target_xml}'; if ($c.UserName) {{ exit 0 }} else {{ exit 1 }} }} catch {{ exit 1 }}"
+            ps_kwargs = {"capture_output": True}
+            if sys.platform == "win32":
+                ps_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             res = subprocess.run(
                 [ps_exe, "-NonInteractive", "-NoProfile", "-Command", test_ps],
-                capture_output=True,
-                creationflags=creationflags
+                **ps_kwargs
             )
             if res.returncode != 0:
                 logger.warning(f"⚠️ cred_admin.xml em '{target_xml}' não pode ser descriptografado. Necessário regenerar.")
@@ -136,11 +137,12 @@ def _ensure_cred_admin_xml():
                 f'$cred | Export-Clixml -Path "{target_xml}" -Force'
             )
 
+            gen_kwargs = {"capture_output": True, "text": True}
+            if sys.platform == "win32":
+                gen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             gen_res = subprocess.run(
                 [ps_exe, "-NonInteractive", "-NoProfile", "-Command", gen_ps],
-                capture_output=True,
-                text=True,
-                creationflags=creationflags
+                **gen_kwargs
             )
 
             if gen_res.returncode == 0:
@@ -229,18 +231,20 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
     def _worker():
         logger.info(f"🚀 [BACKGROUND TASK START] {job_id} ({script_name}) host={host}")
         logger.info(f"⚙️ Disparando processo no diretório de trabalho temporário (cwd): {temp_dir}")
-        try:
-            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            popen_kwargs = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.STDOUT,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "bufsize": 1,
+                "cwd": str(temp_dir),
+            }
+            if sys.platform == "win32":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                creationflags=creationflags,
-                cwd=str(temp_dir)
+                **popen_kwargs
             )
 
             while True:

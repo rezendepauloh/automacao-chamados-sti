@@ -1,8 +1,25 @@
 import keyring
 import os
 
+def _get_username() -> str:
+    env_user = os.getenv("AD_USER") or os.getenv("CITSMART_USER") or os.getenv("USER") or os.getenv("USERNAME")
+    if env_user and env_user.strip():
+        return env_user.strip()
+    try:
+        import getpass
+        user = getpass.getuser()
+        if user and user.strip():
+            return user.strip()
+    except Exception:
+        pass
+    try:
+        return os.getlogin()
+    except Exception:
+        pass
+    return "usuario"
+
 # Pega o mesmo usuário que o config.py usa (username) para o contexto diário
-usuario_windows = os.getlogin() 
+usuario_windows = _get_username() 
 senha_real = input("Digite a sua senha da rede/AD (para OTRS/CitSmart): ")
 
 # Salva no cofre do Windows para o usuário logado
