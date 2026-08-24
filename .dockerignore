@@ -1,0 +1,38 @@
+# Ambientes Virtuais
+venv/
+.venv/
+env/
+ENV/
+
+# Python Cache e Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Git e versionamento
+.git/
+.gitignore
+.gitattributes
+
+# Testes e Cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# IDEs e Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker e arquivos de build
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Logs e scripts legados
+old_scripts/
+*.log

@@ -239,13 +239,13 @@ automated-OTRS-and-CitSmart/
 
 ---
 
-## 📦 Como Instalar e Executar
+## 📦 Como Executar a Aplicação (100% Docker)
 
-O sistema pode ser executado em três ambientes diferentes: **Windows Nativo**, **WSL (Linux/Ubuntu)** e **Docker (Red Hat Enterprise Linux / UBI 9)**.
+O sistema opera de forma totalmente containerizada através do **Docker Compose**, eliminando a necessidade de gerenciar ambientes virtuais (`venv`) ou instalar bibliotecas Python no sistema operacional host.
 
 ---
 
-### 🪟 1. Execução no Windows (Nativo)
+### 🪟 1. Execução no Windows (via Docker no WSL)
 
 1. **Clone o repositório:**
    ```cmd
@@ -253,54 +253,33 @@ O sistema pode ser executado em três ambientes diferentes: **Windows Nativo**, 
    cd automacao-chamados-sti
    ```
 
-2. **Crie e ative o ambiente virtual (`venv`):**
-   ```cmd
-   python -m venv venv
-   call venv\Scripts\activate.bat
-   ```
-
-3. **Instale as dependências:**
-   ```cmd
-   pip install -r requirements.txt
-   playwright install chromium
-   python -m spacy download pt_core_news_sm
-   ```
-
-4. **Configure as Variáveis de Ambiente:**
-   Copie `.env.example` para `.env` e preencha as credenciais:
+2. **Configure as Variáveis de Ambiente:**
+   Copie `.env.example` para `.env`:
    ```cmd
    copy .env.example .env
    ```
 
-5. **Inicie o sistema via Atalho/Batch:**
-   Basta dar duplo clique em `00-iniciar.cmd` ou rodar no prompt:
+3. **Inicie o sistema via Atalho Batch:**
+   Basta dar duplo clique em `00-iniciar.cmd` ou executar no prompt:
    ```cmd
    00-iniciar.cmd
    ```
+   > O script repassa a execução automaticamente para o Docker dentro do WSL, exibindo o banner estilizado, o QR Code de rede e os logs em tempo real. Pressionar <kbd>CTRL</kbd> + <kbd>C</kbd> encerra os containers automaticamente.
 
 ---
 
 ### 🐧 2. Execução no WSL Linux (Ubuntu)
 
-> 💡 **Aviso Importante para Linux/WSL:** A biblioteca `pywin32` é exclusiva do Windows. No Linux/WSL, se você for instalar via `pip install -r requirements.txt` e encontrar erro com a `pywin32`, utilize o comando com filtro ou remova a linha `pywin32==311` temporariamente (o código já possui tratamento seguro via `try/except` e não falha sem o win32com no Linux).
-
-1. **Clone o repositório no diretório do WSL:**
+1. **Clone o repositório no WSL:**
    ```bash
    git clone https://github.com/rezendepauloh/automacao-chamados-sti.git
    cd automacao-chamados-sti
    ```
 
-2. **Crie o ambiente virtual e instale as dependências:**
+2. **Conceda permissões de execução e confie no lançador Desktop:**
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-
-   # Instalação filtrando dependências exclusivas do Windows (como pywin32)
-   grep -v "pywin32" requirements.txt | pip install -r /dev/stdin
-   
-   playwright install chromium
-   playwright install-deps
-   python -m spacy download pt_core_news_sm
+   chmod +x 00-iniciar.sh sistema-bancada.desktop
+   gio set sistema-bancada.desktop metadata::trusted true 2>/dev/null || true
    ```
 
 3. **Configure as Variáveis de Ambiente:**
@@ -308,40 +287,51 @@ O sistema pode ser executado em três ambientes diferentes: **Windows Nativo**, 
    cp .env.example .env
    ```
 
-4. **Inicie a aplicação via Script Shell (`iniciar.sh`):**
+4. **Inicie o sistema via Script Shell (`00-iniciar.sh`):**
+   O script verifica se a imagem já foi construída (subindo instantaneamente sem rebuilds), transmite os logs e encerra todos os containers com <kbd>CTRL</kbd> + <kbd>C</kbd>:
    ```bash
-   chmod +x iniciar.sh
-   ./iniciar.sh
+   ./00-iniciar.sh
+   ```
+   > 💡 **Dica:** Para forçar a reconstrução da imagem após adicionar dependências no `requirements.txt`, use `./00-iniciar.sh --build`.
+
+5. **(Opcional) Atalho para o Menu de Aplicativos do Linux / Desktop:**
+   ```bash
+   cp sistema-bancada.desktop ~/.local/share/applications/
    ```
 
-5. **(Opcional) Atalho para a Área de Trabalho / Menu do Linux:**
+6. **Gerenciamento manual via Docker Compose:**
    ```bash
-   chmod +x sistema-bancada.desktop
-   cp sistema-bancada.desktop ~/.local/share/applications/
+   # Construir a imagem
+   docker compose build
+
+   # Subir o container em segundo plano
+   docker compose up -d web
+
+   # Ver logs em tempo real
+   docker compose logs -f web
+
+   # Parar os containers
+   docker compose down
    ```
 
 ---
 
-### 🐳 3. Execução em Container Docker (Red Hat UBI 9)
+### 🐳 3. Estrutura de Containers (WSL & Red Hat UBI 9)
 
-O projeto já inclui um `Dockerfile` baseado na imagem oficial **Red Hat UBI 9 (Python 3.12)** e um `docker-compose.yml` com banco de dados PostgreSQL integrado.
+O projeto conta com arquitetura pronta para execução universal em containers:
 
-1. **Subir os serviços via Docker Compose:**
-   ```bash
-   docker compose up -d --build
-   ```
-
-2. **Acessar a Aplicação:**
-   - **Dashboard Streamlit:** [http://localhost:8501](http://localhost:8501)
-   - **Banco PostgreSQL Interno:** Porta `5432`
+- **`Dockerfile` (WSL / Padrão Debian):** Imagem base `python:3.11-slim` com Playwright/Chromium headless instalado, healthcheck, bypass de proxy SSL corporativo e fuso horário brasileiro (`America/Campo_Grande`).
+- **`Dockerfile-MP-RedHat` (Red Hat UBI 9):** Imagem base oficial `registry.access.redhat.com/ubi9/python-312` para ambientes de produção corporativos Red Hat / Podman.
+- **`docker-compose.yml`:** Orquestração com volumes persistentes para banco de dados SQLite (`chamados.db`), pastas de dados (`01`, `02`, `03`, `models`, `debug_logs`) e mapeamento do código (`src/`, `init.py`) para **Live-Reload** em tempo real.
 
 ---
 
 ## 🧪 Executando Testes Unitários
 
-Para rodar todos os testes unitários integrados da aplicação e validar os módulos refatorados:
+Para rodar todos os testes unitários integrados da aplicação dentro do container Docker:
 
 ```bash
-python -m unittest discover -s tests
+docker compose exec web python -m unittest discover -s tests
 ```
+
 

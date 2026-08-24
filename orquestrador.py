@@ -16,9 +16,8 @@ from src.config import setup_logging, LOG_FILE_ORQUESTRADOR
 
 CREATE_NO_WINDOW = 0x08000000
 
-# Prefere pythonw.exe da venv se existir para garantia total de ausência de janelas
-pythonw_candidate = os.path.join("venv", "Scripts", "pythonw.exe")
-python_exe = pythonw_candidate if os.path.exists(pythonw_candidate) else sys.executable
+# Executável Python atual (compatível com containers Docker e execução direta)
+python_exe = sys.executable
 
 # Inicializa o logging usando a biblioteca central unificada com proteção de encoding
 logger = setup_logging(LOG_FILE_ORQUESTRADOR, "ORQUESTRADOR")

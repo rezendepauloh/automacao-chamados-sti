@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   web:
     build:
@@ -12,15 +10,35 @@ services:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
       - STREAMLIT_SERVER_HEADLESS=true
-      - DB_TYPE=postgres
+      - STREAMLIT_LOGGER_LEVEL=error
+      - DB_TYPE=sqlite
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=chamados
       - POSTGRES_USER=bancada_user
       - POSTGRES_PASSWORD=bancada_pass
-    depends_on:
-      db:
-        condition: service_healthy
+      - TZ=America/Campo_Grande
+      - HOST_IP=${HOST_IP:-localhost}
+    volumes:
+      # Persistência do banco de dados SQLite local
+      - ./chamados.db:/app/chamados.db
+      # Pastas de dados e modelos
+      - ./01 - Dados Brutos:/app/01 - Dados Brutos
+      - ./02 - Dados tratados:/app/02 - Dados tratados
+      - ./03 - Dados prontos:/app/03 - Dados prontos
+      - ./models:/app/models
+      - ./debug_logs:/app/debug_logs
+      # Mapeamento de código para Live-Reload sem necessidade de rebuild
+      - ./src:/app/src
+      - ./dashboard.py:/app/dashboard.py
+      - ./orquestrador.py:/app/orquestrador.py
+      - ./init.py:/app/init.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
   db:

@@ -54,3 +54,6 @@ src/scripts_powershell/cred_admin.xml
 src/scripts_powershell/analisador/cred_admin.xml
 src/scripts_powershell/perfis/cred_admin.xml
 src/scripts_powershell/manutencao/cred_admin.xml
+
+# Credential Docker RedHat
+Dockerfile-MP-RedHat
