@@ -260,7 +260,17 @@ def detect_and_update_remote_locations(df: pd.DataFrame) -> pd.DataFrame:
     ]
     
     updated_count = 0
-    from manual_entries import get_location_by_ip
+    try:
+        from src.manual_entries import get_location_by_ip
+    except ImportError:
+        try:
+            from manual_entries import get_location_by_ip
+        except ImportError:
+            try:
+                from src.manual_entries_TEMPLATE import get_location_by_ip
+            except ImportError:
+                def get_location_by_ip(ip: str) -> str:
+                    return ""
     
     for idx, row in df_result.iterrows():
         desc = row.get("Descrição", "")

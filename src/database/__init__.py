@@ -3,7 +3,10 @@ from .connection import DB_PATH, get_connection
 from .ramais_db import (
     setup_ramais_table,
     save_ramais_to_db,
-    get_ramais_df
+    get_ramais_df,
+    setup_ramais_config_table,
+    get_ramais_config,
+    save_ramais_config
 )
 
 from .tickets_db import (

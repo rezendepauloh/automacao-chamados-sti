@@ -10,6 +10,7 @@ from datetime import datetime
 root_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(root_dir))
 
+from src.config import SHAREPOINT_MATUTINO_URL
 from src.database import get_plantoes_matutino, get_plantoes_semanal
 from src.scrapers.plantoes_scraper import check_plantoes_sync_running, read_plantoes_last_log_lines
 from src.components.status_banner import render_log_expander
@@ -58,6 +59,40 @@ def is_bancada_member(nome_str: str) -> bool:
 
 
 
+@st.dialog("📥 Importar Planilha de Plantão Matutino")
+def modal_importar_matutino():
+    """Modal (@st.dialog) para upload manual de planilha Excel de plantão matutino."""
+    st.markdown("### 📤 Upload Manual da Planilha Matutino (DIT)")
+    st.caption("Acesse a planilha oficial no SharePoint para consultar ou baixar uma cópia e faça o upload abaixo:")
+
+    if SHAREPOINT_MATUTINO_URL:
+        st.link_button(
+            "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
+            SHAREPOINT_MATUTINO_URL,
+            type="secondary",
+            width='stretch',
+            help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."
+        )
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    uploaded_excel = st.file_uploader("Selecione o arquivo Excel (.xlsx)", type=["xlsx", "xls"], key="up_matutino_excel")
+
+    if st.button("⚡ Processar e Gravar no Banco", type="primary", width='stretch'):
+        if not uploaded_excel:
+            st.warning("Selecione um arquivo Excel primeiro.")
+        else:
+            from src.scrapers.plantoes_scraper import sync_matutino_from_excel
+            import time
+            with st.spinner("Processando abas da escala matutina..."):
+                count = sync_matutino_from_excel(uploaded_excel)
+                if count > 0:
+                    st.success(f"🎉 {count} registros de plantão matutino importados com sucesso!")
+                    time.sleep(1.2)
+                    st.rerun()
+                else:
+                    st.error("Não foi possível extrair registros válidos da planilha. Verifique o formato.")
+
+
 def render_plantoes_page():
     """Renderiza a página principal dos Plantões da Bancada."""
     col_t, col_b = st.columns([3, 1])
@@ -104,7 +139,12 @@ def render_plantoes_page():
 
     st.markdown("---")
 
-    # --- FILTROS SIDEBAR ---
+    # --- AÇÕES E FILTROS SIDEBAR ---
+    st.sidebar.markdown("## ⚙️ Ações")
+    if st.sidebar.button("📥 Importar Planilha Matutino", width='stretch', help="Fazer upload manual de arquivo Excel da escala matutina."):
+        modal_importar_matutino()
+
+    st.sidebar.markdown("---")
     st.sidebar.markdown("## 🔍 Filtros de Plantão")
     
     opcoes_servidores = [

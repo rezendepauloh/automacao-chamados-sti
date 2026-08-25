@@ -16,18 +16,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Diretório base de trabalho da aplicação
 WORKDIR /app
 
-# Instalação de dependências do sistema operacional, certificados e Chromium para Selenium/Playwright
+# Instalação de dependências do sistema operacional, certificados, Chromium e PowerShell 7 (pwsh)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     ca-certificates \
     tzdata \
     libpq-dev \
+    libicu-dev \
     chromium \
     chromium-driver \
     && update-ca-certificates \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
-    && rm -rf /var/lib/apt/lists/*
+    && mkdir -p /opt/microsoft/powershell/7 \
+    && curl -sSLk https://packages.microsoft.com/debian/12/prod/pool/main/p/powershell/powershell_7.4.6-1.deb_amd64.deb -o /tmp/ps.deb \
+    && dpkg-deb -x /tmp/ps.deb /tmp/ps_extracted \
+    && cp -r /tmp/ps_extracted/opt/microsoft/powershell/7/* /opt/microsoft/powershell/7/ \
+    && ln -sf /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh \
+    && rm -rf /tmp/ps.deb /tmp/ps_extracted /var/lib/apt/lists/*
 
 # Configura arquivo global do pip para confiar nos domínios corporativos e CDNs
 RUN mkdir -p /etc /root/.pip \

@@ -44,18 +44,28 @@ SUBTAB_REVERSE = {v: k for k, v in SUBTAB_MAP.items()}
 
 def _get_powershell_exe(selected_option: str = None) -> str:
     """
-    Detecta se o PowerShell Core 7+ (pwsh.exe) ou Windows PowerShell 5.1 (powershell.exe)
+    Detecta se o PowerShell Core 7+ (pwsh) ou Windows PowerShell 5.1 (powershell.exe)
     deve ser utilizado com base na opção selecionada ou detecção automática.
     """
     if selected_option == "PowerShell 7+ (pwsh.exe)":
-        return shutil.which("pwsh") or "pwsh.exe"
+        return shutil.which("pwsh") or shutil.which("pwsh.exe") or "pwsh"
     elif selected_option == "Windows PowerShell 5.1 (powershell.exe)":
-        return "powershell.exe"
+        return (
+            shutil.which("powershell.exe") or
+            shutil.which("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe") or
+            shutil.which("/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe") or
+            "powershell.exe"
+        )
 
-    pwsh_path = shutil.which("pwsh")
+    pwsh_path = shutil.which("pwsh") or shutil.which("pwsh.exe")
     if pwsh_path:
         return pwsh_path
-    return "powershell.exe"
+    return (
+        shutil.which("powershell.exe") or
+        shutil.which("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe") or
+        shutil.which("/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe") or
+        "powershell.exe"
+    )
 
 
 def _clean_ansi(text: str) -> str:

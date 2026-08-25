@@ -33,7 +33,8 @@ services:
       - ./debug_logs:/app/debug_logs
       # Mapeamento do cofre do keyring (Linux/WSL host -> Docker container)
       - ~/.local/share/python_keyring:/root/.local/share/python_keyring
-      # Mapeamento de código para Live-Reload sem necessidade de rebuild
+      # Mapeamento de código e assets para Live-Reload sem necessidade de rebuild
+      - ./assets:/app/assets
       - ./src:/app/src
       - ./dashboard.py:/app/dashboard.py
       - ./orquestrador.py:/app/orquestrador.py

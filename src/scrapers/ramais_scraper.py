@@ -221,13 +221,20 @@ def run_ramais_scraper():
     except Exception as e:
         logger.warning(f"Aviso ao buscar links dinâmicos de ramais na página da Intranet: {e}")
 
+    db_config = {}
+    try:
+        from src.database import get_ramais_config
+        db_config = get_ramais_config()
+    except Exception as e_cfg:
+        logger.debug(f"Não foi possível obter ramais_config do banco: {e_cfg}")
+
     fallback_links = {
-        "Interior": "/anexo/MTMzMDYxNDI3NTAwODYzMjkwNDNmYmI5MGYwYjU2ZGE5ZWI5M2ZmN2EwMTQxLTA0MQ",
-        "Capital / PGJ": "/anexo/MTMzMDYxNDE2ODMwOGI3MjcxZWQ2YzhkYjYyODkwOGFlMDRjNTUzYWFmY2ZhLTA0MQ"
+        "Interior": (db_config.get("Interior") or "/anexo/MTMzMDYxNDI3NTAwODYzMjkwNDNmYmI5MGYwYjU2ZGE5ZWI5M2ZmN2EwMTQxLTA0MQ").strip(),
+        "Capital / PGJ": (db_config.get("Capital / PGJ") or "/anexo/MTMzMDYxNDE2ODMwOGI3MjcxZWQ2YzhkYjYyODkwOGFlMDRjNTUzYWFmY2ZhLTA0MQ").strip()
     }
 
     for k, v in fallback_links.items():
-        if k not in pdf_links:
+        if k not in pdf_links and v:
             pdf_links[k] = v
 
     all_records = []
@@ -260,6 +267,28 @@ def run_ramais_scraper():
         logger.info(f"✅ Sincronização concluída com {len(df_ramais)} ramais salvos no SQLite!")
     else:
         logger.warning("⚠️ Nenhum registro de ramal pôde ser extraído dos PDFs nesta rodada.")
+
+
+def process_uploaded_pdf_files(files_dict: dict) -> int:
+    """
+    Processa arquivos PDF enviados manualmente via upload no Streamlit.
+    files_dict: {"Interior": bytes, "Capital / PGJ": bytes}
+    Retorna o número total de ramais salvos.
+    """
+    all_records = []
+    for tipo, pdf_bytes in files_dict.items():
+        if pdf_bytes and pdf_bytes.startswith(b"%PDF-"):
+            recs = extract_ramais_from_pdf(pdf_bytes, tipo)
+            logger.info(f"📄 [Upload] Extraídos {len(recs)} registros do PDF [{tipo}]")
+            all_records.extend(recs)
+
+    if all_records:
+        df_ramais = pd.DataFrame(all_records)
+        df_ramais.drop_duplicates(subset=["localidade", "setor_nome", "telefone_ramal"], inplace=True)
+        save_ramais_to_db(df_ramais)
+        logger.info(f"✅ [Upload] {len(df_ramais)} ramais salvos com sucesso no SQLite!")
+        return len(df_ramais)
+    return 0
 
 if __name__ == "__main__":
     import tempfile

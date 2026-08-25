@@ -48,3 +48,43 @@ def get_ramais_df() -> pd.DataFrame:
         df = pd.DataFrame(columns=["id", "localidade", "setor_nome", "telefone_ramal", "tipo", "data_atualizacao"])
     conn.close()
     return df
+
+
+def setup_ramais_config_table():
+    """Cria a tabela ramais_config se não existir."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS ramais_config (
+        chave TEXT PRIMARY KEY,
+        valor TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_ramais_config() -> dict:
+    """Retorna os links configurados para os PDFs de ramais."""
+    setup_ramais_config_table()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT chave, valor FROM ramais_config")
+    rows = cursor.fetchall()
+    conn.close()
+    config = {k: v for k, v in rows}
+    return {
+        "Interior": config.get("url_interior", "https://www.mpms.mp.br/anexo/MTMzMDYxNDI3NTAwODYzMjkwNDNmYmI5MGYwYjU2ZGE5ZWI5M2ZmN2EwMTQxLTA0MQ"),
+        "Capital / PGJ": config.get("url_capital", "https://www.mpms.mp.br/anexo/MTMzMDYxNDE2ODMwOGI3MjcxZWQ2YzhkYjYyODkwOGFlMDRjNTUzYWFmY2ZhLTA0MQ")
+    }
+
+
+def save_ramais_config(url_interior: str, url_capital: str):
+    """Salva os links atualizados dos PDFs de ramais."""
+    setup_ramais_config_table()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO ramais_config (chave, valor) VALUES ('url_interior', ?)", (url_interior.strip(),))
+    cursor.execute("INSERT OR REPLACE INTO ramais_config (chave, valor) VALUES ('url_capital', ?)", (url_capital.strip(),))
+    conn.commit()
+    conn.close()

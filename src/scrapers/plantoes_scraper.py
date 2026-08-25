@@ -288,14 +288,64 @@ def download_sharepoint_matutino_file() -> Path | None:
         logger.info(f"📍 URL após autenticação: {driver.current_url}")
         
         if "sharepoint.com" in driver.current_url:
-            logger.info("🔗 Sessão autenticada! Disparando URL de download direto no SharePoint...")
+            logger.info("🔗 Sessão autenticada no SharePoint! Extraindo cookies para download direto via HTTP...")
+            try:
+                session_auth = requests.Session()
+                session_auth.headers.update(headers)
+                for cookie in driver.get_cookies():
+                    session_auth.cookies.set(
+                        name=cookie['name'],
+                        value=cookie['value'],
+                        domain=cookie.get('domain')
+                    )
+                
+                resp_auth = session_auth.get(download_url, timeout=30, allow_redirects=True)
+                if resp_auth.status_code == 200 and resp_auth.content and (resp_auth.content.startswith(b'PK') or resp_auth.content.startswith(b'\x50\x4b\x03\x04')):
+                    with open(file_path, "wb") as f:
+                        f.write(resp_auth.content)
+                    logger.info(f"🎉 SUCESSO NO DOWNLOAD VIA SESSÃO: Arquivo Excel salvo ({len(resp_auth.content)} bytes) em '{file_path}'.")
+                    return file_path
+                else:
+                    logger.info(f"ℹ️ Download via cookies retornou status {resp_auth.status_code} ({len(resp_auth.content)} bytes). Disparando download via Selenium...")
+            except Exception as e_cookies:
+                logger.warning(f"Tentativa de download via cookies autenticados: {e_cookies}")
+
             driver.get(download_url)
-            time.sleep(6)
+            
+            # Aguarda a finalização do download do navegador
+            for _ in range(20):
+                time.sleep(1)
+                for f_item in output_dir.glob("*.xlsx"):
+                    if not f_item.name.endswith(".crdownload") and f_item.stat().st_size > 5000:
+                        logger.info(f"🎉 SUCESSO NO DOWNLOAD SELENIUM: Arquivo '{f_item.name}' baixado com {f_item.stat().st_size} bytes.")
+                        return f_item
         else:
             logger.warning("⚠️ O navegador ainda não alcançou o SharePoint. Tentando forçar o acesso direto...")
             driver.get(download_url)
-            time.sleep(6)
+            for _ in range(15):
+                time.sleep(1)
+                for f_item in output_dir.glob("*.xlsx"):
+                    if not f_item.name.endswith(".crdownload") and f_item.stat().st_size > 5000:
+                        return f_item
             
+        # Fallback defensivo: se restou um .crdownload com bytes de Excel válidos
+        for cr_file in output_dir.glob("*.crdownload"):
+            if cr_file.stat().st_size > 5000:
+                try:
+                    with open(cr_file, "rb") as cr_f:
+                        cr_bytes = cr_f.read()
+                    if cr_bytes.startswith(b'PK') or cr_bytes.startswith(b'\x50\x4b\x03\x04'):
+                        with open(file_path, "wb") as f_out:
+                            f_out.write(cr_bytes)
+                        logger.info(f"🎉 Recuperado arquivo Excel completo a partir de '{cr_file.name}' ({len(cr_bytes)} bytes).")
+                        try:
+                            cr_file.unlink()
+                        except Exception:
+                            pass
+                        return file_path
+                except Exception as e_cr:
+                    logger.warning(f"Erro ao verificar crdownload: {e_cr}")
+
         if file_path.exists() and file_path.stat().st_size > 0:
             logger.info(f"🎉 SUCESSO NO SELENIUM: Planilha baixada ({file_path.stat().st_size} bytes) em '{file_path}'.")
             return file_path

@@ -424,7 +424,6 @@ def fetch_ad_department(conn, query_val: str, is_username: bool = True) -> str:
         office = office_list[0] if office_list else None
         if office and str(office).strip():
             return str(office).strip()
-            
         return 'Cadastro Incompleto (AD)'
         
     except Exception as e:
@@ -433,12 +432,61 @@ def fetch_ad_department(conn, query_val: str, is_username: bool = True) -> str:
         return 'Erro na Consulta'
 
 
+def _detect_powershell_executable() -> tuple:
+    """
+    Detecta o melhor executável do PowerShell disponível no ambiente:
+    1. 'pwsh' / 'pwsh.exe' (PowerShell 7 Core - nativo no Linux/Container ou Windows)
+    2. 'pwsh.exe' via WSL Interop (WindowsApps / Program Files)
+    3. 'powershell.exe' (Windows PowerShell 5.1 via WSL Interop)
+    4. 'powershell' (Windows PowerShell 5.1 nativo no Windows)
+    Retorna uma tupla: (caminho_ou_comando, tipo: 'pwsh' | 'windows_ps' | None)
+    """
+    import shutil
+
+    # 1. Tenta PowerShell 7+ (pwsh) no PATH (Containers Linux, Red Hat ou Windows)
+    pwsh_bin = shutil.which("pwsh") or shutil.which("pwsh.exe")
+    if pwsh_bin:
+        return pwsh_bin, "pwsh"
+
+    # 2. Se estiver no Linux/WSL, tenta buscar o PowerShell 7 (pwsh.exe) do Windows host
+    if sys.platform != "win32":
+        ps7_wsl_candidates = [
+            "/mnt/c/Program Files/PowerShell/7/pwsh.exe",
+            "/mnt/c/Program Files (x86)/PowerShell/7/pwsh.exe",
+            f"/mnt/c/Users/{USERNAME}/AppData/Local/Microsoft/WindowsApps/pwsh.exe" if 'USERNAME' in globals() and USERNAME else None,
+            "/mnt/c/Users/paulogoncalves/AppData/Local/Microsoft/WindowsApps/pwsh.exe",
+        ]
+        for candidate in ps7_wsl_candidates:
+            if candidate and shutil.which(candidate):
+                return candidate, "pwsh"
+
+        # Fallback para Windows PowerShell 5.1 no WSL
+        ps5_wsl_candidates = [
+            shutil.which("powershell.exe"),
+            "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe",
+        ]
+        for candidate in ps5_wsl_candidates:
+            if candidate and shutil.which(candidate):
+                return candidate, "windows_ps"
+
+    # 3. Se estiver no Windows nativo
+    if sys.platform == "win32":
+        ps_bin = shutil.which("powershell") or shutil.which("powershell.exe")
+        if ps_bin:
+            return ps_bin, "windows_ps"
+
+    return None, None
+
+
 _sccm_cache = {}
+
 
 def fetch_sccm_data(username: str) -> dict:
     """
     Consulta o SCCM via PowerShell (CIM/WMI) para obter os dados do último computador
     onde o usuário esteve logado, retornando um dicionário {"ip": "...", "hostname": "..."}.
+    Suporta PowerShell 7 (pwsh) em containers Linux (Red Hat/Debian) e PowerShell no Windows/WSL.
     Utiliza um cache em memória para evitar consultas duplicadas na mesma execução.
     """
     if not username:
@@ -452,35 +500,54 @@ def fetch_sccm_data(username: str) -> dict:
     import logging
     import json
     import re
+    import time
     import keyring
     
     logger = logging.getLogger(__name__)
+    res_data = {"ip": "N/A", "hostname": "N/A"}
     
     site_server = os.getenv("SCCM_SERVER")
     site_code = os.getenv("SCCM_SITE_CODE")
     
     if not site_server or not site_code:
         logger.warning("⚠️ Variáveis 'SCCM_SERVER' ou 'SCCM_SITE_CODE' não configuradas no .env. A consulta no SCCM será ignorada.")
+        _sccm_cache[username_lower] = res_data
         return res_data
 
-    
-    # 1. Recupera as credenciais do administrador do SCCM no cofre de senhas do Windows
+    # 1. Recupera as credenciais do administrador do SCCM (Keyring com fallback para env var em Containers)
     admin_user = os.getenv("SCCM_ADMIN_USER")
     admin_password = None
     if admin_user:
-        admin_password = keyring.get_password("sccm_admin", admin_user)
+        try:
+            admin_password = keyring.get_password("sccm_admin", admin_user) or keyring.get_password("sccm", admin_user)
+        except Exception as ke:
+            logger.debug(f"[SCCM] Keyring indisponível ou inacessível no ambiente: {ke}")
+
+        # Fallback essencial para Containers (Docker / Red Hat) onde não há GUI/Keyring interativo
+        if not admin_password:
+            admin_password = os.getenv("SCCM_ADMIN_PASSWORD") or os.getenv("SCCM_PASSWORD")
+            if admin_password:
+                logger.debug(f"[SCCM] Usando credencial de '{admin_user}' obtida via variável de ambiente (.env).")
     else:
         logger.warning("⚠️ Variável 'SCCM_ADMIN_USER' não configurada no .env. A consulta no SCCM prosseguirá sem credenciais administrativas dedicadas.")
 
+    # 2. Detecta o executável do PowerShell disponível (pwsh no Linux/Container ou powershell.exe no WSL/Windows)
+    ps_executable, ps_flavor = _detect_powershell_executable()
+    logger.debug(f"[SCCM] SO: {sys.platform} | Executável PS: '{ps_executable}' | Tipo: '{ps_flavor}'")
 
-    
-    # 2. Monta a consulta WMI com correspondência EXATA no LastLogonUserName
+    if not ps_executable:
+        logger.warning(
+            f"[SCCM] Nenhum executável PowerShell ('pwsh' ou 'powershell.exe') encontrado no ambiente para consultar SCCM para '{username}'."
+        )
+        _sccm_cache[username_lower] = res_data
+        return res_data
+
+    # 3. Monta a consulta WMI/CIM com correspondência EXATA no LastLogonUserName
     query = f"SELECT * FROM SMS_R_System WHERE LastLogonUserName = '{username}'"
     
-    # 3. Constrói o comando do PowerShell dependendo de termos ou não a senha do admin
-    # Selecionamos IPAddresses e Name (que é o Hostname/NetbiosName no SCCM)
+    # 4. Constrói o comando do PowerShell de acordo com a versão e credenciais
     if admin_password:
-        logger.info(f"Consultando SCCM para o usuário: {username} (Usando credenciais de {admin_user})")
+        logger.info(f"[SCCM] Consultando SCCM para '{username}' via {ps_flavor} (usando credenciais de '{admin_user}')")
         domain_user = admin_user
         if "\\" not in domain_user and "@" not in domain_user:
             short_domain = DOMINIO_CURTO or "MPE"
@@ -488,75 +555,74 @@ def fetch_sccm_data(username: str) -> dict:
             
         escaped_password = admin_password.replace('"', '`"').replace('$', '`$')
         
-        ps_command = (
-            f'$secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force; '
-            f'$mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd); '
-            f'Get-WmiObject -ComputerName {site_server} -Namespace \'root\\sms\\site_{site_code}\' '
-            f'-Query "{query}" -Credential $mycreds -Authentication PacketPrivacy | Select-Object IPAddresses, Name | ConvertTo-Json'
-        )
+        if ps_flavor == "pwsh":
+            # No PowerShell 7 (Linux/Windows), Get-WmiObject foi removido; utiliza-se Get-CimInstance
+            ps_command = (
+                f'$secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force; '
+                f'$mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd); '
+                f'Get-CimInstance -ComputerName {site_server} -Namespace \'root\\sms\\site_{site_code}\' '
+                f'-Query "{query}" -Credential $mycreds | Select-Object IPAddresses, Name | ConvertTo-Json'
+            )
+        else:
+            # No Windows PowerShell 5.1, Get-WmiObject com PacketPrivacy garante compatibilidade DCOM completa
+            ps_command = (
+                f'$secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force; '
+                f'$mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd); '
+                f'Get-WmiObject -ComputerName {site_server} -Namespace \'root\\sms\\site_{site_code}\' '
+                f'-Query "{query}" -Credential $mycreds -Authentication PacketPrivacy | Select-Object IPAddresses, Name | ConvertTo-Json'
+            )
     else:
-        logger.info(f"Consultando SCCM para o usuário: {username} (Sem credenciais adicionais)")
+        logger.info(f"[SCCM] Consultando SCCM para '{username}' via {ps_flavor} (sem credenciais administrativas adicionais)")
         ps_command = f"Get-CimInstance -ComputerName {site_server} -Namespace 'root\\sms\\site_{site_code}' -Query \"{query}\" | Select-Object IPAddresses, Name | ConvertTo-Json"
     
-    # 4. Determina o executável do PowerShell (suporta Windows e WSL interop)
-    ps_executable = "powershell"
-    if sys.platform != "win32":
-        # No Linux/WSL, tenta usar o powershell.exe da interoperabilidade do WSL
-        import shutil
-        ps_win = shutil.which("powershell.exe") or shutil.which("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe")
-        if ps_win:
-            ps_executable = ps_win
-        else:
-            # Se não houver interop do PowerShell no Linux, ignora SCCM para evitar timeouts longos
-            logger.info(f"PowerShell não disponível no ambiente Linux para consultar SCCM para {username}.")
-            res_data = {"ip": "N/A", "hostname": "N/A"}
-            _sccm_cache[username_lower] = res_data
-            return res_data
-
+    t0 = time.time()
     try:
         run_kwargs = {
             "capture_output": True,
             "text": True,
-            "timeout": 8,
-            "encoding": "cp1252",
+            "timeout": 10,
+            "encoding": "utf-8",
+            "errors": "replace",
         }
         if sys.platform == "win32":
             run_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
         result = subprocess.run(
-            [ps_executable, "-NoProfile", "-Command", ps_command],
+            [ps_executable, "-NoProfile", "-NonInteractive", "-Command", ps_command],
             **run_kwargs
         )
+        duration = time.time() - t0
+        logger.debug(f"[SCCM] Consulta finalizada em {duration:.2f}s com código de retorno: {result.returncode}")
         
         if result.returncode != 0:
             error_output = result.stderr.strip()
-            if "Acesso negado" in error_output or "Access denied" in error_output or "Acesso Negado" in error_output:
-                logger.warning(f"Acesso negado ao consultar SCCM para {username}. Requer privilégios elevados de rede.")
+            logger.debug(f"[SCCM] Stderr da execução: {error_output}")
+            if any(term in error_output for term in ["Acesso negado", "Access denied", "Acesso Negado", "UnauthorizedAccessException"]):
+                logger.warning(f"[SCCM] Acesso negado ao consultar SCCM para '{username}'. Requer privilégios elevados de rede.")
                 res_data = {"ip": "Acesso Negado", "hostname": "Acesso Negado"}
                 _sccm_cache[username_lower] = res_data
                 return res_data
-            logger.error(f"Erro ao consultar SCCM para {username}: {error_output}")
+            logger.error(f"[SCCM] Erro ao consultar SCCM para '{username}': {error_output}")
             _sccm_cache[username_lower] = res_data
             return res_data
             
         output = result.stdout.strip()
+        logger.debug(f"[SCCM] Stdout da execução (primeiros 200 chars): {output[:200]}")
+        
         if not output:
-            logger.info(f"Nenhum registro encontrado no SCCM para {username}.")
+            logger.info(f"[SCCM] Nenhum registro encontrado no SCCM para '{username}'.")
             _sccm_cache[username_lower] = res_data
             return res_data
             
-        # Tenta decodificar o JSON
+        # Tenta decodificar o JSON retornado pelo PowerShell
         parsed = None
         try:
             parsed = json.loads(output)
         except Exception as je:
-            logger.debug(f"Erro ao decodificar JSON do SCCM: {je}")
+            logger.debug(f"[SCCM] Não foi possível decodificar saída JSON direta: {je}. Tentando extração por regex.")
             
         if parsed:
-            # Pode ser um dicionário ou uma lista de dicionários
             items = parsed if isinstance(parsed, list) else [parsed]
-            
-            # Vamos procurar um item com IP válido
             best_ip = ""
             best_hostname = ""
             
@@ -570,14 +636,14 @@ def fetch_sccm_data(username: str) -> dict:
                 elif not isinstance(ips, list):
                     ips = []
                     
-                # Procura IP que começa com 10.
+                # Prioriza IPs de rede interna que iniciam com '10.'
                 ip_10 = next((ip for ip in ips if str(ip).startswith("10.")), None)
                 if ip_10:
                     best_ip = str(ip_10)
                     best_hostname = name
                     break
                 
-                # Se não achou 10., mas achou qualquer IPv4
+                # Fallback para qualquer IPv4 válido encontrado
                 if not best_ip:
                     ipv4_regex = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
                     any_ipv4 = next((ip for ip in ips if ipv4_regex.match(str(ip))), None)
@@ -588,7 +654,6 @@ def fetch_sccm_data(username: str) -> dict:
             if best_ip:
                 res_data = {"ip": best_ip, "hostname": best_hostname}
             else:
-                # Se não achou IP pelas regras normais, pega o primeiro Name/IP
                 first_item = items[0] if items else {}
                 name = str(first_item.get("Name", "")).strip()
                 ips = first_item.get("IPAddresses", [])
@@ -600,29 +665,26 @@ def fetch_sccm_data(username: str) -> dict:
                     first_ip = ""
                 res_data = {"ip": first_ip, "hostname": name}
         else:
-            # Fallback robusto por regex se o JSON falhar
-            # Procura por IPs que começam com 10.
+            # Fallback robusto por regex caso a saída não seja JSON puro
             ips = re.findall(r'10\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
             ip_val = ""
             if ips:
                 ip_val = ips[0]
             else:
-                ipv4s = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', output)
+                ipv4s = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}', output)
                 if ipv4s:
                     ip_val = ipv4s[0]
-            # Procura pelo Name com ou sem aspas de forma robusta e flexível
             name_match = re.search(r'"?Name"?\s*:\s*"?([^"\r\n\s]+)"?', output, re.IGNORECASE)
             name_val = name_match.group(1).strip() if name_match else ""
             res_data = {"ip": ip_val, "hostname": name_val}
 
-            
-        logger.info(f"Dados do SCCM para {username}: {res_data}")
+        logger.info(f"[SCCM] Resultado para '{username}': IP={res_data.get('ip')} | Hostname={res_data.get('hostname')}")
         
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout ao consultar SCCM para {username}.")
+        logger.error(f"[SCCM] Timeout ({run_kwargs.get('timeout', 10)}s) ao consultar SCCM para '{username}'.")
         res_data = {"ip": "Timeout", "hostname": "Timeout"}
     except Exception as e:
-        logger.error(f"Exceção ao consultar SCCM para {username}: {e}")
+        logger.error(f"[SCCM] Exceção ao consultar SCCM para '{username}': {e}", exc_info=True)
         res_data = {"ip": "Erro", "hostname": "Erro"}
         
     _sccm_cache[username_lower] = res_data

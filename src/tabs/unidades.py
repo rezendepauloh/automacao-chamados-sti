@@ -14,7 +14,9 @@ from src.database import (
     delete_unidade_manual, 
     get_unidades_df, 
     get_ramais_df,
-    update_unidade_manual_by_id
+    update_unidade_manual_by_id,
+    get_ramais_config,
+    save_ramais_config
 )
 from src.scrapers.unidades_scraper import check_unidades_sync_running, read_unidades_last_log_lines
 from src.scrapers.ramais_scraper import check_ramais_sync_running, read_ramais_last_log_lines
@@ -157,6 +159,68 @@ def modal_detalhes_ramal(row_data: dict):
         st.rerun()
 
 
+@st.dialog("⚙️ Configurar / Enviar PDFs de Ramais")
+def modal_config_ramais():
+    """Modal nativo (@st.dialog) para gerenciar links dos PDFs e permitir envio direto de arquivos."""
+    st.markdown("### 📞 Gestão de Fontes dos Ramais")
+    st.caption("Como os links dos PDFs na Intranet do MPMS mudam periodicamente, você pode atualizar as URLs aqui ou enviar os arquivos PDF diretamente do seu computador.")
+
+    tab_links, tab_upload = st.tabs(["🔗 Atualizar Links da Intranet", "📥 Envio Direto de PDFs"])
+
+    with tab_links:
+        cfg = get_ramais_config()
+        url_interior = st.text_input(
+            "🏞️ Link PDF Interior:",
+            value=cfg.get("Interior", ""),
+            help="Cole aqui o link completo ou caminho relativo (/anexo/...) do PDF de ramais do Interior."
+        )
+        url_capital = st.text_input(
+            "🏙️ Link PDF Capital / PGJ:",
+            value=cfg.get("Capital / PGJ", ""),
+            help="Cole aqui o link completo ou caminho relativo (/anexo/...) do PDF de ramais da Capital / PGJ."
+        )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("💾 Salvar Links", type="secondary", width='stretch'):
+                save_ramais_config(url_interior, url_capital)
+                st.toast("✅ Links dos PDFs atualizados com sucesso!", icon="💾")
+                st.rerun()
+        with c2:
+            if st.button("🚀 Salvar e Baixar Agora", type="primary", width='stretch'):
+                save_ramais_config(url_interior, url_capital)
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/scrapers/ramais_scraper.py"], **popen_kwargs)
+                st.toast("🚀 Sincronização de ramais disparada com os novos links!", icon="📞")
+                st.rerun()
+
+    with tab_upload:
+        st.write("Faça o upload manual dos arquivos PDF baixados da Intranet para processamento imediato:")
+        up_interior = st.file_uploader("📄 PDF de Ramais do Interior", type=["pdf"], key="modal_up_ramais_interior")
+        up_capital = st.file_uploader("📄 PDF de Ramais da Capital / PGJ", type=["pdf"], key="modal_up_ramais_capital")
+
+        if st.button("⚡ Processar e Importar Arquivos", type="primary", width='stretch'):
+            files_to_proc = {}
+            if up_interior:
+                files_to_proc["Interior"] = up_interior.read()
+            if up_capital:
+                files_to_proc["Capital / PGJ"] = up_capital.read()
+
+            if not files_to_proc:
+                st.warning("Selecione ao menos um arquivo PDF para importar.")
+            else:
+                from src.scrapers.ramais_scraper import process_uploaded_pdf_files
+                import time
+                with st.spinner("Processando tabelas dos PDFs..."):
+                    total = process_uploaded_pdf_files(files_to_proc)
+                    if total > 0:
+                        st.success(f"🎉 {total} ramais extraídos e salvos com sucesso no SQLite!")
+                        time.sleep(1.2)
+                        st.rerun()
+                    else:
+                        st.error("Não foi possível extrair ramais dos arquivos enviados. Verifique o formato.")
+
+
 def render_unidades_page():
     """Renderiza a página Catálogo de Unidades do MPMS."""
     st.title("🏢 Catálogo de Unidades do MPMS")
@@ -232,6 +296,11 @@ def render_unidades_page():
                 st.rerun()
 
     elif selected_tab == "📞 Lista de Ramais (Telefonia)":
+        if st.sidebar.button("⚙️ Configurar / Enviar PDFs", type="primary", width='stretch', help="Atualizar links dos PDFs ou fazer upload direto de arquivos de ramais."):
+            modal_config_ramais()
+
+        st.sidebar.markdown("<br>", unsafe_allow_html=True)
+
         if ramais_ativo:
             st.sidebar.button("🤖 Ramais em Sincronização...", width='stretch', disabled=True)
         else:
