@@ -267,7 +267,7 @@ def download_sharepoint_matutino_file() -> Path | None:
                 pass_inputs = driver.find_elements(By.XPATH, "//input[@type='password']")
                 if pass_inputs:
                     pass_inputs[0].clear()
-                    pass_inputs[0].send_keys(PASSWORD)
+                    pass_inputs[0].send_keys(PASSWORD or "")
                     logger.info("🔑 Senha da rede preenchida.")
                     
                     submits = driver.find_elements(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")

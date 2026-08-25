@@ -70,17 +70,20 @@ RUN playwright install-deps chromium \
 # Copia todo o código-fonte para o container
 COPY . .
 
+ARG STREAMLIT_PORT=8501
+ENV STREAMLIT_PORT=${STREAMLIT_PORT}
+
 # Expõe a porta padrão do Streamlit
-EXPOSE 8501
+EXPOSE ${STREAMLIT_PORT}
 
 # Variáveis padrão de execução do Streamlit
-ENV STREAMLIT_SERVER_PORT=8501 \
+ENV STREAMLIT_SERVER_PORT=${STREAMLIT_PORT} \
     STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
     STREAMLIT_SERVER_HEADLESS=true
 
 # Checagem de integridade do serviço Streamlit
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+    CMD curl --fail http://localhost:${STREAMLIT_PORT}/_stcore/health || exit 1
 
 # Comando padrão de inicialização (executa o banner interativo e sobe o Streamlit)
 CMD ["python", "init.py"]

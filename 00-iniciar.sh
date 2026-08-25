@@ -33,7 +33,8 @@ fi
 
 export HOST_IP="${LOCAL_IP}"
 
-# Garantir existência do arquivo SQLite local se ainda não existir
+# Garantir existência da pasta do keyring e do banco SQLite local
+mkdir -p ~/.local/share/python_keyring
 touch chamados.db
 
 if command -v docker >/dev/null 2>&1; then
@@ -59,10 +60,16 @@ if command -v docker >/dev/null 2>&1; then
         echo " [OK] Imagem Docker construída com sucesso!"
     fi
 
-    if ! docker compose up -d web; then
+    if ! docker compose up -d --force-recreate web; then
         echo ""
         echo " [ERRO] Falha ao iniciar o container Docker."
         exit 1
+    fi
+
+    # Executa o assistente de senhas no container interativo com terminal tty se solicitado ou inicial
+    if [ "$1" == "--config-senhas" ] || [ "$1" == "-s" ]; then
+        echo " [INFO] Abrindo configurador de senhas no container..."
+        docker compose run --rm web python src/salvar_senha.py
     fi
 
     # Transmite logs em tempo real (exibindo o banner colorido e QR code do init.py)

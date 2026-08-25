@@ -28,16 +28,23 @@ from src.terminal import log, print_header, print_section, CYAN, GREEN, RED, YEL
 LOCK_FILE = Path(tempfile.gettempdir()) / "automated_otrs_citsmart.lock"
 
 def is_pid_running(pid: int) -> bool:
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if handle:
-        exit_code = ctypes.c_ulong()
-        if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+    if sys.platform == "win32":
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if handle:
+            exit_code = ctypes.c_ulong()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                kernel32.CloseHandle(handle)
+                return exit_code.value == 259  # 259 representa STILL_ACTIVE no Windows
             kernel32.CloseHandle(handle)
-            return exit_code.value == 259  # 259 representa STILL_ACTIVE no Windows
-        kernel32.CloseHandle(handle)
-    return False
+        return False
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, ProcessLookupError):
+            return False
 
 def acquire_lock():
     if LOCK_FILE.exists():

@@ -4,10 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: bancada_streamlit_app
+    env_file:
+      - .env
     ports:
-      - "8501:8501"
+      - "${STREAMLIT_PORT:-8501}:${STREAMLIT_PORT:-8501}"
     environment:
-      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_PORT=${STREAMLIT_PORT:-8501}
+      - STREAMLIT_SERVER_PORT=${STREAMLIT_PORT:-8501}
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
       - STREAMLIT_SERVER_HEADLESS=true
       - STREAMLIT_LOGGER_LEVEL=error
@@ -28,13 +31,15 @@ services:
       - ./03 - Dados prontos:/app/03 - Dados prontos
       - ./models:/app/models
       - ./debug_logs:/app/debug_logs
+      # Mapeamento do cofre do keyring (Linux/WSL host -> Docker container)
+      - ~/.local/share/python_keyring:/root/.local/share/python_keyring
       # Mapeamento de código para Live-Reload sem necessidade de rebuild
       - ./src:/app/src
       - ./dashboard.py:/app/dashboard.py
       - ./orquestrador.py:/app/orquestrador.py
       - ./init.py:/app/init.py
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${STREAMLIT_PORT:-8501}/_stcore/health"]
       interval: 10s
       timeout: 5s
       retries: 3

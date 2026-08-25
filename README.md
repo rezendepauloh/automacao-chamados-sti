@@ -130,8 +130,6 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 
 ### 15. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
 
-### 15. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
-
 - **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
 - **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro (incluindo o popover do "+X mais"), estilização vermelha `#ff4b4b` para abas ativas e exibição completa de chamados técnicos.
 - **Fechamento Automático de Chamados Ausentes (`close_missing_tickets_by_base`):** Mecanismo de sincronização relacional no SQLite que identifica chamados encerrados nos portais de origem e atualiza seu status para `'Fechado'`, com trava de segurança por volume mínimo (`active_ids >= 3`).
@@ -162,78 +160,34 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 ```text
 automated-OTRS-and-CitSmart/
 ├── assets/
-│   └── css/styles.css                # Estilos CSS globais da aplicação (com ajuste responsivo de menus e abas subtabs)
-├── debug_logs/
-│   ├── citsmart/                     # Logs e screenshots do CitSmart
-│   ├── otrs/                         # Logs e screenshots do OTRS
-│   ├── oxe/                          # Logs e screenshots da Central Telefônica OXE
-│   ├── papercut/                     # Logs do PaperCut
-│   ├── plantoes/                     # Logs de escalas de plantão
-│   ├── preprocessamento/             # Logs de tratamento de dados
-│   └── scripts/                      # Logs centralizados de execução dos scripts de automação PowerShell
-├── debug/                            # Logs de execução em background dos scrapers (unidades, ramais)
+│   └── css/styles.css                # Estilos CSS globais da aplicação (com ajuste responsivo de UI)
+├── debug_logs/                       # Logs organizados por módulo (otrs, citsmart, oxe, papercut, plantoes, etc.)
 ├── src/
-│   ├── database/                     # Camada modular de banco de dados SQLite
-│   │   ├── __init__.py               # Reexportação pública unificada da DAO
-│   │   ├── connection.py             # Conexão central com chamados.db
-│   │   ├── tickets_db.py            # Operações de chamados e fechamento por base (close_missing_tickets_by_base)
-│   │   ├── ramais_db.py             # Tabela e consultas de ramais telefônicos
-│   │   ├── map_db.py                # Tabelas do mapa predial, salas e rotas
-│   │   ├── plantoes_db.py           # Tabelas e persistência de escalas de plantão
-│   │   ├── notifications_db.py     # Gerenciamento de alertas e notificações
-│   │   ├── impressoras_db.py       # Tabela de dispositivos do PaperCut
-│   │   ├── central_db.py           # Tabela de ramais do OXE Alcatel
-│   │   ├── garantia_db.py          # Tabela de controle de garantias
-│   │   ├── events_db.py            # Tabela de eventos manuais do calendário
-│   │   ├── unidades_db.py          # Tabela de unidades e promotorias
-│   │   ├── fiscalizacao_db.py      # Tabela de fiscalização de contratos SAJ
-│   │   └── donations_db.py         # Tabela de doações e redistribuição
-│   ├── scrapers/                     # Scrapers e bots automatizados de coleta
-│   │   ├── citsmart_scraper.py       # Bot de extração do CitSmart
-│   │   ├── otrs_scraper.py           # Bot de extração do OTRS
-│   │   ├── oxe_scraper.py            # Bot de extração em lote paralelo (Promise.all) do OXE
-│   │   ├── papercut_scraper.py       # Bot de extração de impressoras do PaperCut
-│   │   ├── plantoes_scraper.py       # Bot de extração dos plantões PGJ e SIMP
-│   │   ├── ramais_scraper.py         # Extrator PDF de ramais da Intranet
-│   │   ├── unidades_scraper.py       # Raspador de unidades no portal do MPMS
-│   │   └── faq_scraper.py            # Bot Playwright para FAQs do SharePoint
+│   ├── components/                   # Componentes reutilizáveis do frontend (header, subtabs, calendar, pagination)
+│   ├── database/                     # Camada modular de banco de dados SQLite (chamados, ramais, mapas, plantões, etc.)
+│   ├── js/                           # Arquivos estáticos de suporte ao cliente JS (server-info.js)
+│   ├── scrapers/                     # Bots e raspadores automatizados de coleta (otrs, citsmart, oxe, papercut, plantoes, faq, etc.)
+│   ├── scripts_powershell/           # Scripts de automação remota (Analisador, Manutenção, Perfis)
 │   ├── syncs/                        # Workers assíncronos de sincronização em segundo plano
-│   │   ├── sync_donations.py         # Sincronizador da planilha de doações/redistribuição
-│   │   ├── sync_fiscalizacao.py      # Sincronizador da planilha de fiscalização SAJ
-│   │   ├── sync_garantia.py          # Sincronizador da planilha de garantias
-│   │   ├── sync_master.py            # Sincronizador Append-Only na Planilha Master
-│   │   ├── sync_portarias.py         # Sincronizador da API de portarias
-│   │   └── sync_plantoes_alerts.py   # Verificador de alertas de plantão
-│   ├── components/                   # Componentes reutilizáveis do frontend
-│   │   ├── header.py                 # Menu popover de navegação rápida com query parameters e notificações
-│   │   ├── subtabs.py                # Componente de sub-abas sincronizadas com query parameters na URL
-│   │   ├── calendar.py               # Componente mestre FullCalendar v6 com modal dinâmico inteligente
-│   │   ├── pagination.py             # Componente de paginação e seletor de registros por página
-│   │   └── status_banner.py          # Checagem de status e leitor de logs do robô
-│   ├── tabs/                         # Módulos isolados por página
-│   │   ├── chamados.py               # Aba 1: Painel Geral de Chamados (?tab=chamados&subtab=...)
-│   │   ├── central_telefonica.py     # Aba 2: Central Telefônica OXE & Modal Ficha Técnica (?tab=central-telefonica)
-│   │   ├── plantoes.py               # Aba 3: Escala de Plantões da Bancada & FullCalendar (?tab=plantoes&subtab=...)
-│   │   ├── portarias.py              # Aba 4: Portarias & Atos dos Membros da Bancada (?tab=portarias)
-│   │   ├── notificacoes.py           # Aba 5: Central de Notificações com Paginação (?tab=notificacoes)
-│   │   ├── redistribuicao.py         # Aba 6: Doação & Redistribuição (?tab=redistribuicao)
-│   │   ├── mapas.py                  # Aba 7: Planta Baixa e Rotas Leaflet (?tab=mapa)
-│   │   ├── links_faqs.py             # Aba 8: FAQs, Tutoriais (SharePoint), Vídeos FAQ & Galeria de Imagens FAQ (?tab=faq&subtab=...)
-│   │   ├── fiscalizacao.py           # Aba 9: Fiscalização de Contratos SAJ (?tab=fiscalizacao&subtab=...)
-│   │   ├── impressoras.py            # Aba 10: Gestão de Impressoras & Dispositivos PaperCut (?tab=impressoras&subtab=...)
-│   │   ├── scripts_automacao.py      # Aba 11: Scripts de Automação PowerShell (?tab=scripts-automacao&subtab=...)
-│   │   ├── calendario_geral.py       # Aba 12: Calendário Geral Unificado (?tab=calendario-geral)
-│   │   └── unidades.py               # Aba 13: Catálogo Unificado de Unidades & Lista de Ramais Telefônicos (?tab=unidades&subtab=...)
-│   ├── preprocess_chamados.py        # Limpeza e padronização de chamados
-│   ├── preprocess_oxe.py             # Pré-processamento e classificação de ramais do OXE
+│   ├── tabs/                         # Módulos de páginas isolados por funcionalidade no dashboard Streamlit
+│   ├── preprocess_chamados.py        # Limpeza e padronização dos chamados de TI
+│   ├── preprocess_oxe.py             # Tratamento e normalização dos ramais do OXE
 │   ├── tag_classifier.py             # Classificador de IA com NLP (spaCy + Scikit-Learn)
-│   └── salvar_senha.py               # Utilitário de segurança e credenciais (Keyring)
-├── tests/                            # Suíte de testes unitários automatizados
-│   ├── test_app.py                   # Testes de NLP, scrapers, banco e fechamento por base
-│   └── test_tabs_and_components.py   # Testes dos módulos do dashboard
-├── .env.example                      # Template de variáveis de ambiente e caminhos dos scripts
+│   ├── terminal.py                   # Formatador de logs com cores ANSI para o terminal
+│   ├── config.py                     # Configurações centralizadas, logging e carregador do keyring/ambiente
+│   └── salvar_senha.py               # Utilitário interativo de credenciais e cofre de senhas (Keyring)
+├── tests/                            # Suíte de testes unitários automatizados (NLP, scrapers, banco e tabs)
+├── .env.example                      # Template de variáveis de ambiente
 ├── .env                              # Variáveis de ambiente locais (não commitado)
-├── dashboard.py                      # Orquestrador central do Streamlit
+├── .dockerignore                     # Filtro de arquivos excluídos do contexto da imagem Docker
+├── 00-iniciar.sh                     # Lançador principal Linux / WSL para Docker
+├── 00-iniciar.cmd                    # Lançador principal Windows (duplo clique) para Docker
+├── Dockerfile                        # Especificação da imagem Docker containerizada
+├── docker-compose.yml                # Orquestrador Docker dos serviços web e banco de dados
+├── requirements.txt                  # Lista de dependências Python (pip)
+├── chamados.db                       # Banco de dados SQLite relacional local
+├── init.py                           # Entrypoint do container (exibe banner colorido, QR Code e inicia o Streamlit)
+├── dashboard.py                      # Orquestrador central do Streamlit Dashboard
 └── orquestrador.py                   # Script mestre do fluxo executado em background
 ```
 
@@ -292,20 +246,39 @@ O sistema opera de forma totalmente containerizada através do **Docker Compose*
    ```bash
    ./00-iniciar.sh
    ```
-   > 💡 **Dica:** Para forçar a reconstrução da imagem após adicionar dependências no `requirements.txt`, use `./00-iniciar.sh --build`.
 
-5. **(Opcional) Atalho para o Menu de Aplicativos do Linux / Desktop:**
+5. **Parâmetros Utilitários de Inicialização:**
+   - **Configurar/Atualizar Senhas Seguras (Keyring):**
+     ```bash
+     ./00-iniciar.sh --config-senhas
+     # ou abreviado:
+     ./00-iniciar.sh -s
+     ```
+     > 🔑 **O que faz:** Abre o assistente interativo `salvar_senha.py` dentro do container Docker. Ele verifica se já existem senhas salvas para OTRS, CitSmart, SCCM Admin, PaperCut ou OXE, permitindo atualizar ou manter as credenciais no cofre persistente (`~/.local/share/python_keyring`). As senhas são digitadas com caracteres ocultos por segurança.
+
+   - **Forçar Reconstrução da Imagem Docker:**
+     ```bash
+     ./00-iniciar.sh --build
+     # ou abreviado:
+     ./00-iniciar.sh -b
+     ```
+     > 🛠️ **O que faz:** Reconstrói a imagem Docker do zero para incorporar alterações no `Dockerfile` ou no `requirements.txt`. Pode ser combinado com o configurador de senhas (ex: `./00-iniciar.sh --build -s`).
+
+6. **(Opcional) Atalho para o Menu de Aplicativos do Linux / Desktop:**
    ```bash
    cp sistema-bancada.desktop ~/.local/share/applications/
    ```
 
-6. **Gerenciamento manual via Docker Compose:**
+7. **Gerenciamento manual via Docker Compose:**
    ```bash
    # Construir a imagem
    docker compose build
 
-   # Subir o container em segundo plano
+   # Subir os containers em segundo plano
    docker compose up -d web
+
+   # Executar configurador de senhas manualmente no container
+   docker compose run --rm web python src/salvar_senha.py
 
    # Ver logs em tempo real
    docker compose logs -f web
@@ -316,13 +289,12 @@ O sistema opera de forma totalmente containerizada através do **Docker Compose*
 
 ---
 
-### 🐳 3. Estrutura de Containers (WSL & Red Hat UBI 9)
+### 🐳 3. Estrutura de Containers (WSL / Debian)
 
 O projeto conta com arquitetura pronta para execução universal em containers:
 
-- **`Dockerfile` (WSL / Padrão Debian):** Imagem base `python:3.11-slim` com Playwright/Chromium headless instalado, healthcheck, bypass de proxy SSL corporativo e fuso horário brasileiro (`America/Campo_Grande`).
-- **`Dockerfile-MP-RedHat` (Red Hat UBI 9):** Imagem base oficial `registry.access.redhat.com/ubi9/python-312` para ambientes de produção corporativos Red Hat / Podman.
-- **`docker-compose.yml`:** Orquestração com volumes persistentes para banco de dados SQLite (`chamados.db`), pastas de dados (`01`, `02`, `03`, `models`, `debug_logs`) e mapeamento do código (`src/`, `init.py`) para **Live-Reload** em tempo real.
+- **`Dockerfile` (WSL / Padrão Debian):** Imagem base `python:3.11-slim` com Playwright/Chromium headless instalado, healthcheck, suporte a portas dinâmicas via `STREAMLIT_PORT`, bypass de proxy SSL corporativo e fuso horário brasileiro (`America/Campo_Grande`).
+- **`docker-compose.yml`:** Orquestração com volumes persistentes para banco de dados SQLite (`chamados.db`), cofre de senhas do Linux (`~/.local/share/python_keyring`), pastas de dados (`01`, `02`, `03`, `models`, `debug_logs`) e mapeamento do código (`src/`, `init.py`) para **Live-Reload** em tempo real.
 
 ---
 
@@ -333,5 +305,6 @@ Para rodar todos os testes unitários integrados da aplicação dentro do contai
 ```bash
 docker compose exec web python -m unittest discover -s tests
 ```
+
 
 

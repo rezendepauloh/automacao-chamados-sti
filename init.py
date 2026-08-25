@@ -26,7 +26,7 @@ RED = "\033[31m"
 WHITE = "\033[37m"
 DARK_GRAY = "\033[90m"
 
-PORT = int(os.getenv("STREAMLIT_SERVER_PORT", "8501"))
+PORT = int(os.getenv("STREAMLIT_PORT") or os.getenv("STREAMLIT_SERVER_PORT", "8501"))
 
 def get_local_ip() -> str:
     """Detecta o IP local IPv4 acessível na rede corporativa/Wi-Fi."""

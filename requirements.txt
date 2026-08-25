@@ -89,4 +89,4 @@ pdfplumber
 psycopg2-binary>=2.9.9
 qrcode>=7.4.2
 python-dotenv>=1.0.1
-
+keyrings.alt>=5.0.0

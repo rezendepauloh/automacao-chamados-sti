@@ -1,10 +1,12 @@
+import os
+import sys
 import tempfile
 import ctypes
 from pathlib import Path
 import streamlit as st
 
 def check_process_running(lock_file: Path) -> bool:
-    """Verifica se um processo está rodando de forma ativa analisando o arquivo de lock no Windows."""
+    """Verifica se um processo está rodando de forma ativa analisando o arquivo de lock (compatível com Linux e Windows)."""
     if not lock_file.exists():
         return False
         
@@ -12,16 +14,23 @@ def check_process_running(lock_file: Path) -> bool:
         with open(lock_file, "r") as f:
             pid = int(f.read().strip())
         
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-        if handle:
-            exit_code = ctypes.c_ulong()
-            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+        if sys.platform == "win32":
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if handle:
+                exit_code = ctypes.c_ulong()
+                if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    kernel32.CloseHandle(handle)
+                    return exit_code.value == 259  # 259 significa STILL_ACTIVE
                 kernel32.CloseHandle(handle)
-                return exit_code.value == 259  # 259 significa STILL_ACTIVE
-            kernel32.CloseHandle(handle)
-    except:
+        else:
+            try:
+                os.kill(pid, 0)
+                return True
+            except (OSError, ProcessLookupError):
+                return False
+    except Exception:
         pass
     return False
 

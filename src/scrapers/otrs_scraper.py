@@ -402,23 +402,45 @@ def login_page(driver):
     logger.info("Passo 1: Carregando página de login...")
     driver.get(OTRS_URL)
 
-    logger.info("Passo 2: Preenchendo credenciais...")
-    WebDriverWait(driver, EXPLICIT_WAIT).until(
+    logger.info(f"Passo 2: Preenchendo credenciais para usuário '{USERNAME}' (tamanho da senha: {len(PASSWORD or '')})...")
+    user_field = WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.presence_of_element_located((By.ID, "User"))
-    ).send_keys(USERNAME)
+    )
+    user_field.clear()
+    user_field.send_keys(USERNAME)
     
-    driver.find_element(By.ID, "Password").send_keys(PASSWORD)
+    pass_field = driver.find_element(By.ID, "Password")
+    pass_field.clear()
+    pass_field.send_keys(PASSWORD or "")
 
     logger.info("Passo 3: Clicando no botão de login...")
-    WebDriverWait(driver, EXPLICIT_WAIT).until(
+    login_btn = WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.element_to_be_clickable((By.ID, "LoginButton"))
-    ).click()
+    )
+    login_btn.click()
+    
+    # Aguarda a página processar a autenticação (saída da tela de login ou exibição do menu)
+    try:
+        WebDriverWait(driver, EXPLICIT_WAIT).until(
+            EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'Action=AgentTicketQueue')] | //div[@class='ErrorBox'] | //p[contains(@class, 'Error')]"))
+        )
+    except Exception:
+        pass
 
 def navigation_queue(driver):
     logger.info("Passo 4: Navegando para fila principal...")
-    WebDriverWait(driver, EXPLICIT_WAIT).until(
-        EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'Action=AgentTicketQueue')]"))
-    )
+    try:
+        WebDriverWait(driver, EXPLICIT_WAIT).until(
+            EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'Action=AgentTicketQueue')]"))
+        )
+    except Exception as e:
+        # Se não encontrou o menu da fila, verifica se a mensagem de erro de login está na tela
+        err_elems = driver.find_elements(By.CSS_SELECTOR, "p.Error, div.ErrorBox")
+        err_msg = " ".join([elem.text.strip() for elem in err_elems if elem.text.strip()])
+        if err_msg:
+            raise RuntimeError(f"Falha de Autenticação no OTRS: {err_msg}")
+        else:
+            raise RuntimeError(f"Credenciais inválidas ou timeout ao aguardar dashboard do OTRS: {e}")
     
     logger.info("Passo 5: Clicando no link da fila...")
     queue_link = driver.find_element(

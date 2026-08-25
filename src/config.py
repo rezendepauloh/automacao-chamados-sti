@@ -54,30 +54,32 @@ PS_SCRIPT_REMOVER_USUARIOS = PS_SCRIPTS_DIR / "perfis" / "RemoverUsuarios.ps1"
 
 def _get_username() -> str:
     """Obtém o nome de usuário do sistema de forma segura para Docker, Linux e Windows."""
-    env_user = os.getenv("AD_USER") or os.getenv("CITSMART_USER") or os.getenv("USER") or os.getenv("USERNAME")
-    if env_user and env_user.strip():
+    env_user = os.getenv("AD_USER") or os.getenv("CITSMART_USER")
+    if env_user and env_user.strip() and env_user.strip() != "root":
         return env_user.strip()
+    
+    host_user = os.getenv("USER") or os.getenv("USERNAME")
+    if host_user and host_user.strip() and host_user.strip() != "root":
+        return host_user.strip()
+
     try:
         import getpass
         user = getpass.getuser()
-        if user and user.strip():
+        if user and user.strip() and user.strip() != "root":
             return user.strip()
     except Exception:
         pass
-    try:
-        return os.getlogin()
-    except Exception:
-        pass
-    return "usuario"
+        
+    return "paulogoncalves"
 
 USERNAME = _get_username()
 CITSMART_EMAIL = f"{USERNAME}@{os.getenv('AD_EMAIL', '')}"
 
-# Tenta pegar senha do keyring, ou deixa vazia se falhar (para não quebrar no PC de outros)
+# Tenta pegar senha do keyring, ou env AD_PASSWORD, ou deixa vazia se falhar
 try:
-    PASSWORD = keyring.get_password("otrs", USERNAME)
-except:
-    PASSWORD = None
+    PASSWORD = os.getenv("AD_PASSWORD") or keyring.get_password("otrs", USERNAME)
+except Exception:
+    PASSWORD = os.getenv("AD_PASSWORD")
 
 try:
     PAPERCUT_USER = os.getenv("PAPERCUT_USER", keyring.get_password("papercut_user", "papercut") or "admin")
@@ -496,20 +498,33 @@ def fetch_sccm_data(username: str) -> dict:
         logger.info(f"Consultando SCCM para o usuário: {username} (Sem credenciais adicionais)")
         ps_command = f"Get-CimInstance -ComputerName {site_server} -Namespace 'root\\sms\\site_{site_code}' -Query \"{query}\" | Select-Object IPAddresses, Name | ConvertTo-Json"
     
-    res_data = {"ip": "", "hostname": ""}
-    
+    # 4. Determina o executável do PowerShell (suporta Windows e WSL interop)
+    ps_executable = "powershell"
+    if sys.platform != "win32":
+        # No Linux/WSL, tenta usar o powershell.exe da interoperabilidade do WSL
+        import shutil
+        ps_win = shutil.which("powershell.exe") or shutil.which("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe")
+        if ps_win:
+            ps_executable = ps_win
+        else:
+            # Se não houver interop do PowerShell no Linux, ignora SCCM para evitar timeouts longos
+            logger.info(f"PowerShell não disponível no ambiente Linux para consultar SCCM para {username}.")
+            res_data = {"ip": "N/A", "hostname": "N/A"}
+            _sccm_cache[username_lower] = res_data
+            return res_data
+
     try:
         run_kwargs = {
             "capture_output": True,
             "text": True,
-            "timeout": 15,
+            "timeout": 8,
             "encoding": "cp1252",
         }
         if sys.platform == "win32":
             run_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_command],
+            [ps_executable, "-NoProfile", "-Command", ps_command],
             **run_kwargs
         )
         

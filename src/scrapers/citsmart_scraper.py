@@ -108,7 +108,7 @@ def navigate_to_caixa_entrada(driver, wait):
     pwd = wait.until(EC.element_to_be_clickable((By.NAME, "passwd")))
     driver.execute_script("arguments[0].click()", pwd)
     time.sleep(0.5)
-    pwd.clear(); pwd.send_keys(PASSWORD)
+    pwd.clear(); pwd.send_keys(PASSWORD or "")
     wait.until(EC.element_to_be_clickable((By.ID, "idSIButton9"))).click()
 
     try:
