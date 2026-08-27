@@ -25,12 +25,14 @@ def setup_donations_table():
     conn.commit()
     conn.close()
 
-def sync_donations_from_excel(file_path: str):
-    """Lê os dados da planilha de equipamentos doados e salva no SQLite."""
+def sync_donations_from_excel(file_path_or_buffer):
+    """Lê os dados da planilha de equipamentos doados e salva no SQLite.
+    Suporta caminho de arquivo local (.xlsx) ou buffer de upload (BytesIO / Streamlit).
+    """
     from src.config import setup_logging, DEBUG_DIR_DONATIONS
     
     logger = setup_logging(DEBUG_DIR_DONATIONS / "donations.log", "donations_sync")
-    logger.info(f"Iniciando sincronização da planilha: {file_path}")
+    logger.info(f"Iniciando sincronização da planilha de doações/redistribuição...")
     
     setup_donations_table()
     
@@ -40,8 +42,23 @@ def sync_donations_from_excel(file_path: str):
         temp_file.close()
         
         try:
-            shutil.copy2(file_path, temp_path)
-            df = pd.read_excel(temp_path, sheet_name="Equipamentos doados")
+            if isinstance(file_path_or_buffer, (str, Path)):
+                p = Path(file_path_or_buffer)
+                if not p.exists():
+                    logger.error(f"Arquivo não encontrado: {file_path_or_buffer}")
+                    return False
+                shutil.copy2(str(p), temp_path)
+            elif hasattr(file_path_or_buffer, "read"):
+                file_path_or_buffer.seek(0)
+                with open(temp_path, "wb") as f_out:
+                    f_out.write(file_path_or_buffer.read())
+            else:
+                logger.error("Tipo de arquivo/buffer inválido fornecido para doações.")
+                return False
+
+            with pd.ExcelFile(temp_path) as xls:
+                target_sheet = "Equipamentos doados" if "Equipamentos doados" in xls.sheet_names else xls.sheet_names[0]
+                df = pd.read_excel(xls, sheet_name=target_sheet)
         finally:
             Path(temp_path).unlink(missing_ok=True)
             

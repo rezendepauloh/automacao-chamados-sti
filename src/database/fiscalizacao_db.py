@@ -4,15 +4,15 @@ from pathlib import Path
 import pandas as pd
 from .connection import get_connection
 
-def sync_fiscalizacao_from_excel(file_path: str) -> bool:
+def sync_fiscalizacao_from_excel(file_path_or_buffer) -> bool:
     """Lê os dados da planilha de fiscalização de contratos e salva no SQLite em tabelas dedicadas."""
     from src.config import setup_logging, DEBUG_DIR_FISCALIZACAO
 
     logger = setup_logging(DEBUG_DIR_FISCALIZACAO / "sync.log", "fiscalizacao_sync")
-    logger.info(f"Iniciando sincronização da planilha de fiscalização: {file_path}")
+    logger.info(f"Iniciando sincronização da planilha de fiscalização...")
 
-    if not file_path or not Path(file_path).exists():
-        logger.error(f"Arquivo da planilha de fiscalização não encontrado: {file_path}")
+    if file_path_or_buffer is None:
+        logger.error("Nenhuma planilha fornecida para sincronização de fiscalização.")
         return False
 
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
@@ -20,7 +20,19 @@ def sync_fiscalizacao_from_excel(file_path: str) -> bool:
     temp_file.close()
 
     try:
-        shutil.copy2(file_path, temp_path)
+        if isinstance(file_path_or_buffer, (str, Path)):
+            if not Path(file_path_or_buffer).exists():
+                logger.error(f"Arquivo da planilha de fiscalização não encontrado: {file_path_or_buffer}")
+                return False
+            shutil.copy2(str(file_path_or_buffer), temp_path)
+        elif hasattr(file_path_or_buffer, "read"):
+            file_path_or_buffer.seek(0)
+            with open(temp_path, "wb") as f_out:
+                f_out.write(file_path_or_buffer.read())
+        else:
+            logger.error("Tipo de arquivo/buffer inválido fornecido para fiscalização.")
+            return False
+
         with pd.ExcelFile(temp_path) as excel_data:
             df_indicacoes = pd.read_excel(excel_data, sheet_name="Indicações") if "Indicações" in excel_data.sheet_names else pd.DataFrame()
             df_publicacoes = pd.read_excel(excel_data, sheet_name="Publicações") if "Publicações" in excel_data.sheet_names else pd.DataFrame()

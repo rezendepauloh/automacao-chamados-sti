@@ -127,8 +127,26 @@ MASTER_FILE_PATH = USER_HOME / os.getenv("SHAREPOINT_RELATIVE_PATH", "")
 DONATIONS_FILE_PATH = USER_HOME / os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
 WARRANTY_FILE_PATH = USER_HOME / os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", "")
 SHAREPOINT_MATUTINO_URL = os.getenv("SHAREPOINT_MATUTINO_URL", "")
-VIDEO_FAQ_DIR = USER_HOME / os.getenv("VIDEO_FAQ_PATH", "")
-IMAGE_FAQ_DIR = USER_HOME / os.getenv("IMAGE_FAQ_PATH", "")
+
+VIDEO_FAQ_ENV = os.getenv("VIDEO_FAQ_PATH", "")
+IMAGE_FAQ_ENV = os.getenv("IMAGE_FAQ_PATH", "")
+
+if VIDEO_FAQ_ENV.startswith("http://") or VIDEO_FAQ_ENV.startswith("https://"):
+    VIDEO_FAQ_URL = VIDEO_FAQ_ENV
+    VIDEO_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "videos"
+else:
+    VIDEO_FAQ_URL = ""
+    VIDEO_FAQ_DIR = USER_HOME / VIDEO_FAQ_ENV if VIDEO_FAQ_ENV else (BASE_DIR / "uploads" / "faq" / "videos")
+
+if IMAGE_FAQ_ENV.startswith("http://") or IMAGE_FAQ_ENV.startswith("https://"):
+    IMAGE_FAQ_URL = IMAGE_FAQ_ENV
+    IMAGE_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "imagens"
+else:
+    IMAGE_FAQ_URL = ""
+    IMAGE_FAQ_DIR = USER_HOME / IMAGE_FAQ_ENV if IMAGE_FAQ_ENV else (BASE_DIR / "uploads" / "faq" / "imagens")
+
+VIDEO_FAQ_DIR.mkdir(parents=True, exist_ok=True)
+IMAGE_FAQ_DIR.mkdir(parents=True, exist_ok=True)
 
 # Garantia Logs
 DEBUG_DIR_GARANTIA = BASE_DIR / "debug_logs" / "garantia"

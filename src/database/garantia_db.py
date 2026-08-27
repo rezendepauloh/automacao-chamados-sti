@@ -47,25 +47,33 @@ def setup_garantia_tables():
     conn.commit()
     conn.close()
 
-def sync_garantia_from_excel(excel_path: str = None) -> bool:
+def sync_garantia_from_excel(excel_path_or_buffer = None) -> bool:
     """
     Sincroniza os dados da planilha de Garantia para as tabelas SQLite.
+    Suporta caminho de arquivo local (.xlsx) ou buffer de upload (BytesIO / Streamlit).
     """
     setup_garantia_tables()
-    if not excel_path:
+    if excel_path_or_buffer is None:
         from src.config import WARRANTY_FILE_PATH
-        excel_path = str(WARRANTY_FILE_PATH)
-
-    p = Path(excel_path)
-    if not p.exists():
-        return False
+        excel_path_or_buffer = str(WARRANTY_FILE_PATH)
 
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     temp_path = temp_file.name
     temp_file.close()
 
     try:
-        shutil.copy2(excel_path, temp_path)
+        if isinstance(excel_path_or_buffer, (str, Path)):
+            p = Path(excel_path_or_buffer)
+            if not p.exists():
+                return False
+            shutil.copy2(str(p), temp_path)
+        elif hasattr(excel_path_or_buffer, "read"):
+            excel_path_or_buffer.seek(0)
+            with open(temp_path, "wb") as f_out:
+                f_out.write(excel_path_or_buffer.read())
+        else:
+            return False
+
         with pd.ExcelFile(temp_path) as xls:
             conn = get_connection()
             cursor = conn.cursor()

@@ -8,6 +8,56 @@ from src.components.pagination import (
 from src.components.status_banner import render_log_expander
 from src.syncs.sync_donations import check_donations_sync_running, read_donations_last_log_lines
 
+import os
+
+@st.dialog("⚙️ Configurar / Enviar Planilha de Doações & Baixa")
+def modal_config_donations():
+    """Modal nativo (@st.dialog) para gerenciar link do SharePoint e envio direto da planilha de doações."""
+    st.markdown("### 🖥️ Gestão da Planilha de Doação e Baixa de Máquinas")
+    st.caption("Você pode consultar a URL da planilha oficial no SharePoint ou fazer o envio direto do arquivo Excel baixado do seu computador.")
+
+    tab_online, tab_upload = st.tabs(["🌐 Link SharePoint / Atualizar Online", "📥 Envio Direto de Planilha"])
+
+    with tab_online:
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+        excel_url_env = os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "").strip()
+        st.write("Planilha oficial vinculada no SharePoint:")
+
+        if excel_url_env.startswith("http://") or excel_url_env.startswith("https://"):
+            st.link_button(
+                "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
+                excel_url_env,
+                type="secondary",
+                width='stretch',
+                help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."
+            )
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+        if st.button("🚀 Sincronizar pelo Link do SharePoint Agora", type="primary", width='stretch'):
+            import sys, subprocess
+            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+            subprocess.Popen([sys.executable, "src/syncs/sync_donations.py"], **popen_kwargs)
+            st.toast("🚀 Sincronização disparada com sucesso!", icon="🤖")
+            st.rerun()
+
+    with tab_upload:
+        st.write("Faça o upload manual do arquivo Excel (.xlsx) da planilha de Doação e Baixa:")
+        uploaded_donations_excel = st.file_uploader("Selecione o arquivo Excel (.xlsx)", type=["xlsx", "xls"], key="modal_up_donations_excel")
+
+        if st.button("⚡ Processar e Gravar no Banco", type="primary", width='stretch'):
+            if not uploaded_donations_excel:
+                st.warning("Selecione um arquivo Excel primeiro.")
+            else:
+                from src.database.donations_db import sync_donations_from_excel
+                import time
+                with st.spinner("Lendo aba 'Equipamentos doados'..."):
+                    res = sync_donations_from_excel(uploaded_donations_excel)
+                    st.success("🎉 Planilha de doações importada com sucesso!")
+                    time.sleep(1.2)
+                    st.rerun()
+
+
 def render_donations_page():
     """Renderiza a página de Doação & Redistribuição de Máquinas."""
     from src.database import get_donations_data, sync_donations_from_excel
@@ -41,13 +91,6 @@ def render_donations_page():
                     
     df = get_donations_data()
     
-    if df.empty:
-        st.warning("⚠️ Nenhum dado encontrado no cache local. Por favor, clique em 'Sincronizar Planilha' para carregar os registros.")
-        return
-        
-    df['Ano'] = pd.to_datetime(df['data_movimentacao'], errors='coerce').dt.year
-    df['Ano'] = df['Ano'].fillna("Sem Data").astype(str).str.replace(".0", "", regex=False)
-        
     st.sidebar.title("🖥️ Painel de Controle")
 
     if donations_ativo:
@@ -59,6 +102,16 @@ def render_donations_page():
             subprocess.Popen([sys.executable, "src/syncs/sync_donations.py"], **popen_kwargs)
             st.toast("🚀 Sincronização de doações iniciada em segundo plano!", icon="🤖")
             st.rerun()
+
+    if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de doações manualmente."):
+        modal_config_donations()
+
+    if df.empty:
+        st.warning("⚠️ Nenhum dado encontrado no cache local. Por favor, clique em 'Sincronizar Planilha' ou use 'Configurar / Enviar Planilha' para carregar os registros.")
+        return
+        
+    df['Ano'] = pd.to_datetime(df['data_movimentacao'], errors='coerce').dt.year
+    df['Ano'] = df['Ano'].fillna("Sem Data").astype(str).str.replace(".0", "", regex=False)
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("🔍 Filtros de Equipamentos")

@@ -158,6 +158,57 @@ def _consultar_portaria_mpms(nome_portaria: str, fiscal_titular: str = "", fisca
             st.markdown("---")
 
 
+@st.dialog("⚙️ Configurar / Enviar Planilha de Fiscalização")
+def modal_config_fiscalizacao():
+    """Modal nativo (@st.dialog) para gerenciar link do SharePoint e envio direto da planilha de fiscalização."""
+    st.markdown("### 📜 Gestão da Planilha de Fiscais de Contrato")
+    st.caption("Você pode consultar/atualizar a URL da planilha no SharePoint ou fazer o envio direto do arquivo Excel baixado do seu computador.")
+
+    tab_online, tab_upload = st.tabs(["🌐 Link SharePoint / Atualizar Online", "📥 Envio Direto de Planilha"])
+
+    with tab_online:
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+        excel_url_env = os.getenv("FISCAL_EXCEL_RELATIVE_PATH", "").strip()
+        st.write("Planilha oficial vinculada no SharePoint:")
+        
+        if excel_url_env.startswith("http://") or excel_url_env.startswith("https://"):
+            st.link_button(
+                "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
+                excel_url_env,
+                type="secondary",
+                width='stretch',
+                help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."
+            )
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+        if st.button("🚀 Sincronizar pelo Link do SharePoint Agora", type="primary", width='stretch'):
+            import sys, subprocess
+            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+            subprocess.Popen([sys.executable, "src/syncs/sync_fiscalizacao.py"], **popen_kwargs)
+            st.toast("🚀 Sincronização disparada com sucesso!", icon="🤖")
+            st.rerun()
+
+    with tab_upload:
+        st.write("Faça o upload manual do arquivo Excel (.xlsx) da planilha de Fiscalização:")
+        uploaded_fiscal_excel = st.file_uploader("Selecione o arquivo Excel (.xlsx)", type=["xlsx", "xls"], key="modal_up_fiscalizacao_excel")
+
+        if st.button("⚡ Processar e Gravar no Banco", type="primary", width='stretch'):
+            if not uploaded_fiscal_excel:
+                st.warning("Selecione um arquivo Excel primeiro.")
+            else:
+                from src.database.fiscalizacao_db import sync_fiscalizacao_from_excel
+                import time
+                with st.spinner("Lendo abas 'Indicações', 'Publicações' e 'Contador'..."):
+                    res = sync_fiscalizacao_from_excel(uploaded_fiscal_excel)
+                    if res:
+                        st.success("🎉 Planilha de fiscalização importada com sucesso!")
+                        time.sleep(1.2)
+                        st.rerun()
+                    else:
+                        st.error("Não foi possível extrair dados válidos da planilha. Verifique o formato.")
+
+
 def render_contracts_page():
     """Renderiza a página de Fiscalização de Contratos a partir da planilha oficial do OneDrive/SharePoint."""
     st.title("📜 Fiscalização de Contratos & Processos SAJ")
@@ -251,6 +302,9 @@ def render_contracts_page():
             time.sleep(0.5)
             st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
             st.rerun()
+
+    if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de fiscais manualmente."):
+        modal_config_fiscalizacao()
 
     st.sidebar.markdown("---")
 
@@ -504,4 +558,8 @@ def render_contracts_page():
             st.dataframe(df_contador, width='stretch', hide_index=True)
         else:
             st.info("Aba Contador indisponível ou vazia na planilha.")
+
+
+render_fiscalizacao_page = render_contracts_page
+
 

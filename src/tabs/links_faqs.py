@@ -6,7 +6,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from bs4 import BeautifulSoup
-from src.config import setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR, IMAGE_FAQ_DIR
+from src.config import (
+    setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR, IMAGE_FAQ_DIR,
+    VIDEO_FAQ_URL, IMAGE_FAQ_URL
+)
 from src.components.subtabs import render_subtabs
 from src.components.pagination import (
     render_items_per_page_selector,
@@ -97,6 +100,53 @@ def format_file_size(size_in_bytes: int) -> str:
         return f"{size_in_bytes / (1024 * 1024):.1f} MB"
     else:
         return f"{size_in_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def open_in_vlc_player(target_path_or_url: str):
+    """Abre o arquivo de vídeo ou URL diretamente no VLC Player ou no player padrão do sistema."""
+    import subprocess
+    target_str = str(target_path_or_url)
+    
+    # 1. Se estiver no WSL/Linux e puder chamar o VLC do Windows
+    vlc_windows_paths = [
+        "/mnt/c/Program Files/VideoLAN/VLC/vlc.exe",
+        "/mnt/c/Program Files (x86)/VideoLAN/VLC/vlc.exe"
+    ]
+    for vlc_path in vlc_windows_paths:
+        if os.path.exists(vlc_path):
+            try:
+                # Converte caminho WSL para Windows se for arquivo local
+                if target_str.startswith("/"):
+                    try:
+                        res = subprocess.run(["wslpath", "-w", target_str], capture_output=True, text=True, check=True)
+                        win_target = res.stdout.strip()
+                    except Exception:
+                        win_target = target_str
+                else:
+                    win_target = target_str
+                subprocess.Popen([vlc_path, win_target])
+                return True
+            except Exception as e:
+                logger.error(f"Erro ao abrir no VLC via WSL: {e}")
+
+    # 2. Se tiver comando 'vlc' no PATH Linux
+    import shutil
+    if shutil.which("vlc"):
+        try:
+            subprocess.Popen(["vlc", target_str])
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao abrir VLC no Linux: {e}")
+
+    # 3. Se estiver nativo no Windows
+    if sys.platform == "win32":
+        try:
+            os.startfile(target_str)
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao abrir arquivo no Windows: {e}")
+
+    return False
 
 
 def scan_video_faqs(dir_path: Path):
@@ -378,39 +428,71 @@ def render_faq_page():
         selected_cat_vid = st.sidebar.selectbox("📂 Categoria / Pasta:", categorias_vid, key="select_cat_video")
         items_per_page_vid = render_items_per_page_selector("faq_vid", options=[6, 10, 20, 50], default_index=1)
 
-        st.subheader("🎥 Vídeos de FAQ & Tutoriais da Bancada")
-        st.write("Vídeos demonstrativos armazenados localmente e sincronizados via SharePoint.")
+        @st.dialog("📤 Enviar Novo Vídeo FAQ (.mp4 / .mkv / .webm)")
+        def modal_upload_video():
+            st.markdown("### 📤 Upload de Vídeo Tutorial")
+            st.caption(f"Os arquivos enviados serão salvos diretamente na pasta de tutoriais do app: `{VIDEO_FAQ_DIR}`")
+            cat_input = st.text_input("📂 Nome da Categoria / Subpasta:", value="Geral", help="Cria ou organiza o vídeo na pasta correspondente.")
+            up_vid = st.file_uploader("Selecione o arquivo de vídeo:", type=["mp4", "webm", "mkv", "mov", "avi", "wmv"], key="uploader_faq_video")
+            
+            if st.button("⚡ Salvar Vídeo no Servidor", type="primary", width='stretch'):
+                if not up_vid:
+                    st.warning("Selecione um arquivo de vídeo primeiro.")
+                else:
+                    dest_dir = VIDEO_FAQ_DIR / (cat_input.strip() if cat_input.strip() else "Geral")
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    dest_file = dest_dir / up_vid.name
+                    with open(dest_file, "wb") as f_v:
+                        f_v.write(up_vid.read())
+                    st.success(f"🎉 Vídeo '{up_vid.name}' salvo com sucesso!")
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("## ⚙️ Ações e SharePoint")
+        if VIDEO_FAQ_URL:
+            st.sidebar.link_button("🌐 Abrir Pasta no SharePoint ↗", VIDEO_FAQ_URL, width='stretch', help="Abre a pasta oficial de vídeos no SharePoint em nova aba.")
+        if st.sidebar.button("📤 Enviar Vídeo (.mp4)", width='stretch', help="Fazer upload de vídeo para a biblioteca local."):
+            modal_upload_video()
+
+        col_head1, col_head2 = st.columns([3, 1])
+        with col_head1:
+            st.subheader("🎥 Vídeos de FAQ & Tutoriais da Bancada")
+            st.write("Vídeos demonstrativos da equipe. Reproduza diretamente no navegador ou abra no SharePoint.")
+        with col_head2:
+            if VIDEO_FAQ_URL:
+                st.link_button("🌐 SharePoint ↗", VIDEO_FAQ_URL, width='stretch', help="Acessar pasta no SharePoint Online")
+
         st.markdown("<br>", unsafe_allow_html=True)
 
-        if not VIDEO_FAQ_DIR.exists():
-            st.warning(f"⚠️ O diretório de Vídeos FAQ não foi encontrado em:\n`{VIDEO_FAQ_DIR}`\n\nVerifique se a pasta existe ou ajuste a variável `VIDEO_FAQ_PATH` no seu arquivo `.env`.")
-        elif not videos_list:
-            st.info(f"Nenhum vídeo de FAQ encontrado na pasta:\n`{VIDEO_FAQ_DIR}`")
-        else:
-            @st.dialog("🎥 Reproduzir Vídeo FAQ", width="large")
-            def open_video_modal(video_item):
-                st.subheader(video_item['titulo'])
-                st.caption(f"📂 Categoria / Pasta: **{video_item['categoria']}**  |  💾 Tamanho: **{video_item['tamanho']}**")
-                st.markdown("---")
+        @st.dialog("🎥 Reproduzir Vídeo FAQ", width="large")
+        def open_video_modal(video_item):
+            st.subheader(video_item.get('titulo', 'Vídeo'))
+            st.caption(f"📂 Categoria / Pasta: **{video_item.get('categoria', 'Geral')}**  |  💾 Tamanho: **{video_item.get('tamanho', 'N/A')}**")
+            st.markdown("---")
 
-                st.markdown("""
-                <style>
-                div[data-testid="stDialog"] video, video {
-                    max-height: 620px !important;
-                    max-width: 100% !important;
-                    object-fit: contain !important;
-                    margin: 0 auto !important;
-                    display: block !important;
-                    border-radius: 8px !important;
-                    box-shadow: 0 4px 14px rgba(0,0,0,0.5) !important;
-                }
-                </style>
-                """, unsafe_allow_html=True)
+            st.markdown("""
+            <style>
+            div[data-testid="stDialog"] video, video {
+                max-height: 620px !important;
+                max-width: 100% !important;
+                object-fit: contain !important;
+                margin: 0 auto !important;
+                display: block !important;
+                border-radius: 8px !important;
+                box-shadow: 0 4px 14px rgba(0,0,0,0.5) !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
 
-                c_left, c_main, c_right = st.columns([0.1, 3.8, 0.1])
-                with c_main:
+            c_left, c_main, c_right = st.columns([0.1, 3.8, 0.1])
+            with c_main:
+                caminho = video_item.get('caminho')
+                video_rendered = False
+                if caminho and Path(caminho).exists():
                     try:
-                        ext = video_item['extensao'].lower().replace('.', '')
+                        ext = video_item.get('extensao', '.mp4').lower().replace('.', '')
                         mime_map = {
                             'mp4': 'video/mp4',
                             'webm': 'video/webm',
@@ -420,68 +502,152 @@ def render_faq_page():
                             'wmv': 'video/x-ms-wmv'
                         }
                         mime_type = mime_map.get(ext, 'video/mp4')
-
-                        with open(video_item['caminho'], 'rb') as f:
+                        with open(caminho, 'rb') as f:
                             video_bytes = f.read()
-
                         st.video(video_bytes, format=mime_type)
+                        video_rendered = True
                     except Exception as e_vid:
                         try:
-                            st.video(str(video_item['caminho']), format="video/mp4")
+                            st.video(str(caminho), format="video/mp4")
+                            video_rendered = True
                         except Exception as e_fb:
-                            st.error(f"Erro ao carregar reprodução do vídeo: {e_fb}")
+                            st.error(f"Erro ao reproduzir arquivo local: {e_fb}")
+                elif video_item.get('url') and any(video_item.get('url', '').lower().endswith(ext) for ext in ['.mp4', '.webm', '.mov', '.mkv']):
+                    try:
+                        st.video(video_item['url'])
+                        video_rendered = True
+                    except Exception:
+                        video_rendered = False
 
-                st.markdown("---")
-                
-                c_info, c_act = st.columns([2, 1])
-                with c_info:
-                    st.caption(f"📁 **Caminho do Arquivo:** `{video_item['caminho']}`")
-                with c_act:
-                    if st.button("🖥️ Abrir no Player do Windows", key=f"btn_win_open_{hash(video_item['titulo'])}", width='stretch'):
-                        try:
-                            os.startfile(str(video_item['caminho']))
-                            st.toast("Vídeo aberto no player nativo do Windows!", icon="🎬")
-                        except Exception as e_start:
-                            st.error(f"Erro ao abrir arquivo: {e_start}")
+                if not video_rendered:
+                    st.info("💡 Este item é um tutorial/vídeo hospedado na nuvem do SharePoint. Você pode assistir online no navegador ou abrir a mídia diretamente no player externo VLC.")
+                    if VIDEO_FAQ_URL:
+                        st.markdown(f"""
+                        <div style="background-color: #1e1f29; border: 1px solid #343541; padding: 18px; border-radius: 8px; text-align: center; margin: 10px 0;">
+                            <h4 style="color: #ffffff; margin-bottom: 8px;">🎥 Assistir Vídeo no SharePoint Stream</h4>
+                            <p style="color: #a0a0b0; font-size: 0.95rem; margin-bottom: 14px;">Abra a gravação diretamente na plataforma corporativa com suporte completo a todos os codecs.</p>
+                            <a href="{video_item.get('url') or VIDEO_FAQ_URL}" target="_blank" style="background-color: #ff4b4b; color: white; text-decoration: none; padding: 8px 18px; border-radius: 6px; font-weight: bold; display: inline-block;">🌐 Assistir no SharePoint Stream ↗</a>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-            filtered_videos = videos_list
-            if search_vid:
-                filtered_videos = [v for v in filtered_videos if search_vid.lower() in v['titulo'].lower()]
-            if selected_cat_vid != "Todas":
-                filtered_videos = [v for v in filtered_videos if v['categoria'] == selected_cat_vid]
+            st.markdown("---")
+            c_info, c_act1, c_act2 = st.columns([2, 1, 1])
+            with c_info:
+                if video_item.get('caminho'):
+                    st.caption(f"📁 **Arquivo Local:** `{video_item['caminho']}`")
+                elif video_item.get('url'):
+                    st.caption(f"🔗 **URL:** `{video_item['url']}`")
+            with c_act1:
+                target_media = str(video_item.get('caminho') or video_item.get('url') or VIDEO_FAQ_URL)
+                if st.button("🎬 Abrir no VLC", key=f"btn_vlc_modal_{hash(video_item.get('titulo'))}", width='stretch', help="Executa o player VLC com o arquivo ou link do vídeo."):
+                    opened = open_in_vlc_player(target_media)
+                    if opened:
+                        st.toast("Vídeo enviado para o VLC Player!", icon="🎬")
+                    else:
+                        st.warning("VLC Player não localizado. Abra diretamente pelo link do SharePoint.")
+            with c_act2:
+                target_sp = video_item.get('url') or VIDEO_FAQ_URL
+                if target_sp:
+                    st.link_button("🌐 SharePoint ↗", target_sp, width='stretch')
 
-            st.markdown(f"**Exibindo {len(filtered_videos)} de {len(videos_list)} vídeo(s)**")
-            st.markdown("<br>", unsafe_allow_html=True)
+        # Constrói lista de vídeos combinando arquivos locais com tutoriais do SharePoint
+        all_videos_display = []
+        if videos_list:
+            all_videos_display.extend(videos_list)
+        else:
+            # Fallback de itens conhecidos do FAQ para exibição em cards estilo foto 2
+            if not df_faqs.empty:
+                for _, f_row in df_faqs.iterrows():
+                    all_videos_display.append({
+                        "titulo": f_row['titulo'],
+                        "nome_arquivo": f"{f_row['titulo']}.mp4",
+                        "categoria": f_row['tipo_faq'],
+                        "caminho": None,
+                        "url": f_row['url'],
+                        "tamanho": "Nuvem",
+                        "extensao": ".mp4"
+                    })
 
-            if not filtered_videos:
-                st.info("Nenhum vídeo corresponde aos filtros selecionados.")
-            else:
-                page_videos, cur_p_vid, tot_p_vid, tot_i_vid = paginate_items(
-                    filtered_videos,
-                    page_key="faq_vid",
-                    items_per_page=items_per_page_vid
-                )
+        filtered_videos = all_videos_display
+        if search_vid:
+            filtered_videos = [v for v in filtered_videos if search_vid.lower() in v['titulo'].lower()]
+        if selected_cat_vid != "Todas":
+            filtered_videos = [v for v in filtered_videos if v['categoria'] == selected_cat_vid]
 
-                vid_cols = st.columns(2)
-                for idx, vid in enumerate(page_videos):
-                    col_target = vid_cols[idx % 2]
-                    with col_target:
-                        with st.container(border=True):
-                            st.caption(f"📂 {vid['categoria']}")
-                            st.markdown(f"### 🎬 {vid['titulo']}")
-                            st.caption(f"📁 `{vid['nome_arquivo']}` • {vid['tamanho']}")
-                            st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"**Exibindo {len(filtered_videos)} de {len(all_videos_display)} vídeo(s) / tutoriais**")
+        st.markdown("<br>", unsafe_allow_html=True)
 
-                            if st.button("🎥 Assistir Vídeo", key=f"btn_vid_{idx}_{hash(vid['titulo'])}", width='stretch'):
+        if not filtered_videos:
+            st.info("Nenhum vídeo ou tutorial corresponde aos filtros selecionados.")
+        else:
+            page_videos, cur_p_vid, tot_p_vid, tot_i_vid = paginate_items(
+                filtered_videos,
+                page_key="faq_vid",
+                items_per_page=items_per_page_vid
+            )
+
+            vid_cols = st.columns(3)
+            for idx, vid in enumerate(page_videos):
+                col_target = vid_cols[idx % 3]
+                with col_target:
+                    with st.container(border=True):
+                        st.caption(f"📂 {vid.get('categoria', 'Geral')}")
+                        st.markdown(f"#### 🎬 {vid['titulo']}")
+                        st.caption(f"📁 `{vid['nome_arquivo']}` • {vid.get('tamanho', 'N/A')}")
+                        st.markdown("<br>", unsafe_allow_html=True)
+
+                        c_btn_v1, c_btn_v2, c_btn_v3 = st.columns([1, 1, 1])
+                        with c_btn_v1:
+                            if st.button("🎥 Assistir", key=f"btn_vid_card_{idx}_{hash(vid['titulo'])}", width='stretch', help="Abrir modal de reprodução"):
                                 open_video_modal(vid)
+                        with c_btn_v2:
+                            target_media = str(vid.get('caminho') or vid.get('url') or VIDEO_FAQ_URL)
+                            if st.button("🎬 VLC", key=f"btn_vlc_card_{idx}_{hash(vid['titulo'])}", width='stretch', help="Abrir no VLC Player"):
+                                opened = open_in_vlc_player(target_media)
+                                if opened:
+                                    st.toast("Iniciando VLC...", icon="🎬")
+                                else:
+                                    st.warning("VLC não localizado.")
+                        with c_btn_v3:
+                            sp_url = vid.get('url') or VIDEO_FAQ_URL
+                            st.link_button("🌐 Nuvem ↗", url=sp_url, width='stretch', help="Abrir no SharePoint")
 
-                render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
+            render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
 
     elif active_tab == "🖼️ Imagens FAQ (Galeria)":
         st.sidebar.markdown("## 🔍 Filtros de Imagens FAQ")
         search_img = st.sidebar.text_input("Pesquisar por palavra-chave:", "", key="search_img_input")
 
-        # Agrupa imagens por pasta/categoria
+        @st.dialog("📤 Enviar Novas Imagens de FAQ (.png / .jpg / .webp)")
+        def modal_upload_imagem():
+            st.markdown("### 📤 Upload de Imagens / Tutoriais")
+            st.caption(f"As imagens enviadas serão organizadas na pasta de tutoriais do app: `{IMAGE_FAQ_DIR}`")
+            cat_input = st.text_input("📂 Nome da Pasta / Tutorial:", value="Geral", help="Cria ou organiza as imagens na subpasta correspondente.")
+            up_imgs = st.file_uploader("Selecione uma ou mais imagens:", type=["png", "jpg", "jpeg", "webp", "gif", "bmp"], accept_multiple_files=True, key="uploader_faq_images")
+
+            if st.button("⚡ Salvar Imagens no Servidor", type="primary", width='stretch'):
+                if not up_imgs:
+                    st.warning("Selecione ao menos uma imagem primeiro.")
+                else:
+                    dest_dir = IMAGE_FAQ_DIR / (cat_input.strip() if cat_input.strip() else "Geral")
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    for up_item in up_imgs:
+                        dest_file = dest_dir / up_item.name
+                        with open(dest_file, "wb") as f_i:
+                            f_i.write(up_item.read())
+                    st.success(f"🎉 {len(up_imgs)} imagem(ns) enviada(s) com sucesso para a pasta '{cat_input}'!")
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("## ⚙️ Ações e SharePoint")
+        if IMAGE_FAQ_URL:
+            st.sidebar.link_button("🌐 Abrir Pasta no SharePoint ↗", IMAGE_FAQ_URL, width='stretch', help="Abre a pasta oficial de imagens no SharePoint em nova aba.")
+        if st.sidebar.button("📤 Enviar Imagens", width='stretch', help="Fazer upload de imagens para a galeria local."):
+            modal_upload_imagem()
+
+        # Constrói pastas de imagens combinando pastas locais e tutoriais do SharePoint
         folders_dict = {}
         for img in imagens_list:
             cat = img['categoria']
@@ -493,141 +659,168 @@ def render_faq_page():
             {
                 "categoria": cat,
                 "imagens": sorted(imgs, key=lambda x: x["titulo"]),
-                "total": len(imgs)
+                "total": len(imgs),
+                "url": IMAGE_FAQ_URL
             }
             for cat, imgs in folders_dict.items()
         ]
-        folders_list.sort(key=lambda x: x["categoria"])
 
-        categorias_img = ["Todas"] + [f["categoria"] for f in folders_list]
+        if not folders_list and not df_faqs.empty:
+            # Fallback com os tutoriais do SharePoint catalogados no FAQ
+            for _, f_row in df_faqs.iterrows():
+                folders_list.append({
+                    "categoria": f_row['tipo_faq'],
+                    "titulo": f_row['titulo'],
+                    "imagens": [],
+                    "total": 1,
+                    "url": f_row['url']
+                })
+
+        folders_list.sort(key=lambda x: x.get("categoria", "Geral"))
+
+        categorias_img = ["Todas"] + sorted(list(set(f.get("categoria", "Geral") for f in folders_list)))
         selected_cat_img = st.sidebar.selectbox("📂 Categoria / Pasta:", categorias_img, key="select_cat_img")
         items_per_page_img = render_items_per_page_selector("faq_img", options=[6, 12, 24, 50], default_index=1)
 
-        st.subheader("🖼️ Galeria de Imagens de FAQ (Tutoriais)")
-        st.write("Pastas de tutoriais com capturas de tela e diagramas armazenados localmente e sincronizados via SharePoint.")
+        col_h_img1, col_h_img2 = st.columns([3, 1])
+        with col_h_img1:
+            st.subheader("🖼️ Galeria de Imagens de FAQ (Tutoriais)")
+            st.write("Capturas de tela e diagramas da equipe. Visualize no carrossel ou acesse no SharePoint.")
+        with col_h_img2:
+            if IMAGE_FAQ_URL:
+                st.link_button("🌐 SharePoint ↗", IMAGE_FAQ_URL, width='stretch', help="Acessar pasta de imagens no SharePoint Online")
+
         st.markdown("<br>", unsafe_allow_html=True)
 
-        if not IMAGE_FAQ_DIR.exists():
-            st.warning(f"⚠️ O diretório de Imagens FAQ não foi encontrado em:\n`{IMAGE_FAQ_DIR}`\n\nVerifique se a pasta existe ou ajuste a variável `IMAGE_FAQ_PATH` no seu arquivo `.env`.")
-        elif not imagens_list:
-            st.info(f"Nenhuma imagem de FAQ encontrada na pasta:\n`{IMAGE_FAQ_DIR}`")
+        filtered_folders = folders_list
+        if search_img:
+            s_lower = search_img.lower()
+            filtered_folders = [
+                f for f in filtered_folders
+                if s_lower in f.get('categoria', '').lower()
+                or s_lower in f.get('titulo', '').lower()
+                or any(s_lower in img['titulo'].lower() for img in f.get('imagens', []))
+            ]
+        if selected_cat_img != "Todas":
+            filtered_folders = [f for f in filtered_folders if f.get('categoria') == selected_cat_img]
+
+        st.markdown(f"**Exibindo {len(filtered_folders)} de {len(folders_list)} pasta(s) de tutoriais**")
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        @st.dialog("🖼️ Visualizador de Galeria de Fotos (Carrossel)", width="large")
+        def open_image_modal():
+            folder_name = st.session_state.get('active_img_folder', '')
+            matching_folder = next((f for f in folders_list if f.get('categoria') == folder_name or f.get('titulo') == folder_name), None)
+
+            if not matching_folder:
+                st.info("Tutorial ou pasta não encontrada.")
+                return
+
+            folder_imgs = matching_folder.get('imagens', [])
+            if not folder_imgs:
+                st.subheader(f"📂 {matching_folder.get('titulo') or matching_folder.get('categoria')}")
+                st.info("As imagens deste tutorial ainda não foram baixadas localmente. Acesse a pasta completa no SharePoint:")
+                target_u = matching_folder.get('url') or IMAGE_FAQ_URL
+                if target_u:
+                    st.link_button("🌐 Abrir no SharePoint Online ↗", target_u, width='stretch')
+                return
+
+            idx = st.session_state.get('current_img_idx', 0)
+            if idx < 0 or idx >= len(folder_imgs):
+                idx = 0
+                st.session_state['current_img_idx'] = 0
+
+            img_item = folder_imgs[idx]
+
+            st.subheader(f"📂 {folder_name}")
+            st.markdown(f"**{img_item['titulo']}**  *(Imagem {idx + 1} de {len(folder_imgs)})*")
+            st.markdown("---")
+
+            st.markdown("""
+            <style>
+            div[data-testid="stDialog"] img {
+                max-height: 480px !important;
+                max-width: 100% !important;
+                object-fit: contain !important;
+                margin: 0 auto !important;
+                display: block !important;
+                border-radius: 8px !important;
+                box-shadow: 0 4px 14px rgba(0,0,0,0.4) !important;
+            }
+            div[data-testid="stDialog"] div[data-testid="stHorizontalBlock"] {
+                align-items: center !important;
+            }
+            div[data-testid="stDialog"] div[data-testid="stColumn"] {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Navegação do Carrossel de Fotos (Passar e Voltar)
+            c_prev, c_img, c_next = st.columns([1, 6, 1])
+            with c_prev:
+                if st.button("⬅️ Anterior", key="btn_prev_img", width='stretch', disabled=(idx == 0)):
+                    st.session_state['current_img_idx'] = idx - 1
+                    st.rerun()
+
+            with c_img:
+                try:
+                    st.image(str(img_item['caminho']), width='stretch')
+                except Exception as e:
+                    st.error(f"Erro ao carregar a imagem: {e}")
+
+            with c_next:
+                if st.button("Próximo ➡️", key="btn_next_img", width='stretch', disabled=(idx == len(folder_imgs) - 1)):
+                    st.session_state['current_img_idx'] = idx + 1
+                    st.rerun()
+
+            st.markdown("---")
+            c_info, c_act = st.columns([3, 1])
+            with c_info:
+                st.caption(f"💾 **Tamanho:** `{img_item['tamanho']}`")
+                st.caption(f"📁 **Arquivo:** `{img_item['caminho']}`")
+            with c_act:
+                target_url = matching_folder.get('url') or IMAGE_FAQ_URL
+                if target_url:
+                    st.link_button("🌐 Abrir no SharePoint", target_url, width='stretch')
+
+        if st.session_state.get('active_img_folder'):
+            open_image_modal()
+
+        if not filtered_folders:
+            st.info("Nenhuma pasta ou tutorial corresponde aos filtros selecionados.")
         else:
-            filtered_folders = folders_list
-            if search_img:
-                s_lower = search_img.lower()
-                filtered_folders = [
-                    f for f in filtered_folders
-                    if s_lower in f['categoria'].lower()
-                    or any(s_lower in img['titulo'].lower() for img in f['imagens'])
-                ]
-            if selected_cat_img != "Todas":
-                filtered_folders = [f for f in filtered_folders if f['categoria'] == selected_cat_img]
+            page_folders, cur_p_img, tot_p_img, tot_i_img = paginate_items(
+                filtered_folders,
+                page_key="faq_img",
+                items_per_page=items_per_page_img
+            )
 
-            st.markdown(f"**Exibindo {len(filtered_folders)} de {len(folders_list)} pasta(s) de tutoriais**")
-            st.markdown("<br>", unsafe_allow_html=True)
+            img_cols = st.columns(3)
+            for idx, folder in enumerate(page_folders):
+                col_target = img_cols[idx % 3]
+                with col_target:
+                    with st.container(border=True):
+                        display_title = folder.get('titulo') or folder.get('categoria')
+                        display_cat = folder.get('categoria') if folder.get('titulo') else "Galeria"
+                        st.caption(f"📂 {display_cat}")
+                        st.markdown(f"#### 📁 {display_title}")
+                        st.caption(f"🖼️ **{folder.get('total', 1)}** item(ns) neste tutorial")
+                        st.markdown("<br>", unsafe_allow_html=True)
 
-            @st.dialog("🖼️ Visualizador de Galeria de Fotos", width="large")
-            def open_image_modal():
-                folder_name = st.session_state.get('active_img_folder', '')
-                matching_folder = next((f for f in folders_list if f['categoria'] == folder_name), None)
-
-                if not matching_folder or not matching_folder['imagens']:
-                    st.info("Nenhuma imagem encontrada para esta pasta.")
-                    return
-
-                folder_imgs = matching_folder['imagens']
-                idx = st.session_state.get('current_img_idx', 0)
-                if idx < 0 or idx >= len(folder_imgs):
-                    idx = 0
-                    st.session_state['current_img_idx'] = 0
-
-                img_item = folder_imgs[idx]
-
-                st.subheader(f"📂 {folder_name}")
-                st.markdown(f"**{img_item['titulo']}**  *(Imagem {idx + 1} de {len(folder_imgs)})*")
-                st.markdown("---")
-
-                st.markdown("""
-                <style>
-                div[data-testid="stDialog"] img {
-                    max-height: 480px !important;
-                    max-width: 100% !important;
-                    object-fit: contain !important;
-                    margin: 0 auto !important;
-                    display: block !important;
-                    border-radius: 8px !important;
-                    box-shadow: 0 4px 14px rgba(0,0,0,0.4) !important;
-                }
-                div[data-testid="stDialog"] div[data-testid="stHorizontalBlock"] {
-                    align-items: center !important;
-                }
-                div[data-testid="stDialog"] div[data-testid="stColumn"] {
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-
-                # Navegação do Carrossel de Fotos
-                c_prev, c_img, c_next = st.columns([1, 6, 1])
-                with c_prev:
-                    if st.button("⬅️", key="btn_prev_img", width='stretch', disabled=(idx == 0)):
-                        st.session_state['current_img_idx'] = idx - 1
-                        st.rerun()
-
-                with c_img:
-                    try:
-                        st.image(str(img_item['caminho']), width='stretch')
-                    except Exception as e:
-                        st.error(f"Erro ao carregar a imagem: {e}")
-
-                with c_next:
-                    if st.button("➡️", key="btn_next_img", width='stretch', disabled=(idx == len(folder_imgs) - 1)):
-                        st.session_state['current_img_idx'] = idx + 1
-                        st.rerun()
-
-                st.markdown("---")
-                c_info, c_act = st.columns([3, 1])
-                with c_info:
-                    st.caption(f"💾 **Tamanho:** `{img_item['tamanho']}`")
-                    st.caption(f"📁 **Arquivo:** `{img_item['caminho']}`")
-                with c_act:
-                    if st.button("🖥️ Abrir no Windows", key=f"btn_win_img_{idx}_{hash(folder_name)}", width='stretch'):
-                        try:
-                            os.startfile(str(img_item['caminho']))
-                            st.toast("Imagem aberta no visualizador nativo!", icon="🖼️")
-                        except Exception as e_start:
-                            st.error(f"Erro ao abrir arquivo: {e_start}")
-
-            if st.session_state.get('active_img_folder'):
-                open_image_modal()
-
-            if not filtered_folders:
-                st.info("Nenhuma pasta corresponde aos filtros selecionados.")
-            else:
-                page_folders, cur_p_img, tot_p_img, tot_i_img = paginate_items(
-                    filtered_folders,
-                    page_key="faq_img",
-                    items_per_page=items_per_page_img
-                )
-
-                img_cols = st.columns(3)
-                for idx, folder in enumerate(page_folders):
-                    col_target = img_cols[idx % 3]
-                    with col_target:
-                        with st.container(border=True):
-                            st.caption("📂 Pasta de Tutorial")
-                            st.markdown(f"#### 📁 {folder['categoria']}")
-                            st.caption(f"🖼️ **{folder['total']}** imagem(ns) nesta pasta")
-                            st.markdown("<br>", unsafe_allow_html=True)
-
-                            if st.button("👁️ Abrir Pasta", key=f"btn_folder_view_{idx}_{hash(folder['categoria'])}", width='stretch'):
-                                st.session_state['active_img_folder'] = folder['categoria']
+                        col_f1, col_f2 = st.columns(2)
+                        with col_f1:
+                            if st.button("🖼️ Ver Galeria", key=f"btn_folder_view_{idx}_{hash(display_title)}", width='stretch'):
+                                st.session_state['active_img_folder'] = display_title
                                 st.session_state['current_img_idx'] = 0
                                 st.rerun()
+                        with col_f2:
+                            sp_url = folder.get('url') or IMAGE_FAQ_URL
+                            st.link_button("🌐 SharePoint ↗", url=sp_url, width='stretch')
 
-                render_pagination_controls("faq_img", cur_p_img, tot_p_img, tot_i_img, items_per_page_img)
+            render_pagination_controls("faq_img", cur_p_img, tot_p_img, tot_i_img, items_per_page_img)
 
     elif active_tab == "🔗 Links Úteis da Bancada":
         st.sidebar.markdown("## 🔍 Filtros de Links")
