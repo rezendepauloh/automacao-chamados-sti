@@ -33,6 +33,8 @@ services:
       - ./debug_logs:/app/debug_logs
       # Mapeamento do cofre do keyring (Linux/WSL host -> Docker container)
       - ~/.local/share/python_keyring:/root/.local/share/python_keyring
+      # Pastas de uploads locais (cache / arquivos de FAQ no Linux / RedHat)
+      - ./uploads:/app/uploads
       # Mapeamento de código e assets para Live-Reload sem necessidade de rebuild
       - ./assets:/app/assets
       - ./src:/app/src

@@ -1,15 +1,22 @@
 import os
+import sys
 import re
 import json
 import sqlite3
+import subprocess
+import shutil
+import time
+import requests
 from pathlib import Path
 import pandas as pd
 import streamlit as st
 from bs4 import BeautifulSoup
 from src.config import (
     setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR, IMAGE_FAQ_DIR,
-    VIDEO_FAQ_URL, IMAGE_FAQ_URL
+    VIDEO_FAQ_URL, IMAGE_FAQ_URL, CITSMART_EMAIL, PASSWORD,
+    HEADLESS, EXPLICIT_WAIT, get_chrome_driver
 )
+from src.terminal import log, CYAN, GREEN, YELLOW, RED, WHITE
 from src.components.subtabs import render_subtabs
 from src.components.pagination import (
     render_items_per_page_selector,
@@ -152,6 +159,7 @@ def open_in_vlc_player(target_path_or_url: str):
 def scan_video_faqs(dir_path: Path):
     """Varre recursivamente o diretório em busca de vídeos e organiza por subpastas/categorias."""
     if not dir_path or not dir_path.exists():
+        logger.info(f"Diretório local de vídeos FAQ não encontrado: {dir_path}")
         return []
 
     valid_extensions = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".wmv"}
@@ -180,8 +188,11 @@ def scan_video_faqs(dir_path: Path):
                     "categoria": categoria,
                     "caminho": file,
                     "tamanho": tamanho_fmt,
-                    "extensao": file.suffix.lower()
+                    "extensao": file.suffix.lower(),
+                    "origem": "OneDrive Local" if "OneDrive" in str(file) else "Upload Local"
                 })
+        
+        logger.info(f"Varredura de vídeos concluída em '{dir_path}': {len(videos)} arquivo(s) local(is) indexado(s).")
     except Exception as e:
         logger.error(f"Erro ao varrer diretório de vídeos FAQ: {e}")
 
@@ -191,6 +202,7 @@ def scan_video_faqs(dir_path: Path):
 def scan_image_faqs(dir_path: Path):
     """Varre recursivamente o diretório em busca de imagens e organiza por subpastas."""
     if not dir_path or not dir_path.exists():
+        logger.info(f"Diretório local de imagens FAQ não encontrado: {dir_path}")
         return []
 
     valid_extensions = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
@@ -219,8 +231,11 @@ def scan_image_faqs(dir_path: Path):
                     "categoria": categoria,
                     "caminho": file,
                     "tamanho": tamanho_fmt,
-                    "extensao": file.suffix.lower()
+                    "extensao": file.suffix.lower(),
+                    "origem": "OneDrive Local" if "OneDrive" in str(file) else "Upload Local"
                 })
+        
+        logger.info(f"Varredura de imagens concluída em '{dir_path}': {len(imagens)} arquivo(s) local(is) indexado(s).")
     except Exception as e:
         logger.error(f"Erro ao varrer diretório de imagens FAQ: {e}")
 
@@ -237,11 +252,15 @@ def render_faq_page():
     db_path = root_dir / "chamados.db"
     json_faq_path = root_dir / "temp" / "faqs_template.json"
     json_links_path = root_dir / "temp" / "links_uteis_template.json"
+    json_videos_path = root_dir / "temp" / "videos_faq_template.json"
+    json_imagens_path = root_dir / "temp" / "imagens_faq_template.json"
     
-    # Carrega dados do SQLite (FAQs)
+    # Carrega dados do SQLite (FAQs, Vídeos FAQ e Imagens FAQ)
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        
+        # 1. Tabela de FAQs / Artigos
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS faqs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,12 +279,10 @@ def render_faq_page():
             conn.commit()
 
         cursor.execute("SELECT COUNT(*) FROM faqs")
-        count = cursor.fetchone()[0]
-
-        if count == 0 and json_faq_path.exists():
+        count_faqs = cursor.fetchone()[0]
+        if count_faqs == 0 and json_faq_path.exists():
             with open(json_faq_path, "r", encoding="utf-8") as f:
                 faqs_json = json.load(f)
-            
             for item in faqs_json:
                 cursor.execute("""
                     INSERT OR IGNORE INTO faqs (titulo, tipo_faq, url, conteudo)
@@ -273,11 +290,68 @@ def render_faq_page():
                 """, (item.get("titulo"), item.get("tipo_faq", "Geral"), item.get("url"), item.get("conteudo")))
             conn.commit()
 
+        # 2. Tabela de Vídeos FAQ (SharePoint Online como Fonte Primária)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS faq_videos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titulo TEXT NOT NULL,
+                categoria TEXT NOT NULL,
+                nome_arquivo TEXT NOT NULL,
+                url TEXT NOT NULL UNIQUE,
+                caminho_relativo TEXT,
+                tamanho_bytes INTEGER DEFAULT 0,
+                data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("SELECT COUNT(*) FROM faq_videos")
+        count_vids = cursor.fetchone()[0]
+        if count_vids == 0 and json_videos_path.exists():
+            with open(json_videos_path, "r", encoding="utf-8") as f:
+                vids_json = json.load(f)
+            for item in vids_json:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO faq_videos (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)))
+            conn.commit()
+
+        # 3. Tabela de Imagens FAQ (SharePoint Online como Fonte Primária)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS faq_imagens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titulo TEXT NOT NULL,
+                categoria TEXT NOT NULL,
+                nome_arquivo TEXT NOT NULL,
+                url TEXT NOT NULL UNIQUE,
+                caminho_relativo TEXT,
+                tamanho_bytes INTEGER DEFAULT 0,
+                data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("SELECT COUNT(*) FROM faq_imagens")
+        count_imgs = cursor.fetchone()[0]
+        if count_imgs == 0 and json_imagens_path.exists():
+            with open(json_imagens_path, "r", encoding="utf-8") as f:
+                imgs_json = json.load(f)
+            for item in imgs_json:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO faq_imagens (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)))
+            conn.commit()
+
+        # Leitura dos dados a partir do SQLite
         df_faqs = pd.read_sql_query("SELECT id, titulo, tipo_faq, url, conteudo FROM faqs", conn)
+        df_vids = pd.read_sql_query("SELECT id, titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes FROM faq_videos", conn)
+        df_imgs = pd.read_sql_query("SELECT id, titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes FROM faq_imagens", conn)
         conn.close()
     except Exception as e:
-        st.error(f"Erro ao carregar banco de dados de FAQs: {e}")
+        logger.error(f"Erro ao carregar banco de dados de FAQs/Vídeos/Imagens: {e}")
         df_faqs = pd.DataFrame()
+        df_vids = pd.DataFrame()
+        df_imgs = pd.DataFrame()
 
     # Carrega links úteis
     links_uteis = []
@@ -288,7 +362,11 @@ def render_faq_page():
         except Exception as e:
             logger.error(f"Erro ao ler links_uteis_template.json: {e}")
 
-    # Varre vídeos e imagens FAQ
+    # Catálogos primários a partir do SQLite
+    catalog_videos = df_vids.to_dict('records') if not df_vids.empty else []
+    catalog_imagens = df_imgs.to_dict('records') if not df_imgs.empty else []
+
+    # Varre vídeos e imagens locais (se existirem na pasta de upload ou cache)
     videos_list = scan_video_faqs(VIDEO_FAQ_DIR)
     imagens_list = scan_image_faqs(IMAGE_FAQ_DIR)
 
@@ -490,6 +568,8 @@ def render_faq_page():
             with c_main:
                 caminho = video_item.get('caminho')
                 video_rendered = False
+                
+                # 1. Se já existe o arquivo local em cache/upload/OneDrive
                 if caminho and Path(caminho).exists():
                     try:
                         ext = video_item.get('extensao', '.mp4').lower().replace('.', '')
@@ -512,50 +592,153 @@ def render_faq_page():
                             video_rendered = True
                         except Exception as e_fb:
                             st.error(f"Erro ao reproduzir arquivo local: {e_fb}")
-                elif video_item.get('url') and any(video_item.get('url', '').lower().endswith(ext) for ext in ['.mp4', '.webm', '.mov', '.mkv']):
-                    try:
-                        st.video(video_item['url'])
-                        video_rendered = True
-                    except Exception:
-                        video_rendered = False
 
+                # 2. Se for link em nuvem do SharePoint e ainda não tiver arquivo local
                 if not video_rendered:
-                    st.info("💡 Este item é um tutorial/vídeo hospedado na nuvem do SharePoint. Você pode assistir online no navegador ou abrir a mídia diretamente no player externo VLC.")
-                    if VIDEO_FAQ_URL:
-                        st.markdown(f"""
-                        <div style="background-color: #1e1f29; border: 1px solid #343541; padding: 18px; border-radius: 8px; text-align: center; margin: 10px 0;">
-                            <h4 style="color: #ffffff; margin-bottom: 8px;">🎥 Assistir Vídeo no SharePoint Stream</h4>
-                            <p style="color: #a0a0b0; font-size: 0.95rem; margin-bottom: 14px;">Abra a gravação diretamente na plataforma corporativa com suporte completo a todos os codecs.</p>
-                            <a href="{video_item.get('url') or VIDEO_FAQ_URL}" target="_blank" style="background-color: #ff4b4b; color: white; text-decoration: none; padding: 8px 18px; border-radius: 6px; font-weight: bold; display: inline-block;">🌐 Assistir no SharePoint Stream ↗</a>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    st.info("💡 Este vídeo está na nuvem corporativa do SharePoint Online. Clique no botão abaixo para autenticar, baixar para o sistema e reproduzir diretamente no player:")
+                    
+                    target_sp_video = video_item.get('url') or VIDEO_FAQ_URL
+                    
+                    c_dl1, c_dl2 = st.columns([2, 1])
+                    with c_dl1:
+                        if st.button("📥 Baixar & Assistir no Sistema", type="primary", key=f"btn_dl_play_{hash(video_item.get('titulo'))}", width='stretch', help="Faz o download autenticado do vídeo para o servidor e reproduz nativamente no sistema."):
+                            with st.spinner("Autenticando no SharePoint corporativo e baixando o vídeo para o player..."):
+                                try:
+                                    dest_dir = VIDEO_FAQ_DIR / video_item.get('categoria', 'Geral')
+                                    dest_dir.mkdir(parents=True, exist_ok=True)
+                                    dest_file = dest_dir / video_item.get('nome_arquivo', f"{video_item.get('titulo')}.mp4")
+                                    
+                                    # 1. Tentativa via HTTP direto
+                                    headers = {
+                                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                                    }
+                                    dl_url = target_sp_video + ("&download=1" if "?e=" in target_sp_video else "?download=1")
+                                    resp = requests.get(dl_url, headers=headers, timeout=20, allow_redirects=True)
+                                    
+                                    download_success = False
+                                    if resp.status_code == 200 and len(resp.content) > 100000 and not resp.content.startswith(b'<!DOCTYPE') and not resp.content.startswith(b'<html'):
+                                        with open(dest_file, "wb") as f_out:
+                                            f_out.write(resp.content)
+                                        download_success = True
+                                    
+                                    # 2. Se necessitar de autenticação institucional, usa Selenium com as credenciais corporativas
+                                    if not download_success:
+                                        driver = get_chrome_driver(headless=HEADLESS)
+                                        try:
+                                            driver.command_executor._commands["send_command"] = ("POST", '/session/$sessionId/chromium/send_command')
+                                            driver.execute("send_command", {'cmd': 'Page.setDownloadBehavior', 'params': {'behavior': 'allow', 'downloadPath': str(dest_dir)}})
+                                            driver.get(target_sp_video)
+                                            time.sleep(3)
+
+                                            from selenium.webdriver.common.by import By
+                                            if "login" in driver.current_url.lower():
+                                                user_in = driver.find_elements(By.XPATH, "//input[@type='email' or @name='loginfmt' or @type='text']")
+                                                if user_in and CITSMART_EMAIL:
+                                                    user_in[0].clear()
+                                                    user_in[0].send_keys(CITSMART_EMAIL)
+                                                    sub_btn = driver.find_elements(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
+                                                    if sub_btn:
+                                                        sub_btn[0].click()
+                                                        time.sleep(3)
+                                                if PASSWORD:
+                                                    pass_in = driver.find_elements(By.XPATH, "//input[@type='password']")
+                                                    if pass_in:
+                                                        pass_in[0].clear()
+                                                        pass_in[0].send_keys(PASSWORD)
+                                                        sub_btn = driver.find_elements(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
+                                                        if sub_btn:
+                                                            sub_btn[0].click()
+                                                            time.sleep(4)
+                                                stay_in = driver.find_elements(By.XPATH, "//input[@id='idSIButton9'] | //input[@value='Sim' or @value='Yes']")
+                                                if stay_in:
+                                                    stay_in[0].click()
+                                                    time.sleep(4)
+
+                                            # Extrai cookies de sessão autenticados
+                                            s_auth = requests.Session()
+                                            s_auth.headers.update(headers)
+                                            for ck in driver.get_cookies():
+                                                s_auth.cookies.set(name=ck['name'], value=ck['value'], domain=ck.get('domain'))
+                                            
+                                            resp_auth = s_auth.get(dl_url, timeout=60, stream=True)
+                                            if resp_auth.status_code == 200:
+                                                with open(dest_file, "wb") as f_out:
+                                                    for chunk in resp_auth.iter_content(chunk_size=65536):
+                                                        if chunk:
+                                                            f_out.write(chunk)
+                                                if dest_file.exists() and dest_file.stat().st_size > 100000:
+                                                    download_success = True
+                                        finally:
+                                            try:
+                                                driver.quit()
+                                            except Exception:
+                                                pass
+
+                                    if download_success and dest_file.exists():
+                                        video_item['caminho'] = dest_file
+                                        st.success(f"🎉 Vídeo baixado com sucesso ({format_file_size(dest_file.stat().st_size)})! Iniciando player...")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.warning("Não foi possível transferir o arquivo direto. Utilize a opção de assistir no SharePoint Stream:")
+                                        st.link_button("🌐 Assistir no SharePoint Stream ↗", target_sp_video, width='stretch')
+                                except Exception as e_dl:
+                                    st.error(f"Erro durante autenticação/download: {e_dl}")
+                    with c_dl2:
+                        st.link_button("🌐 Assistir no Stream ↗", target_sp_video, width='stretch')
 
             st.markdown("---")
-            c_info, c_act1, c_act2 = st.columns([2, 1, 1])
+            c_info, c_act1, c_act2 = st.columns([1.8, 1.1, 1.1])
             with c_info:
+                origem_label = "💾 OneDrive Local" if video_item.get('origem') == "OneDrive Local" else ("📂 Servidor Local" if video_item.get('caminho') else "🌐 SharePoint Online (Nuvem)")
+                st.caption(f"🏷️ **Origem:** `{origem_label}`")
                 if video_item.get('caminho'):
                     st.caption(f"📁 **Arquivo Local:** `{video_item['caminho']}`")
                 elif video_item.get('url'):
-                    st.caption(f"🔗 **URL:** `{video_item['url']}`")
+                    st.caption(f"🔗 **URL SharePoint:** `{video_item['url']}`")
             with c_act1:
                 target_media = str(video_item.get('caminho') or video_item.get('url') or VIDEO_FAQ_URL)
-                if st.button("🎬 Abrir no VLC", key=f"btn_vlc_modal_{hash(video_item.get('titulo'))}", width='stretch', help="Executa o player VLC com o arquivo ou link do vídeo."):
+                if st.button("🎬 Abrir no VLC", key=f"btn_vlc_modal_direct_{hash(video_item.get('titulo'))}", width='stretch', help="Executa o player VLC local no seu Windows."):
                     opened = open_in_vlc_player(target_media)
                     if opened:
-                        st.toast("Vídeo enviado para o VLC Player!", icon="🎬")
+                        st.toast("Vídeo enviado para o VLC Player com áudio e vídeo!", icon="🎬")
                     else:
-                        st.warning("VLC Player não localizado. Abra diretamente pelo link do SharePoint.")
+                        st.warning("VLC Player não localizado. Abra diretamente pelo SharePoint ou baixe o vídeo.")
             with c_act2:
                 target_sp = video_item.get('url') or VIDEO_FAQ_URL
                 if target_sp:
                     st.link_button("🌐 SharePoint ↗", target_sp, width='stretch')
 
-        # Constrói lista de vídeos combinando arquivos locais com tutoriais do SharePoint
+        # Constrói lista de vídeos priorizando o catálogo oficial do SharePoint com vínculo local
         all_videos_display = []
-        if videos_list:
+        
+        # Mapeia arquivos locais por título/nome para associar rapidamente
+        local_vids_map = {v['nome_arquivo']: v for v in videos_list}
+        local_vids_by_title = {v['titulo']: v for v in videos_list}
+
+        if catalog_videos:
+            for item in catalog_videos:
+                fname = item.get("nome_arquivo", "")
+                ftitle = item.get("titulo", "")
+                matched_local = local_vids_map.get(fname) or local_vids_by_title.get(ftitle)
+                
+                caminho_local = matched_local['caminho'] if matched_local else None
+                tamanho_fmt = matched_local['tamanho'] if matched_local else format_file_size(item.get("tamanho_bytes", 0))
+                origem_item = matched_local.get('origem', 'OneDrive Local') if matched_local else "SharePoint Online"
+
+                all_videos_display.append({
+                    "titulo": ftitle,
+                    "nome_arquivo": fname,
+                    "categoria": item.get("categoria", "Geral"),
+                    "caminho": caminho_local,
+                    "url": item.get("url", VIDEO_FAQ_URL),
+                    "tamanho": tamanho_fmt,
+                    "extensao": Path(fname).suffix.lower() if fname else ".mp4",
+                    "origem": origem_item
+                })
+        elif videos_list:
             all_videos_display.extend(videos_list)
         else:
-            # Fallback de itens conhecidos do FAQ para exibição em cards estilo foto 2
             if not df_faqs.empty:
                 for _, f_row in df_faqs.iterrows():
                     all_videos_display.append({
@@ -565,7 +748,8 @@ def render_faq_page():
                         "caminho": None,
                         "url": f_row['url'],
                         "tamanho": "Nuvem",
-                        "extensao": ".mp4"
+                        "extensao": ".mp4",
+                        "origem": "SharePoint Online"
                     })
 
         filtered_videos = all_videos_display
@@ -596,21 +780,13 @@ def render_faq_page():
                         st.caption(f"📁 `{vid['nome_arquivo']}` • {vid.get('tamanho', 'N/A')}")
                         st.markdown("<br>", unsafe_allow_html=True)
 
-                        c_btn_v1, c_btn_v2, c_btn_v3 = st.columns([1, 1, 1])
+                        c_btn_v1, c_btn_v2 = st.columns(2)
                         with c_btn_v1:
                             if st.button("🎥 Assistir", key=f"btn_vid_card_{idx}_{hash(vid['titulo'])}", width='stretch', help="Abrir modal de reprodução"):
                                 open_video_modal(vid)
                         with c_btn_v2:
-                            target_media = str(vid.get('caminho') or vid.get('url') or VIDEO_FAQ_URL)
-                            if st.button("🎬 VLC", key=f"btn_vlc_card_{idx}_{hash(vid['titulo'])}", width='stretch', help="Abrir no VLC Player"):
-                                opened = open_in_vlc_player(target_media)
-                                if opened:
-                                    st.toast("Iniciando VLC...", icon="🎬")
-                                else:
-                                    st.warning("VLC não localizado.")
-                        with c_btn_v3:
                             sp_url = vid.get('url') or VIDEO_FAQ_URL
-                            st.link_button("🌐 Nuvem ↗", url=sp_url, width='stretch', help="Abrir no SharePoint")
+                            st.link_button("🌐 SharePoint ↗", url=sp_url, width='stretch', help="Abrir vídeo direto no SharePoint Online / Stream")
 
             render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
 
@@ -647,26 +823,50 @@ def render_faq_page():
         if st.sidebar.button("📤 Enviar Imagens", width='stretch', help="Fazer upload de imagens para a galeria local."):
             modal_upload_imagem()
 
-        # Constrói pastas de imagens combinando pastas locais e tutoriais do SharePoint
+        # Constrói pastas de imagens combinando catálogo do SharePoint e pastas locais
         folders_dict = {}
-        for img in imagens_list:
-            cat = img['categoria']
-            if cat not in folders_dict:
-                folders_dict[cat] = []
-            folders_dict[cat].append(img)
+
+        # 1. Se tiver catálogo JSON de imagens do SharePoint
+        if catalog_imagens:
+            local_imgs_map = {img['nome_arquivo']: img for img in imagens_list}
+            for item in catalog_imagens:
+                cat = item.get("categoria", "Geral")
+                fname = item.get("nome_arquivo", "")
+                ftitle = item.get("titulo", "")
+                matched_local = local_imgs_map.get(fname)
+                caminho_local = matched_local['caminho'] if matched_local else None
+                tamanho_fmt = matched_local['tamanho'] if matched_local else format_file_size(item.get("tamanho_bytes", 0))
+
+                if cat not in folders_dict:
+                    folders_dict[cat] = []
+
+                folders_dict[cat].append({
+                    "titulo": ftitle,
+                    "nome_arquivo": fname,
+                    "categoria": cat,
+                    "caminho": caminho_local,
+                    "url": item.get("url", IMAGE_FAQ_URL),
+                    "tamanho": tamanho_fmt,
+                    "extensao": Path(fname).suffix.lower() if fname else ".png"
+                })
+        else:
+            for img in imagens_list:
+                cat = img['categoria']
+                if cat not in folders_dict:
+                    folders_dict[cat] = []
+                folders_dict[cat].append(img)
 
         folders_list = [
             {
                 "categoria": cat,
                 "imagens": sorted(imgs, key=lambda x: x["titulo"]),
                 "total": len(imgs),
-                "url": IMAGE_FAQ_URL
+                "url": imgs[0].get("url", IMAGE_FAQ_URL) if imgs else IMAGE_FAQ_URL
             }
             for cat, imgs in folders_dict.items()
         ]
 
         if not folders_list and not df_faqs.empty:
-            # Fallback com os tutoriais do SharePoint catalogados no FAQ
             for _, f_row in df_faqs.iterrows():
                 folders_list.append({
                     "categoria": f_row['tipo_faq'],

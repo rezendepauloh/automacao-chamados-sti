@@ -133,17 +133,36 @@ IMAGE_FAQ_ENV = os.getenv("IMAGE_FAQ_PATH", "")
 
 if VIDEO_FAQ_ENV.startswith("http://") or VIDEO_FAQ_ENV.startswith("https://"):
     VIDEO_FAQ_URL = VIDEO_FAQ_ENV
-    VIDEO_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "videos"
 else:
     VIDEO_FAQ_URL = ""
-    VIDEO_FAQ_DIR = USER_HOME / VIDEO_FAQ_ENV if VIDEO_FAQ_ENV else (BASE_DIR / "uploads" / "faq" / "videos")
 
 if IMAGE_FAQ_ENV.startswith("http://") or IMAGE_FAQ_ENV.startswith("https://"):
     IMAGE_FAQ_URL = IMAGE_FAQ_ENV
-    IMAGE_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "imagens"
 else:
     IMAGE_FAQ_URL = ""
-    IMAGE_FAQ_DIR = USER_HOME / IMAGE_FAQ_ENV if IMAGE_FAQ_ENV else (BASE_DIR / "uploads" / "faq" / "imagens")
+
+# Configuração de Vídeos e Imagens FAQ
+# Padrão Cloud-First (Linux/RedHat/Docker): BASE_DIR / "uploads" / "faq"
+VIDEO_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "videos"
+IMAGE_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "imagens"
+
+# Fallback opcional: só pesquisa pasta sincronizada do OneDrive se a variável de ambiente USE_ONEDRIVE_FALLBACK for ativada
+if os.getenv("USE_ONEDRIVE_FALLBACK", "false").lower() == "true":
+    _onedrive_base_candidates = [
+        Path("/mnt/c/Users/paulogoncalves/OneDrive - Ministerio Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs"),
+        Path("/mnt/c/Users/paulogoncalves/OneDrive - Ministério Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs")
+    ]
+    for _cand in _onedrive_base_candidates:
+        if _cand.exists():
+            for _v_name in ["Vídeos FAQ", "Videos FAQ"]:
+                if (_cand / _v_name).exists():
+                    VIDEO_FAQ_DIR = _cand / _v_name
+                    break
+            for _i_name in ["Imagens FAQ", "imagens"]:
+                if (_cand / _i_name).exists():
+                    IMAGE_FAQ_DIR = _cand / _i_name
+                    break
+            break
 
 VIDEO_FAQ_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_FAQ_DIR.mkdir(parents=True, exist_ok=True)
