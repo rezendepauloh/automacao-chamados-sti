@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Script para habilitar WinRM (via DCOM/WS-Man) e remover perfis de usuário locais inativos remotamente em uma estação Windows.
 

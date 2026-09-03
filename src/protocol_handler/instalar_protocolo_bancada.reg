@@ -1,0 +1,18 @@
+Windows Registry Editor Version 5.00
+
+; ==============================================================================
+; Registro do Protocolo 'bancada://' para o Sistema Bancada
+; Permite que links disparados do navegador iniciem o launcher PowerShell
+; nativamente no Windows com 1 único clique, sem atrito para o usuário.
+; ==============================================================================
+
+[HKEY_CURRENT_USER\Software\Classes\bancada]
+@="URL:Sistema Bancada Protocol"
+"URL Protocol"=""
+
+[HKEY_CURRENT_USER\Software\Classes\bancada\shell]
+
+[HKEY_CURRENT_USER\Software\Classes\bancada\shell\open]
+
+[HKEY_CURRENT_USER\Software\Classes\bancada\shell\open\command]
+@="powershell.exe -NoExit -ExecutionPolicy Bypass -WindowStyle Normal -File \"%USERPROFILE%\\.bancada\\bancada-launcher.ps1\" \"%1\""

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Script unificado para manutenção e limpeza de estação Windows local ou remota (via PowerShell/WinRM).
 

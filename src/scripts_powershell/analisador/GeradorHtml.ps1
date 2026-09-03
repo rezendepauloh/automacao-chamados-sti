@@ -1,4 +1,4 @@
-function Get-DeviceReportHtml {
+﻿function Get-DeviceReportHtml {
     param(
         [PSCustomObject]$systemData,
         [System.Collections.ArrayList]$usersData,

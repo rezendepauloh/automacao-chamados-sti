@@ -8,6 +8,7 @@ import threading
 import subprocess
 import webbrowser
 import keyring
+from urllib.parse import urlencode
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
@@ -68,6 +69,54 @@ def _get_powershell_exe(selected_option: str = None) -> str:
     )
 
 
+def dispatch_bancada_uri(tool: str, host: str, extra_params: dict = None) -> str:
+    r"""
+    Aciona o Protocol Handler 'bancada://' no Windows do usuário através do navegador.
+    O Windows abre o bancada-launcher.ps1 no PowerShell do usuário, executa o script na máquina alvo
+    usando os privilégios/cmdlets locais do Windows, salva o relatório em %USERPROFILE%\DeviceReports
+    e limpa os arquivos temporários automaticamente.
+    """
+    params = {
+        "tool": tool,
+        "host": host,
+        "server": os.getenv("HOST_IP") or "localhost"
+    }
+    if extra_params:
+        params.update(extra_params)
+
+    query_str = urlencode(params)
+    bancada_url = f"bancada://run?{query_str}"
+
+    # Log detalhado no console do servidor (visível no terminal do Docker / 00-iniciar.sh)
+    engine_log = params.get("ps_engine", "auto")
+    print(f"\n{'='*70}", flush=True)
+    print(f"🚀 [DISPATCH PROTOCOLO] Enviando comando para estação do usuário via bancada://", flush=True)
+    print(f"   • Ferramenta   : {tool}", flush=True)
+    print(f"   • Alvo Remoto  : {host}", flush=True)
+    print(f"   • Interpretador: {engine_log}", flush=True)
+    print(f"   • URL Gerada   : {bancada_url}", flush=True)
+    print(f"{'='*70}\n", flush=True)
+
+    # Injeta trigger JavaScript imediato usando iframe invisível para invocar o protocolo
+    js_code = f"""
+    <script>
+        (function() {{
+            try {{
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = '{bancada_url}';
+                document.body.appendChild(iframe);
+                setTimeout(() => {{ iframe.remove(); }}, 3000);
+            }} catch (e) {{
+                window.location.href = '{bancada_url}';
+            }}
+        }})();
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
+    return bancada_url
+
+
 def _clean_ansi(text: str) -> str:
     """Remove sequências de escape ANSI de uma string para exibição limpa no Streamlit."""
     return ANSI_ESCAPE.sub('', text)
@@ -119,6 +168,7 @@ def _ensure_cred_admin_xml():
             logger.info(f"O arquivo '{target_xml}' não existe. Será gerado...")
             need_regenerate = True
         else:
+            test_ps = f"try {{ $c = Import-Clixml -Path '{target_xml}'; if ($c.UserName) {{ exit 0 }} else {{ exit 1 }} }} catch {{ exit 1 }}"
             ps_kwargs = {"capture_output": True}
             if sys.platform == "win32":
                 ps_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -161,17 +211,45 @@ def _ensure_cred_admin_xml():
                 logger.error(f"❌ Falha ao gerar cred_admin.xml em '{target_xml}': {gen_res.stderr}")
 
 
-def _get_latest_report_files(output_dir: Path) -> dict:
-    """Busca os relatórios mais recentes (HTML, PDF, XLSX) gerados no diretório de saída."""
+def _resolve_local_path(path_str: str) -> Path:
+    r"""Converte caminhos no estilo Windows (C:\... ou \\wsl$\...) para caminhos acessíveis no Linux/WSL/Docker se necessário."""
+    if not path_str:
+        return None
+    p = str(path_str).strip()
+    if re.match(r'^[a-zA-Z]:[\\/]', p):
+        drive = p[0].lower()
+        rest = p[2:].replace('\\', '/').lstrip('/')
+        wsl_cand = Path(f"/mnt/{drive}/{rest}")
+        if wsl_cand.exists():
+            return wsl_cand
+    direct_p = Path(p)
+    if direct_p.exists():
+        return direct_p
+    return None
+
+
+def _get_latest_report_files(output_dir: Path, generated_files: dict = None) -> dict:
+    """Busca os relatórios mais recentes (HTML, PDF, XLSX) gerados no diretório de saída ou identificados no log."""
     res = {"html": None, "pdf": None, "xlsx": None}
-    if not output_dir.exists():
-        return res
     
-    for ext in ["html", "pdf", "xlsx"]:
-        files = list(output_dir.glob(f"*.{ext}"))
-        if files:
-            files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-            res[ext] = files[0]
+    # 1. Primeiro verifica os caminhos capturados diretamente da saída do script
+    if generated_files:
+        for ext in ["html", "pdf", "xlsx"]:
+            path_val = generated_files.get(ext)
+            if path_val:
+                resolved = _resolve_local_path(path_val)
+                if resolved and resolved.exists():
+                    res[ext] = resolved
+
+    # 2. Se algum formato ainda não foi encontrado, busca no output_dir
+    resolved_out = _resolve_local_path(str(output_dir)) if output_dir else None
+    if resolved_out and resolved_out.exists():
+        for ext in ["html", "pdf", "xlsx"]:
+            if not res[ext]:
+                files = list(resolved_out.glob(f"*.{ext}"))
+                if files:
+                    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+                    res[ext] = files[0]
     return res
 
 
@@ -221,6 +299,7 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
         "host": host,
         "script_path": script_path,
         "out_folder": out_folder,
+        "generated_files": {"html": None, "pdf": None, "xlsx": None},
         "status": "running",
         "logs": [
             f"🚀 [{time.strftime('%H:%M:%S')}] Processo iniciado em segundo plano ({ps_exe})...",
@@ -241,6 +320,7 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
     def _worker():
         logger.info(f"🚀 [BACKGROUND TASK START] {job_id} ({script_name}) host={host}")
         logger.info(f"⚙️ Disparando processo no diretório de trabalho temporário (cwd): {temp_dir}")
+        try:
             popen_kwargs = {
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.STDOUT,
@@ -271,13 +351,22 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
                     job_data["logs"].append(cleaned_line)
                     logger.info(f"[{job_id}] {cleaned_line}")
 
-                    # Auditoria de caminhos de arquivos gerados (HTML, PDF, XLSX e Diretório)
+                    # Auditoria e captura de caminhos de arquivos gerados (HTML, PDF, XLSX e Diretório)
                     lower_line = cleaned_line.lower()
-                    if (
-                        "relatorio_html_path:" in lower_line
-                        or "relatorio_pdf_path:" in lower_line
-                        or "relatorio_excel_path:" in lower_line
-                        or "relatório salvo em:" in lower_line
+                    if "relatorio_html_path:" in lower_line:
+                        path_part = cleaned_line.split(":", 1)[1].strip()
+                        job_data["generated_files"]["html"] = path_part
+                        logger.info(f"🎯 [AUDITORIA DE DESTINO HTML] [{job_id}] {path_part}")
+                    elif "relatorio_pdf_path:" in lower_line:
+                        path_part = cleaned_line.split(":", 1)[1].strip()
+                        job_data["generated_files"]["pdf"] = path_part
+                        logger.info(f"🎯 [AUDITORIA DE DESTINO PDF] [{job_id}] {path_part}")
+                    elif "relatorio_excel_path:" in lower_line:
+                        path_part = cleaned_line.split(":", 1)[1].strip()
+                        job_data["generated_files"]["xlsx"] = path_part
+                        logger.info(f"🎯 [AUDITORIA DE DESTINO EXCEL] [{job_id}] {path_part}")
+                    elif (
+                        "relatório salvo em:" in lower_line
                         or "pdf gerado em:" in lower_line
                         or "arquivo excel gerado em:" in lower_line
                         or "diretório de saída" in lower_line
@@ -315,117 +404,6 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
     t.start()
     return job_data
 
-
-def render_background_jobs_widget():
-    """
-    Renderiza o widget expansível com o status e logs de scripts rodando em segundo plano (máximo 3).
-    """
-    # Garante limite máximo de 3 accordions ativas, removendo a mais antiga se houver excedente
-    while len(_BACKGROUND_JOBS) > 3:
-        oldest_key = next(iter(_BACKGROUND_JOBS))
-        _BACKGROUND_JOBS.pop(oldest_key, None)
-
-    if not _BACKGROUND_JOBS:
-        return
-
-    st.markdown("### 🤖 Robôs & Scripts em Segundo Plano")
-
-    for job_id, job in list(_BACKGROUND_JOBS.items()):
-        status = job["status"]
-        script_name = job["script_name"]
-        host = job["host"]
-        out_folder = job.get("out_folder")
-
-        if status == "running":
-            header_label = f"⏳ Rodando: {script_name} em '{host}'"
-            exp_state = True
-        elif status == "complete":
-            header_label = f"✅ Concluído: {script_name} em '{host}'"
-            exp_state = False
-        else:
-            header_label = f"❌ Erro: {script_name} em '{host}'"
-            exp_state = True
-
-        with st.expander(header_label, expanded=exp_state):
-            if status == "running":
-                st.info("⚡ O script está sendo executado em segundo plano. Você pode continuar usando o painel normalmente!")
-
-                # Fragmento de auto-atualização para scripts em execução
-                @st.fragment(run_every="3s")
-                def auto_refresh_job_logs():
-                    displayed_logs = "\n".join(job["logs"][-150:])
-                    st.code(displayed_logs, language="powershell")
-                    if st.button("🔄 Atualizar Logs", key=f"btn_refresh_{job_id}"):
-                        st.rerun()
-                auto_refresh_job_logs()
-            else:
-                if status == "complete":
-                    st.success("🎉 Execução finalizada com sucesso!")
-                else:
-                    st.error("⚠️ O script foi finalizado com erros.")
-
-                displayed_logs = "\n".join(job["logs"][-150:])
-                st.code(displayed_logs, language="powershell")
-
-            col_actions, col_clear = st.columns([3, 1])
-            with col_clear:
-                if st.button("🗑️ Limpar / Dispensar", key=f"btn_clear_{job_id}"):
-                    _BACKGROUND_JOBS.pop(job_id, None)
-                    st.rerun()
-
-            # Exibe botões dos relatórios gerados (HTML, PDF, XLSX) prontos para download na máquina do usuário
-            if out_folder and Path(out_folder).exists():
-                reports = _get_latest_report_files(Path(out_folder))
-                latest_html = reports["html"]
-                latest_pdf = reports["pdf"]
-                latest_xlsx = reports["xlsx"]
-
-                if latest_html or latest_pdf or latest_xlsx:
-                    st.markdown("---")
-                    st.markdown("#### 📥 Relatórios Gerados (Baixar no seu Computador)")
-                    
-                    dl_cols = st.columns(3)
-                    if latest_html and latest_html.exists():
-                        with dl_cols[0]:
-                            html_bytes = latest_html.read_bytes()
-                            st.download_button(
-                                label="🌐 Baixar Relatório HTML",
-                                data=html_bytes,
-                                file_name=latest_html.name,
-                                mime="text/html",
-                                width='stretch',
-                                key=f"bg_download_html_{job_id}"
-                            )
-                    if latest_pdf and latest_pdf.exists():
-                        with dl_cols[1]:
-                            pdf_bytes = latest_pdf.read_bytes()
-                            st.download_button(
-                                label="📄 Baixar Relatório PDF",
-                                data=pdf_bytes,
-                                file_name=latest_pdf.name,
-                                mime="application/pdf",
-                                width='stretch',
-                                key=f"bg_download_pdf_{job_id}"
-                            )
-                    if latest_xlsx and latest_xlsx.exists():
-                        with dl_cols[2]:
-                            xlsx_bytes = latest_xlsx.read_bytes()
-                            st.download_button(
-                                label="📊 Baixar Relatório Excel",
-                                data=xlsx_bytes,
-                                file_name=latest_xlsx.name,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                width='stretch',
-                                key=f"bg_download_xlsx_{job_id}"
-                            )
-
-                    if latest_html and latest_html.exists():
-                        with st.expander("👁️ Pré-visualizar Relatório HTML no Painel", expanded=False):
-                            html_content = _read_file_safe_utf8(latest_html)
-                            st.components.v1.html(html_content, height=700, scrolling=True)
-
-
-
 def render_scripts_automacao_page():
     """Renderiza a página principal de execução dos scripts de automação PowerShell."""
     col_hdr1, col_hdr2 = st.columns([2, 1])
@@ -452,14 +430,23 @@ def render_scripts_automacao_page():
                     </span>
                 </div>
                 <p style="color: var(--metric-title-color, #94a3b8); margin: 4px 0 0 0; font-size: 13px;">
-                    Execute rotinas remotas em segundo plano com suporte a navegação livre, F5 e acompanhamento de logs em tempo real.
+                    Execute rotinas remotas com 1 clique direto no Windows cliente, sem fricção, com salvamento local dos relatórios e limpeza automática dos scripts.
                 </p>
             </div>
         """, unsafe_allow_html=True)
 
-
-    # Renderiza o widget de tarefas em segundo plano (se houver)
-    render_background_jobs_widget()
+    # Informações e instalador do disparador para técnicos (1 clique)
+    launcher_installer = Path(__file__).parent.parent / "protocol_handler" / "instalar_disparador_windows.cmd"
+    if launcher_installer.exists():
+        with st.expander("🛠️ Configuração do Disparador Windows (Apenas 1ª vez por máquina)", expanded=False):
+            st.info("Para que o navegador dispare os scripts nativamente no Windows sem precisar de intervenção manual, execute o instalador abaixo uma única vez na máquina do técnico:")
+            st.download_button(
+                label="📥 Baixar Instalador do Disparador Windows (.cmd)",
+                data=launcher_installer.read_bytes(),
+                file_name="instalar_disparador_windows.cmd",
+                mime="application/octet-stream",
+                key="btn_download_bancada_launcher_installer"
+            )
 
     # Suporte a URL query param ?subtab=slug
     url_subtab = st.query_params.get("subtab", "analisador")
@@ -526,18 +513,25 @@ def render_scripts_automacao_page():
                 if skip_major:
                     args.append("-SkipMajorData")
 
-                job_id = f"analisador_{comp_analisador.strip()}_{int(time.time())}"
-                start_background_ps_job(
-                    job_id=job_id,
-                    script_name="Analisador de Dispositivos",
+                # Aciona diretamente o Protocol Handler no Windows da máquina cliente (sem executar no servidor Linux)
+                engine_param = "pwsh" if "pwsh" in selected_ps_version.lower() else ("powershell" if "5.1" in selected_ps_version else "auto")
+                b_url = dispatch_bancada_uri(
+                    tool="analisador",
                     host=comp_analisador.strip(),
-                    script_path=PS_SCRIPT_ANALISADOR,
-                    args=args,
-                    out_folder=out_folder_obj,
-                    ps_option=selected_ps_version
+                    extra_params={
+                        "skip_major": "true" if skip_major else "false",
+                        "timeout": str(timeout_sec),
+                        "ps_engine": engine_param
+                    }
                 )
-                st.toast(f"🚀 Análise da máquina {comp_analisador.strip()} iniciada em segundo plano!", icon="🤖")
-                st.rerun()
+                st.success(f"🚀 **Comando enviado para o seu Windows!** O PowerShell local executará a análise na estação **{comp_analisador.strip()}**.")
+                st.info(f"📂 O relatório final será gravado diretamente no seu Windows em: `C:\\Users\\<Seu_Usuario>\\DeviceReports`.")
+                st.markdown(f"""
+                <div style="background-color: rgba(30, 144, 255, 0.1); border: 1px solid #1E90FF; border-radius: 6px; padding: 10px; margin-top: 8px;">
+                    <span style="font-size: 0.9rem;">💡 <em>Se a janela preta do PowerShell não tiver aberto automaticamente, seu navegador pode ter bloqueado o disparo.</em></span><br>
+                    👉 <a href="{b_url}" style="font-weight: bold; color: #1E90FF; text-decoration: underline;">Clique aqui para abrir manualmente no Windows</a>
+                </div>
+                """, unsafe_allow_html=True)
 
     # =========================================================================
     # TAB 2: Manutenção e Limpeza Remota
@@ -574,17 +568,22 @@ def render_scripts_automacao_page():
                 if verbose_mode:
                     args.append("-Verbose")
 
-                job_id = f"manutencao_{comp_manutencao.strip()}_{int(time.time())}"
-                start_background_ps_job(
-                    job_id=job_id,
-                    script_name="Manutenção e Limpeza Remota",
+                # Aciona via Protocol Handler no cliente (sem executar no servidor Linux)
+                engine_param = "pwsh" if "pwsh" in selected_ps_version.lower() else ("powershell" if "5.1" in selected_ps_version else "auto")
+                b_url = dispatch_bancada_uri(
+                    tool="manutencao",
                     host=comp_manutencao.strip(),
-                    script_path=PS_SCRIPT_MANUTENCAO,
-                    args=args,
-                    ps_option=selected_ps_version
+                    extra_params={
+                        "ps_engine": engine_param
+                    }
                 )
-                st.toast(f"🚀 Limpeza remota da máquina {comp_manutencao.strip()} iniciada em segundo plano!", icon="🧹")
-                st.rerun()
+                st.success(f"🧹 **Comando enviado para o seu Windows!** O PowerShell local executará a manutenção na estação **{comp_manutencao.strip()}**.")
+                st.markdown(f"""
+                <div style="background-color: rgba(30, 144, 255, 0.1); border: 1px solid #1E90FF; border-radius: 6px; padding: 10px; margin-top: 8px;">
+                    <span style="font-size: 0.9rem;">💡 <em>Se a janela do PowerShell não tiver aberto automaticamente:</em></span><br>
+                    👉 <a href="{b_url}" style="font-weight: bold; color: #1E90FF; text-decoration: underline;">Clique aqui para abrir manualmente no Windows</a>
+                </div>
+                """, unsafe_allow_html=True)
 
     # =========================================================================
     # TAB 3: Remoção de Perfis de Usuário
@@ -609,14 +608,20 @@ def render_scripts_automacao_page():
 
                 args = ["-ComputerName", comp_perfis.strip(), "-UsersToPurge", users_arg_str]
 
-                job_id = f"perfis_{comp_perfis.strip()}_{int(time.time())}"
-                start_background_ps_job(
-                    job_id=job_id,
-                    script_name="Remoção de Perfis de Usuários",
+                # Aciona via Protocol Handler no cliente (sem executar no servidor Linux)
+                engine_param = "pwsh" if "pwsh" in selected_ps_version.lower() else ("powershell" if "5.1" in selected_ps_version else "auto")
+                b_url = dispatch_bancada_uri(
+                    tool="perfis",
                     host=comp_perfis.strip(),
-                    script_path=PS_SCRIPT_REMOVER_USUARIOS,
-                    args=args,
-                    ps_option=selected_ps_version
+                    extra_params={
+                        "users": users_arg_str,
+                        "ps_engine": engine_param
+                    }
                 )
-                st.toast(f"🚀 Remoção de perfis na máquina {comp_perfis.strip()} iniciada em segundo plano!", icon="👥")
-                st.rerun()
+                st.success(f"👥 **Comando enviado para o seu Windows!** O PowerShell local executará a remoção de perfis na estação **{comp_perfis.strip()}**.")
+                st.markdown(f"""
+                <div style="background-color: rgba(30, 144, 255, 0.1); border: 1px solid #1E90FF; border-radius: 6px; padding: 10px; margin-top: 8px;">
+                    <span style="font-size: 0.9rem;">💡 <em>Se a janela do PowerShell não tiver aberto automaticamente:</em></span><br>
+                    👉 <a href="{b_url}" style="font-weight: bold; color: #1E90FF; text-decoration: underline;">Clique aqui para abrir manualmente no Windows</a>
+                </div>
+                """, unsafe_allow_html=True)

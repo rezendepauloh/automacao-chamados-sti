@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Analisador de Dispositivos de Máquina – Versão Refatorada Compatível com PowerShell 5.1+
 .DESCRIPTION
@@ -1761,10 +1761,16 @@ try {
     exit 5
 }
 
-# Opcional: abrir automaticamente no navegador padrão do usuário comum (não-elevado)
-# Ao chamar o explorer.exe, o Windows delega a abertura ao shell do usuário ativo ("paulogoncalves")
-# evitando abrir uma janela isolada de Administrador sob as credenciais do "paulo_admin".
-Start-Process explorer.exe "$outFile"
+# Abre automaticamente o relatório no navegador padrão
+try {
+    Start-Process "$outFile"
+} catch {
+    try {
+        Start-Process explorer.exe "`"$outFile`""
+    } catch {
+        Write-Warning "Não foi possível abrir o navegador automaticamente: $_"
+    }
+}
 
 # ----------------------------------------
 # 8) GERAÇÃO DO RELATÓRIO PDF
@@ -1784,12 +1790,19 @@ if (Test-Path $path64) {
 }
 
 if ($edgeExe) {
+    # Executa o Edge headless redirecionando erros internos de telemetria/renderers do Chromium para nul
     Start-Process -FilePath $edgeExe -ArgumentList @(
-        "--headless"
+        "--headless=new"
         "--disable-gpu"
+        "--no-first-run"
+        "--no-default-browser-check"
+        "--disable-extensions"
+        "--disable-logging"
+        "--log-level=3"
         "--print-to-pdf=`"$pdfFile`""
         "`"$outFile`""
-    ) -NoNewWindow -Wait
+    ) -NoNewWindow -Wait -RedirectStandardError "$env:TEMP\edge_headless_err.log" -ErrorAction SilentlyContinue
+
     Write-Host "RELATORIO_PDF_PATH: $pdfFile" -ForegroundColor Green
     Write-Host "PDF gerado em: $pdfFile" -ForegroundColor Green
 } else {
