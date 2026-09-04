@@ -242,13 +242,15 @@ def render_chamados_page():
             )
             if run_orquestrador:
                 import time
-                import subprocess
-                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-                subprocess.Popen([sys.executable, "orquestrador.py"], **popen_kwargs)
-                time.sleep(0.8)
-                st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
-                st.cache_data.clear()
-                st.rerun()
+                from src.services.cron_scheduler import get_cron_daemon
+                cron_daemon = get_cron_daemon()
+                if cron_daemon.trigger_task_now("orquestrador_chamados"):
+                    time.sleep(0.8)
+                    st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.warning("O robô já está em execução neste momento.")
 
     render_log_expander(
         "🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso",

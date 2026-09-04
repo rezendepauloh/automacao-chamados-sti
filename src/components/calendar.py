@@ -471,6 +471,15 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
               </p>
             </div>
 
+            <!-- BLOCO VIAGEM -->
+            <div id="blocoViagem" style="display:none;">
+              <p><strong>📍 Destino / Localidade:</strong> <span id="vLocalidade" style="font-weight:600; color:#06b6d4;"></span></p>
+              <p><strong>👤 Quem foi:</strong> <span id="vQuemFoi"></span></p>
+              <p><strong>🎫 Chamado(s):</strong> <span id="vChamado"></span></p>
+              <p><strong>📅 Data de Saída:</strong> <span id="vSaida"></span></p>
+              <p><strong>🏁 Data de Retorno:</strong> <span id="vRetorno"></span></p>
+            </div>
+
           </div>
           <div class="modal-footer">
             <button class="btn-dismiss" onclick="closeModal()">Fechar</button>
@@ -580,6 +589,7 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
               document.getElementById('blocoGarantia').style.display = 'none';
               document.getElementById('blocoChamado').style.display = 'none';
               document.getElementById('blocoPortaria').style.display = 'none';
+              document.getElementById('blocoViagem').style.display = 'none';
 
               switch(cat) {
                 case 'manual':
@@ -792,6 +802,22 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
                   } else {
                     poPdfContainer.style.display = 'none';
                   }
+                  break;
+
+                case 'viagem':
+                  document.getElementById('blocoViagem').style.display = 'block';
+
+                  badge.className = 'modal-badge';
+                  badge.style.backgroundColor = 'rgba(6, 182, 212, 0.2)';
+                  badge.style.color = '#06b6d4';
+                  badge.style.border = '1px solid #06b6d4';
+
+                  document.getElementById('mTitle').innerText = '✈️ Viagem: ' + (props.localidade || info.event.title);
+                  document.getElementById('vLocalidade').innerText = props.localidade || 'Não informada';
+                  document.getElementById('vQuemFoi').innerText = props.quem_foi || 'Não informado';
+                  document.getElementById('vChamado').innerText = props.chamado || 'Sem chamado informado';
+                  document.getElementById('vSaida').innerText = props.saida_br || formatBrDateTime(info.event.start, props.raw_data_inicio);
+                  document.getElementById('vRetorno').innerText = props.retorno_br || formatBrDateTime(info.event.end, props.raw_data_fim);
                   break;
 
                 default:

@@ -38,6 +38,14 @@ from .donations_db import (
     get_donations_data
 )
 
+from .settings_db import (
+    setup_settings_table,
+    get_setting,
+    set_setting,
+    get_all_settings,
+    seed_settings_from_env_if_empty
+)
+
 from .plantoes_db import (
     setup_plantoes_tables,
     save_plantoes_matutino,
@@ -52,6 +60,7 @@ from .notifications_db import (
     get_notifications,
     get_unread_notifications_count,
     mark_notification_as_read,
+    mark_notification_as_unread,
     mark_all_notifications_as_read
 )
 
@@ -96,6 +105,32 @@ from .fiscalizacao_db import (
     get_fiscalizacao_contador_df
 )
 
+from .viagens_db import (
+    setup_viagens_table,
+    sync_viagens_from_excel,
+    get_viagens_df
+)
+
+from .whatsapp_db import (
+    setup_whatsapp_tables,
+    get_whatsapp_destinatarios,
+    add_whatsapp_destinatario,
+    toggle_whatsapp_destinatario_status,
+    has_whatsapp_been_sent,
+    log_whatsapp_dispatch,
+    get_whatsapp_disparos_log
+)
+
+from .cron_db import (
+    setup_cron_tables,
+    get_cron_schedules,
+    get_cron_schedule_by_id,
+    update_cron_schedule,
+    log_cron_execution_start,
+    log_cron_execution_end,
+    get_recent_cron_logs
+)
+
 __all__ = [
     "DB_PATH",
     "get_connection",
@@ -132,6 +167,7 @@ __all__ = [
     "get_notifications",
     "get_unread_notifications_count",
     "mark_notification_as_read",
+    "mark_notification_as_unread",
     "mark_all_notifications_as_read",
     "setup_impressoras_table",
     "save_impressoras_to_db",
@@ -155,5 +191,22 @@ __all__ = [
     "sync_fiscalizacao_from_excel",
     "get_fiscalizacao_indicacoes_df",
     "get_fiscalizacao_publicacoes_df",
-    "get_fiscalizacao_contador_df"
+    "get_fiscalizacao_contador_df",
+    "setup_viagens_table",
+    "sync_viagens_from_excel",
+    "get_viagens_df",
+    "setup_whatsapp_tables",
+    "get_whatsapp_destinatarios",
+    "add_whatsapp_destinatario",
+    "toggle_whatsapp_destinatario_status",
+    "has_whatsapp_been_sent",
+    "log_whatsapp_dispatch",
+    "get_whatsapp_disparos_log",
+    "setup_cron_tables",
+    "get_cron_schedules",
+    "get_cron_schedule_by_id",
+    "update_cron_schedule",
+    "log_cron_execution_start",
+    "log_cron_execution_end",
+    "get_recent_cron_logs"
 ]

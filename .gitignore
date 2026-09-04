@@ -19,6 +19,7 @@ ENV/
 03 - Dados prontos/
 debug_logs/
 chamados.db
+.secret.key
 
 # Logs
 *.log

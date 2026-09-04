@@ -61,20 +61,11 @@ if ($psEngine -eq "pwsh") {
     }
 }
 
-# Se estamos rodando no Windows PowerShell 5.1 e o usuário/auto pediu pwsh.exe, repassa a execução para o pwsh.exe em nova janela visível e fecha a atual silenciosamente
+# Se estamos rodando no Windows PowerShell 5.1 e o usuário/auto pediu pwsh.exe, inicia o pwsh.exe e encerra este processo imediatamente pelo PID
 if ($PSVersionTable.PSVersion.Major -lt 7 -and $desiredEngine -ne "powershell.exe" -and $hasPwsh7) {
-    # Minimiza / esconde a janela atual do PowerShell 5.1
-    $null = Add-Type -Name Window -Namespace Console -MemberDefinition '
-        [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);
-        [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
-    ' -ErrorAction SilentlyContinue
-    $consolePtr = [Console.Window]::GetConsoleWindow()
-    if ($consolePtr -ne [IntPtr]::Zero) {
-        [Console.Window]::ShowWindow($consolePtr, 0) # 0 = SW_HIDE
-    }
-
     Start-Process -FilePath $desiredEngine -ArgumentList @("-NoExit", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath, "`"$UriString`"")
-    exit 0
+    # Força encerramento do processo atual (powershell.exe) pelo PID, superando a flag -NoExit da chamada inicial
+    Stop-Process -Id $PID -Force
 }
 
 Write-Host "============================================================" -ForegroundColor Cyan

@@ -98,6 +98,14 @@ def main() -> None:
     setup_environment(local_ip)
     print_banner(local_ip, PORT)
 
+    # Inicia o motor de agendamentos e cron jobs em segundo plano
+    try:
+        from src.services.cron_scheduler import get_cron_daemon
+        daemon = get_cron_daemon()
+        print(f" {CYAN}●{RESET} {BOLD}Motor de Agendamento{RESET}: {GREEN}ATIVO (Cron Scheduler Daemon em Background){RESET}")
+    except Exception as e_daemon:
+        print(f" {YELLOW}[!] Aviso: Não foi possível iniciar o Cron Daemon: {e_daemon}{RESET}")
+
     # Executa o Streamlit
     cmd = [
         sys.executable,

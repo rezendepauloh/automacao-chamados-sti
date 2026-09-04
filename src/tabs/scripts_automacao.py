@@ -182,10 +182,16 @@ def _ensure_cred_admin_xml():
 
         if need_regenerate:
             if not admin_pass:
-                admin_pass = keyring.get_password("sccm_admin", admin_user) or keyring.get_password("sccm", admin_user)
+                try:
+                    from src.database.settings_db import get_setting
+                    admin_pass = get_setting("SCCM_ADMIN_PASSWORD")
+                except Exception:
+                    pass
+                if not admin_pass:
+                    admin_pass = keyring.get_password("sccm_admin", admin_user) or keyring.get_password("sccm", admin_user) or os.getenv("SCCM_ADMIN_PASSWORD")
 
             if not admin_pass:
-                logger.error("❌ Senha do SCCM_ADMIN_USER não encontrada no keyring. Não é possível gerar cred_admin.xml.")
+                logger.error("❌ Senha do SCCM_ADMIN_USER não encontrada no banco ou keyring. Não é possível gerar cred_admin.xml.")
                 continue
 
             domain_user = admin_user if ("\\" in admin_user or "@" in admin_user) else f"mpe\\{admin_user}"

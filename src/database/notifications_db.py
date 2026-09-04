@@ -70,6 +70,15 @@ def mark_notification_as_read(notif_id: int):
     conn.commit()
     conn.close()
 
+def mark_notification_as_unread(notif_id: int):
+    """Marca uma notificação específica como não lida."""
+    setup_notifications_table()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE notificacoes SET lida = 0 WHERE id = ?", (notif_id,))
+    conn.commit()
+    conn.close()
+
 def mark_all_notifications_as_read():
     """Marca todas as notificações como lidas."""
     setup_notifications_table()

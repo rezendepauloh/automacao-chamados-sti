@@ -112,6 +112,11 @@ elif selected_page == "📜 Fiscalização de Contratos":
     importlib.reload(src.tabs.fiscalizacao)
     src.tabs.fiscalizacao.render_contracts_page()
 
+elif selected_page == "✈️ Viagens da Bancada":
+    import src.tabs.viagens
+    importlib.reload(src.tabs.viagens)
+    src.tabs.viagens.render_viagens_page()
+
 elif selected_page == "🛡️ Controle de Garantia":
     import src.tabs.garantia
     importlib.reload(src.tabs.garantia)
@@ -143,6 +148,11 @@ elif selected_page == "🔔 Central de Notificações":
     import src.tabs.notificacoes
     importlib.reload(src.tabs.notificacoes)
     src.tabs.notificacoes.render_notificacoes_page()
+
+elif selected_page == "⚙️ Configurações":
+    import src.tabs.configuracoes
+    importlib.reload(src.tabs.configuracoes)
+    src.tabs.configuracoes.render_configuracoes_page()
 
 else:
     import src.tabs.chamados

@@ -51,6 +51,25 @@ def prompt_senha(service_name, username_label, default_user=None):
     return True, user_to_check, None
 
 
+def _save_db_and_keyring(service_name, username, password, setting_key):
+    # 1. Salva no banco de dados com criptografia AES-Fernet
+    try:
+        from src.database.settings_db import set_setting
+        set_setting(setting_key, password, is_secret=True, category="rede" if "AD" in setting_key else "servicos")
+        print(f"🔒 [BANCO] Senha salva e criptografada no banco de dados!")
+    except Exception as dbe:
+        print(f"⚠️ [BANCO] Não foi possível salvar no banco: {dbe}")
+
+    # 2. Mantém compatibilidade com Keyring local
+    try:
+        keyring.set_password(service_name, username, password)
+    except Exception:
+        pass
+
+print("💡 DICA: Agora você também pode gerenciar e alterar todas as suas senhas")
+print("   diretamente pela interface web na aba: ⚙️ Configurações do Sistema!")
+print()
+
 # -----------------------------------------------------------------------------
 # 1. SENHA DE REDE / AD (OTRS & CitSmart)
 # -----------------------------------------------------------------------------
@@ -64,12 +83,12 @@ deve_pedir, target_user, _ = prompt_senha("otrs", usuario_windows, default_user=
 if deve_pedir:
     senha_real = getpass.getpass(f"Digite a sua senha da rede/AD para o usuário '{usuario_windows}': ").strip()
     if senha_real:
+        _save_db_and_keyring("otrs", usuario_windows, senha_real, "AD_PASSWORD")
         try:
-            keyring.set_password("otrs", usuario_windows, senha_real)
             keyring.set_password("citSmart", usuario_windows, senha_real)
-            print(f"✅ Senha de rede salva com sucesso para o usuário: {usuario_windows}\n")
-        except Exception as e:
-            print(f"⚠️ Não foi possível salvar no keyring: {e}\n")
+        except Exception:
+            pass
+        print(f"✅ Senha de rede salva com sucesso para o usuário: {usuario_windows}\n")
     else:
         print("⚠️ Nenhuma senha digitada. Etapa pulada.\n")
 

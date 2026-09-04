@@ -24,22 +24,33 @@ if sys.platform == 'win32':
 # Carrega as variáveis do arquivo .env para a memória do script
 load_dotenv()
 
+# Função auxiliar para ler do banco de dados com fallback para os.getenv
+def _cfg(key: str, default: str = "") -> str:
+    try:
+        from src.database.settings_db import get_setting
+        val = get_setting(key)
+        if val is not None and str(val).strip() != "":
+            return str(val).strip()
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
 # -----------------------------------------------------------------------------
 # Instalações antes de rodar
 # -----------------------------------------------------------------------------
 
 # Credenciais
-CITSMART_URL = os.getenv("CITSMART_LINK", "")
-CITSMART_NOVA_FILA = os.getenv("CITSMART_LINK_NOVO", "")
-OTRS_URL = os.getenv("OTRS_LINK", "")
+CITSMART_URL = _cfg("CITSMART_LINK", "")
+CITSMART_NOVA_FILA = _cfg("CITSMART_LINK_NOVO", "")
+OTRS_URL = _cfg("OTRS_LINK", "")
 PROMOTORIAS_URL = "https://www.mpms.mp.br/promotorias"
 PROCURADORIAS_URL = "https://www.mpms.mp.br/procuradorias"
 
-PAPERCUT_URL = os.getenv("PAPERCUT_URL", "")
-PAPERCUT_PRINTER_LIST_URL = os.getenv("PAPERCUT_PRINTER_LIST_URL", "")
-PAPERCUT_DEVICE_LIST_URL = os.getenv("PAPERCUT_DEVICE_LIST_URL", "")
+PAPERCUT_URL = _cfg("PAPERCUT_URL", "")
+PAPERCUT_PRINTER_LIST_URL = _cfg("PAPERCUT_PRINTER_LIST_URL", "")
+PAPERCUT_DEVICE_LIST_URL = _cfg("PAPERCUT_DEVICE_LIST_URL", "")
 
-OXE_URL = os.getenv("OXE_URL", "")
+OXE_URL = _cfg("OXE_URL", "")
 
 # Pega automaticamente a pasta do usuário e a raiz do projeto
 USER_HOME = Path.home()
@@ -53,7 +64,11 @@ PS_SCRIPT_REMOVER_USUARIOS = PS_SCRIPTS_DIR / "perfis" / "RemoverUsuarios.ps1"
 
 
 def _get_username() -> str:
-    """Obtém o nome de usuário do sistema de forma segura para Docker, Linux e Windows."""
+    """Obtém o nome de usuário do sistema de forma segura para Banco, Docker, Linux e Windows."""
+    db_user = _cfg("AD_USER")
+    if db_user and db_user.strip() and db_user.strip() != "root":
+        return db_user.strip()
+
     env_user = os.getenv("AD_USER") or os.getenv("CITSMART_USER")
     if env_user and env_user.strip() and env_user.strip() != "root":
         return env_user.strip()
@@ -73,33 +88,33 @@ def _get_username() -> str:
     return "paulogoncalves"
 
 USERNAME = _get_username()
-CITSMART_EMAIL = f"{USERNAME}@{os.getenv('AD_EMAIL', '')}"
+CITSMART_EMAIL = f"{USERNAME}@{_cfg('AD_EMAIL', os.getenv('AD_EMAIL', ''))}"
 
-# Tenta pegar senha do keyring, ou env AD_PASSWORD, ou deixa vazia se falhar
+# Tenta pegar senha do banco de dados, keyring ou env AD_PASSWORD
 try:
-    PASSWORD = os.getenv("AD_PASSWORD") or keyring.get_password("otrs", USERNAME)
+    PASSWORD = _cfg("AD_PASSWORD") or os.getenv("AD_PASSWORD") or keyring.get_password("otrs", USERNAME)
 except Exception:
-    PASSWORD = os.getenv("AD_PASSWORD")
+    PASSWORD = _cfg("AD_PASSWORD") or os.getenv("AD_PASSWORD")
 
 try:
-    PAPERCUT_USER = os.getenv("PAPERCUT_USER", keyring.get_password("papercut_user", "papercut") or "admin")
-    PAPERCUT_PASS = os.getenv("PAPERCUT_PASS", keyring.get_password("papercut", PAPERCUT_USER) or "")
+    PAPERCUT_USER = _cfg("PAPERCUT_USER", os.getenv("PAPERCUT_USER", keyring.get_password("papercut_user", "papercut") or "admin"))
+    PAPERCUT_PASS = _cfg("PAPERCUT_PASS", os.getenv("PAPERCUT_PASS", keyring.get_password("papercut", PAPERCUT_USER) or ""))
 except:
-    PAPERCUT_USER = os.getenv("PAPERCUT_USER", "admin")
-    PAPERCUT_PASS = os.getenv("PAPERCUT_PASS", "")
+    PAPERCUT_USER = _cfg("PAPERCUT_USER", os.getenv("PAPERCUT_USER", "admin"))
+    PAPERCUT_PASS = _cfg("PAPERCUT_PASS", os.getenv("PAPERCUT_PASS", ""))
 
 try:
-    OXE_USER = os.getenv("OXE_USER", keyring.get_password("oxe_user", "oxe") or "mtcl")
-    OXE_PASS = os.getenv("OXE_PASS", keyring.get_password("oxe", OXE_USER) or "")
+    OXE_USER = _cfg("OXE_USER", os.getenv("OXE_USER", keyring.get_password("oxe_user", "oxe") or "mtcl"))
+    OXE_PASS = _cfg("OXE_PASS", os.getenv("OXE_PASS", keyring.get_password("oxe", OXE_USER) or ""))
 except:
-    OXE_USER = os.getenv("OXE_USER", "mtcl")
-    OXE_PASS = os.getenv("OXE_PASS", "")
+    OXE_USER = _cfg("OXE_USER", os.getenv("OXE_USER", "mtcl"))
+    OXE_PASS = _cfg("OXE_PASS", os.getenv("OXE_PASS", ""))
 
 
 # Domínio
-DOMINIO = os.getenv("AD_DOMAIN", "")
-DOMINIO_CURTO = os.getenv("AD_SHORT", "")
-DOMINIO_MMC = os.getenv("AD_MMC", "")
+DOMINIO = _cfg("AD_DOMAIN", os.getenv("AD_DOMAIN", ""))
+DOMINIO_CURTO = _cfg("AD_SHORT", os.getenv("AD_SHORT", ""))
+DOMINIO_MMC = _cfg("AD_MMC", os.getenv("AD_MMC", ""))
 
 # Configurações do WebDriver
 DRIVER_PATH = "./chromedriver.exe"  # Baixe a versão correspondente ao seu Chrome
@@ -123,10 +138,11 @@ OUTPUT_DIR_PRONTO     = BASE_DIR / "03 - Dados prontos"
 OUTPUT_DIR_PRONTO.mkdir(exist_ok=True)
 MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
-MASTER_FILE_PATH = USER_HOME / os.getenv("SHAREPOINT_RELATIVE_PATH", "")
-DONATIONS_FILE_PATH = USER_HOME / os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
-WARRANTY_FILE_PATH = USER_HOME / os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", "")
-SHAREPOINT_MATUTINO_URL = os.getenv("SHAREPOINT_MATUTINO_URL", "")
+MASTER_FILE_PATH = USER_HOME / _cfg("SHAREPOINT_RELATIVE_PATH", os.getenv("SHAREPOINT_RELATIVE_PATH", ""))
+DONATIONS_FILE_PATH = USER_HOME / _cfg("DONATIONS_EXCEL_RELATIVE_PATH", os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", ""))
+WARRANTY_FILE_PATH = USER_HOME / _cfg("WARRANTY_EXCEL_RELATIVE_PATH", os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", ""))
+VIAGENS_FILE_PATH = USER_HOME / _cfg("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", ""))
+SHAREPOINT_MATUTINO_URL = _cfg("SHAREPOINT_MATUTINO_URL", os.getenv("SHAREPOINT_MATUTINO_URL", ""))
 
 VIDEO_FAQ_ENV = os.getenv("VIDEO_FAQ_PATH", "")
 IMAGE_FAQ_ENV = os.getenv("IMAGE_FAQ_PATH", "")
@@ -250,6 +266,9 @@ DEBUG_DIR_SCRIPTS.mkdir(parents=True, exist_ok=True)
 # Fiscalizacao Logs
 DEBUG_DIR_FISCALIZACAO = BASE_DIR / "debug_logs" / "fiscalizacao"
 DEBUG_DIR_FISCALIZACAO.mkdir(parents=True, exist_ok=True)
+
+DEBUG_DIR_VIAGENS = BASE_DIR / "debug_logs" / "viagens"
+DEBUG_DIR_VIAGENS.mkdir(parents=True, exist_ok=True)
 
 
 
@@ -543,22 +562,25 @@ def fetch_sccm_data(username: str) -> dict:
     logger = logging.getLogger(__name__)
     res_data = {"ip": "N/A", "hostname": "N/A"}
     
-    site_server = os.getenv("SCCM_SERVER")
-    site_code = os.getenv("SCCM_SITE_CODE")
+    site_server = _cfg("SCCM_SERVER", os.getenv("SCCM_SERVER", ""))
+    site_code = _cfg("SCCM_SITE_CODE", os.getenv("SCCM_SITE_CODE", ""))
     
     if not site_server or not site_code:
-        logger.warning("⚠️ Variáveis 'SCCM_SERVER' ou 'SCCM_SITE_CODE' não configuradas no .env. A consulta no SCCM será ignorada.")
+        logger.warning("⚠️ Variáveis 'SCCM_SERVER' ou 'SCCM_SITE_CODE' não configuradas. A consulta no SCCM será ignorada.")
         _sccm_cache[username_lower] = res_data
         return res_data
 
-    # 1. Recupera as credenciais do administrador do SCCM (Keyring com fallback para env var em Containers)
-    admin_user = os.getenv("SCCM_ADMIN_USER")
+    # 1. Recupera as credenciais do administrador do SCCM (Banco de Dados / Keyring / Env)
+    admin_user = _cfg("SCCM_ADMIN_USER", os.getenv("SCCM_ADMIN_USER", ""))
     admin_password = None
     if admin_user:
-        try:
-            admin_password = keyring.get_password("sccm_admin", admin_user) or keyring.get_password("sccm", admin_user)
-        except Exception as ke:
-            logger.debug(f"[SCCM] Keyring indisponível ou inacessível no ambiente: {ke}")
+        # Tenta primeiro a senha salva/criptografada no banco
+        admin_password = _cfg("SCCM_ADMIN_PASSWORD")
+        if not admin_password:
+            try:
+                admin_password = keyring.get_password("sccm_admin", admin_user) or keyring.get_password("sccm", admin_user)
+            except Exception as ke:
+                logger.debug(f"[SCCM] Keyring indisponível ou inacessível no ambiente: {ke}")
 
         # Fallback essencial para Containers (Docker / Red Hat) onde não há GUI/Keyring interativo
         if not admin_password:
@@ -566,7 +588,7 @@ def fetch_sccm_data(username: str) -> dict:
             if admin_password:
                 logger.debug(f"[SCCM] Usando credencial de '{admin_user}' obtida via variável de ambiente (.env).")
     else:
-        logger.warning("⚠️ Variável 'SCCM_ADMIN_USER' não configurada no .env. A consulta no SCCM prosseguirá sem credenciais administrativas dedicadas.")
+        logger.warning("⚠️ Variável 'SCCM_ADMIN_USER' não configurada. A consulta no SCCM prosseguirá sem credenciais administrativas dedicadas.")
 
     # 2. Detecta o executável do PowerShell disponível (pwsh no Linux/Container ou powershell.exe no WSL/Windows)
     ps_executable, ps_flavor = _detect_powershell_executable()

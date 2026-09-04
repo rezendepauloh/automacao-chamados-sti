@@ -11,11 +11,13 @@ PAGE_TO_SLUG = {
     "📍 Mapa & Localização": "mapa",
     "🖥️ Doação & Redistribuição": "redistribuicao",
     "📜 Fiscalização de Contratos": "fiscalizacao",
+    "✈️ Viagens da Bancada": "viagens",
     "🛡️ Controle de Garantia": "garantia",
     "🖨️ Impressoras (PaperCut)": "impressoras",
     "⚡ Scripts de Automação": "scripts-automacao",
     "📚 FAQ & Tutoriais": "faq",
     "🔔 Central de Notificações": "notificacoes",
+    "⚙️ Configurações": "configuracoes",
 }
 
 
@@ -88,6 +90,8 @@ def render_header_navigation() -> str:
             set_page("🖥️ Doação & Redistribuição")
         if st.button("📜 Fiscalização de Contratos", width='stretch', type=get_btn_type("📜 Fiscalização de Contratos")):
             set_page("📜 Fiscalização de Contratos")
+        if st.button("✈️ Viagens da Bancada", width='stretch', type=get_btn_type("✈️ Viagens da Bancada")):
+            set_page("✈️ Viagens da Bancada")
         if st.button("🛡️ Controle de Garantia", width='stretch', type=get_btn_type("🛡️ Controle de Garantia")):
             set_page("🛡️ Controle de Garantia")
         if st.button("🖨️ Impressoras (PaperCut)", width='stretch', type=get_btn_type("🖨️ Impressoras (PaperCut)")):
@@ -99,6 +103,8 @@ def render_header_navigation() -> str:
             set_page("📚 FAQ & Tutoriais")
         
         st.markdown("---")
+        if st.button("⚙️ Configurações", width='stretch', type=get_btn_type("⚙️ Configurações")):
+            set_page("⚙️ Configurações")
         if st.button(notif_btn_label, width='stretch', type=get_btn_type("🔔 Central de Notificações")):
             set_page("🔔 Central de Notificações")
 

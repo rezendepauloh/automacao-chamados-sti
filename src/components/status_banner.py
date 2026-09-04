@@ -48,9 +48,18 @@ def read_log_lines(log_path: Path, n: int = 15) -> str:
 
 
 def check_orquestrador_running() -> bool:
-    """Retrocompatibilidade: Verifica se o orquestrador principal está rodando."""
+    """Verifica se o orquestrador principal está rodando via lock file ou via motor de agendamento."""
     lock_file = Path(tempfile.gettempdir()) / "automated_otrs_citsmart.lock"
-    return check_process_running(lock_file)
+    if check_process_running(lock_file):
+        return True
+    try:
+        from src.services.cron_scheduler import get_cron_daemon
+        d = get_cron_daemon()
+        if "orquestrador_chamados" in d._executing_tasks:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def read_last_log_lines(n: int = 15) -> str:

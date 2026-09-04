@@ -3,6 +3,7 @@ import streamlit as st
 from src.database import (
     get_notifications,
     mark_notification_as_read,
+    mark_notification_as_unread,
     mark_all_notifications_as_read,
     get_unread_notifications_count
 )
@@ -23,13 +24,25 @@ def render_notificacoes_page():
     # Contagem não lidas
     unread_count = get_unread_notifications_count()
 
-    c_title, c_act = st.columns([3, 1])
+    c_title, c_act1, c_act2 = st.columns([2, 1, 1])
     with c_title:
         if unread_count > 0:
             st.warning(f"Você possui **{unread_count}** notificação(ões) pendente(s) não lida(s).")
         else:
             st.success("🎉 Todas as notificações estão em dia!")
-    with c_act:
+    with c_act1:
+        if st.button("🔄 Verificar Alertas Agora", width='stretch', help="Varre portarias e escalas de plantão em busca de novos alertas para a bancada."):
+            with st.spinner("Verificando portarias e escalas de plantão..."):
+                try:
+                    from src.syncs.sync_plantoes_alerts import check_and_generate_plantao_alerts
+                    from src.syncs.sync_portarias import sync_portarias_and_generate_alerts
+                    sync_portarias_and_generate_alerts()
+                    check_and_generate_plantao_alerts()
+                    st.toast("Alertas de portarias e plantões verificados com sucesso!", icon="🔔")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao verificar alertas: {e}")
+    with c_act2:
         if st.button("✅ Marcar Todas como Lidas", width='stretch', disabled=(unread_count == 0)):
             mark_all_notifications_as_read()
             st.toast("Todas as notificações foram marcadas como lidas!", icon="✅")
@@ -39,9 +52,11 @@ def render_notificacoes_page():
 
     # --- FILTROS SIDEBAR ---
     st.sidebar.markdown("## 🔍 Filtros de Notificação")
+    default_status_idx = 0 if unread_count > 0 else 1
     filter_status = st.sidebar.radio(
         "📌 Status:",
         ["Não Lidas", "Todas", "Lidas"],
+        index=default_status_idx,
         key="filter_notif_status"
     )
     
@@ -146,16 +161,59 @@ def render_notificacoes_page():
                 # Botão para redirecionar para a página da notificação
                 if link_pagina:
                     if st.button("🔗 Acessar Página", key=f"btn_nav_{notif_id}", width='stretch'):
+                        from src.components.header import PAGE_TO_SLUG
                         mark_notification_as_read(notif_id)
                         st.session_state["current_page"] = link_pagina
+                        if link_pagina in PAGE_TO_SLUG:
+                            st.query_params["tab"] = PAGE_TO_SLUG[link_pagina]
                         st.rerun()
 
-                # Botão para marcar como lida
+                # Botão para marcar como lida ou não lida
                 if not is_read:
                     if st.button("✔ Marcar como Lida", key=f"btn_read_n_{notif_id}", width='stretch'):
                         mark_notification_as_read(notif_id)
                         st.toast("Notificação marcada como lida!", icon="✅")
                         st.rerun()
+                else:
+                    if st.button("↩ Marcar como Não Lida", key=f"btn_unread_n_{notif_id}", width='stretch'):
+                        mark_notification_as_unread(notif_id)
+                        st.toast("Notificação reativada como não lida!", icon="🔔")
+                        st.rerun()
+
+                # Botão de envio manual pelo WhatsApp
+                if st.button("📲 Enviar no WhatsApp", key=f"btn_wpp_send_{notif_id}", width='stretch', help="Envia esta notificação via WhatsApp para os integrantes ativos da bancada"):
+                    from src.services.evolution_client import send_whatsapp_text, get_connection_status
+                    from src.database import get_whatsapp_destinatarios, log_whatsapp_dispatch
+
+                    st_conn = get_connection_status()
+                    if not st_conn.get("online") or st_conn.get("state") != "open":
+                        st.error("WhatsApp desconectado! Conecte a sessão na aba Configurações > WhatsApp.")
+                    else:
+                        dests = get_whatsapp_destinatarios(only_active=True)
+                        if dests.empty:
+                            st.warning("Nenhum destinatário ativo configurado.")
+                        else:
+                            with st.spinner("Enviando via WhatsApp..."):
+                                enviou_algum = False
+                                for _, drow in dests.iterrows():
+                                    dtel = drow["telefone"]
+                                    dnome = drow["nome"]
+                                    p_nome = dnome.split()[0]
+                                    msg_text = (
+                                        f"🔔 *Notificação Bancada STI*\n\n"
+                                        f"Olá, *{p_nome}*!\n\n"
+                                        f"*{titulo}*\n"
+                                        f"{mensagem}\n\n"
+                                        f"_Enviado manualmente pela Central de Notificações._"
+                                    )
+                                    s_res = send_whatsapp_text(dtel, msg_text)
+                                    if s_res.get("success"):
+                                        log_whatsapp_dispatch(tipo, f"manual_{notif_id}", str(row.get("data_evento", "")), dtel, msg_text, "enviado", str(s_res))
+                                        enviou_algum = True
+                                if enviou_algum:
+                                    st.toast("Notificação enviada com sucesso no WhatsApp!", icon="📲")
+                                else:
+                                    st.error("Falha ao entregar notificação no WhatsApp.")
 
     # Controles de Paginação no Rodapé
     render_pagination_controls(

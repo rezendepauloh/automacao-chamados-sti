@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 import pandas as pd
 import streamlit as st
 from src.components.calendar import render_master_calendar
@@ -8,6 +8,7 @@ from src.database import (
     get_plantoes_matutino,
     get_plantoes_semanal,
     get_garantia_contratos_df,
+    get_viagens_df,
     load_data,
     save_evento_manual,
     get_eventos_manuais
@@ -171,6 +172,7 @@ def render_calendario_geral_page():
     chk_matutino = st.sidebar.checkbox("Plantão Matutino", value=True)
     chk_semanal = st.sidebar.checkbox("Plantão Semanal", value=True)
     chk_garantias = st.sidebar.checkbox("Garantias", value=True)
+    chk_viagens = st.sidebar.checkbox("Viagens da Bancada", value=True)
     chk_otrs = st.sidebar.checkbox("Chamados OTRS", value=True)
     chk_citsmart = st.sidebar.checkbox("Chamados CitSmart", value=True)
     chk_portarias = st.sidebar.checkbox("Portarias (Geral)", value=True)
@@ -384,6 +386,55 @@ def render_calendario_geral_page():
                         }
                     })
 
+    # VIAGENS DA BANCADA
+    if chk_viagens:
+        df_viagens = get_viagens_df()
+        if not df_viagens.empty:
+            for idx, row in df_viagens.iterrows():
+                saida_iso = row.get("saida_iso", "")
+                retorno_iso = row.get("retorno_iso", "")
+                localidade = row.get("localidade", "")
+                quem_foi = row.get("quem_foi", "")
+                chamado = row.get("chamado", "")
+                saida_br = row.get("saida_br", "")
+                retorno_br = row.get("retorno_br", "")
+
+                if not saida_iso:
+                    continue
+
+                cal_end = saida_iso
+                if retorno_iso:
+                    try:
+                        dt_ret = datetime.strptime(retorno_iso, "%Y-%m-%d")
+                        cal_end = (dt_ret + timedelta(days=1)).strftime("%Y-%m-%d")
+                    except Exception:
+                        cal_end = retorno_iso
+
+                title_text = f"✈️ Viagem: {localidade}"
+                if quem_foi:
+                    title_text += f" ({quem_foi})"
+
+                events.append({
+                    "id": f"viagem_{row.get('id', idx)}",
+                    "title": title_text,
+                    "start": saida_iso,
+                    "end": cal_end,
+                    "backgroundColor": "#0891b2",
+                    "borderColor": "#0e7490",
+                    "textColor": "#ffffff",
+                    "extendedProps": {
+                        "categoria_evento": "viagem",
+                        "tipo": "✈️ Viagem da Bancada",
+                        "localidade": localidade,
+                        "quem_foi": quem_foi,
+                        "chamado": chamado,
+                        "saida_br": saida_br,
+                        "retorno_br": retorno_br,
+                        "raw_data_inicio": saida_br,
+                        "raw_data_fim": retorno_br
+                    }
+                })
+
     # 5. CHAMADOS (OTRS e CITSMART)
     if chk_otrs or chk_citsmart:
         df_chamados = load_data()
@@ -592,6 +643,8 @@ def render_calendario_geral_page():
                     detalhes = f"Contrato: {props.get('contrato', 'N/A')} | Fornecedor: {props.get('fornecedor', 'N/A')}"
                 elif cat == "portaria":
                     detalhes = f"Membros: {props.get('membros', 'N/A')} | Ementa: {props.get('ementa', '')[:100]}..."
+                elif cat == "viagem":
+                    detalhes = f"Técnico(s): {props.get('quem_foi', 'N/A')} | Chamado: {props.get('chamado', 'N/A')} | Local: {props.get('localidade', 'N/A')}"
                 elif cat == "manual":
                     detalhes = f"Autor: {props.get('autor', 'N/A')} | {props.get('descricao', '')}"
 

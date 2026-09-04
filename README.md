@@ -43,7 +43,7 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Arquitetura Modular em Camadas (`dashboard.py`):** O dashboard principal é estruturado como um orquestrador conciso com separação completa em pastas:
   - `assets/css/styles.css`: Estilos globais e refinamentos de UI (com popover responsivo auto-ajustável de altura).
   - `src/components/`: Componentes reutilizáveis (cabeçalho/popover, alertas, status de logs, paginação `pagination.py`).
-  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `central_telefonica.py`, `plantoes.py`, `portarias.py`, `notificacoes.py`, `redistribuicao.py`, `garantia.py`, `mapas.py`, `links_faqs.py`, `fiscalizacao.py`, `impressoras.py`, `scripts_automacao.py`).
+  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `unidades.py`, `central_telefonica.py`, `plantoes.py`, `calendario_geral.py`, `mapas.py`, `redistribuicao.py`, `fiscalizacao.py`, `viagens.py`, `garantia.py`, `links_faqs.py`, `portarias.py`, `impressoras.py`, `scripts_automacao.py`, `notificacoes.py`, `configuracoes.py`).
 
 - **Navegação Persistente por URL (Query Parameters):** Sincronização bidirecional completa da página ativa e sub-abas via URL (`?tab=slug&subtab=slug`). Suporta F5 e compartilhamento de links diretos sem perder o foco do trabalho.
 - **Painel Interativo Premium (Streamlit):** Interface gráfica web responsiva para acompanhamento dos chamados em tempo real, com ordenação inteligente de datas e filtros dinâmicos de Status, Unidade, Usuário e TAG de IA.
@@ -118,7 +118,32 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Auto-Fix de Credenciais DPAPI (`cred_admin.xml`):** Identifica falhas de criptografia DPAPI e regenera automaticamente os arquivos de credenciais usando as credenciais administrativas do `SCCM_ADMIN_USER` salvas no Keyring do Windows.
 
 
-### 14. Catálogo Unificado de Unidades, Ramais (PDF / Intranet) & Monitoramento de Robôs
+### 14. Módulo de Viagens da Bancada STI
+
+- **Cronograma Integrado de Viagens (`viagens.py`):**
+  - _Calendário Interativo (FullCalendar v6)_: Visualização das viagens da equipe por períodos (multi-dias com ajuste automático de término inclusivo), detalhando localidade, técnicos escalados, número de chamados e datas.
+  - _Modal de Detalhes Dinâmico_: Exibição instantânea dos dados ao clicar no evento (Destino, Técnico, Chamado, Saída e Retorno).
+  - _Tabela Filtrável e Paginada_: Listagem tabular com busca em tempo real por técnico, destino e chamados, com exportação para Excel (`.xlsx`) e seletor dinâmico de itens por página.
+  - _Sincronização com o SharePoint_: Download direto HTTP e fallback para automação com Selenium ou caminho local no OneDrive corporativo, com persistência na tabela `viagens`.
+  - _Integração com o Calendário Geral_: Camada de ativação/desativação dedicada (`Viagens da Bancada`) integrada com a pesquisa global unificada.
+
+### 15. Disparador Local Windows via Protocol Handler (`bancada://`)
+
+- **Execução Desacoplada do Navegador:**
+  - Registro de protocolo URI customizado no Windows (`bancada://run?tool=...&target=...`) acionado diretamente por hiperlinks na interface web Streamlit.
+  - Instalador rápido em lote (`instalar_disparador_windows.cmd`) e registro de chaves (`instalar_protocolo_bancada.reg`).
+  - Lançador nativo em PowerShell (`bancada-launcher.ps1`) com elevação de privilégios (`Start-Process -Verb RunAs`) executado em janela oculta.
+  - Detecção inteligente do interpretador: seleciona automaticamente o PowerShell 7+ (`pwsh.exe`) se disponível, com fallback transparente para o Windows PowerShell 5.1 (`powershell.exe`).
+  - Abertura automática de relatórios gerados no navegador padrão sem bloqueios de permissão do container.
+
+### 16. Painel Central de Configurações & Cofre de Credenciais Criptografado
+
+- **Substituição Segura do `.env` (`configuracoes.py` & `settings_db.py`):**
+  - Gerenciamento unificado de todas as variáveis do sistema diretamente pelo painel web, organizado por abas temáticas (*Rede / AD*, *SCCM*, *PaperCut*, *Telefonia OXE*, *SharePoint & Planilhas*, *Portais & URLs*, *Inteligência Artificial*).
+  - Criptografia simétrica com **Fernet (AES-128)** e derivação de chave de máquina via **PBKDF2HMAC** para todos os campos sensíveis (senhas e tokens de API).
+  - Fallback automático para variáveis de ambiente `.env` e Keyring, garantindo compatibilidade reversa e portabilidade para PostgreSQL / Red Hat.
+
+### 17. Catálogo Unificado de Unidades, Ramais (PDF / Intranet) & Monitoramento de Robôs
 
 - **Extrator de Ramais Telefônicos da Intranet (`ramais_scraper.py`):** Autenticação automatizada via `requests.Session()` com credenciais do sistema (`USERNAME` / `PASSWORD`), busca dinâmica das URLs e download em memória dos PDFs oficiais de ramais (Comarcas do Interior e Capital/PGJ).
 - **Processamento Inteligente de PDF (`pdfplumber`):** Varredura linha a linha e extração estruturada de tabelas relacionando comarcas, prédios, setores, membros e seus respectivos números telefônicos na tabela relacional `ramais_mpms` do SQLite.
@@ -128,14 +153,47 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
   - _Registro do Portal_: Exibe a ficha completa formatada em modo de leitura.
 - **Acompanhamento de Robôs em Segundo Plano (Accordions & Logs):** Indicadores no sidebar com botões desabilitados durante a execução, acompanhamento do progresso através de `st.expander` com leitor de logs em tempo real e notificação em balão `st.toast` ao concluir.
 
-### 15. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
+### 18. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
 
 - **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
-- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro (incluindo o popover do "+X mais"), estilização vermelha `#ff4b4b` para abas ativas e exibição completa de chamados técnicos.
+- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro (incluindo o popover do "+X mais"), estilização vermelha `#ff4b4b` para abas ativas e exibição completa de chamados técnicos, plantões, garantias, portarias e viagens.
 - **Fechamento Automático de Chamados Ausentes (`close_missing_tickets_by_base`):** Mecanismo de sincronização relacional no SQLite que identifica chamados encerrados nos portais de origem e atualiza seu status para `'Fechado'`, com trava de segurança por volume mínimo (`active_ids >= 3`).
 - **Conformidade com a API Moderna do Streamlit:** Migração global de parâmetros legados de largura para `width='stretch'` e componentes de HTML customizados para `st.components.v1.html(...)`.
 
----
+### 19. Notificações Inteligentes no WhatsApp (Evolution API Docker)
+
+- **Container Dedicado da Evolution API (`docker-compose.yml`):**
+  - Integração nativa com a instância `bancada_evolution_api` em Docker (porta `8080`), conectada ao PostgreSQL da bancada.
+  - Conexão do telefone institucional da Bancada STI (`+55 67 98478-2034`).
+- **Pareamento Visual por QR Code no Navegador:**
+  - Aba de configurações `📱 WhatsApp & Alertas (Evolution)` com geração de QR Code base64 dinâmico na tela do Streamlit.
+  - Status em tempo real da conexão (`🟢 Conectado`, `🟡 Aguardando Leitura`, `⚪ Desconectado`), permitindo parear o celular funcional ou desconectar com 1 clique.
+- **Disparos Automáticos D-1 às 12:00 (Dias Úteis):**
+  - _Regra de Dias Úteis_: Eventos de Terça a Sexta avisam no dia anterior útil ($D-1$ às 12:00); eventos de Sábado, Domingo ou Segunda são disparados na **Sexta-feira anterior às 12:00**.
+  - _Plantões Matutinos e Semanais_: Avisos direcionados e personalizados pelo primeiro nome do técnico escalado.
+  - _Viagens da Bancada_: Alertas com destino, datas de saída/retorno e chamado vinculado para todos os servidores da bancada que irão viajar.
+  - _Novas Portarias_: Avisos instantâneos com número do ato e resumo da ementa sempre que os integrantes forem citados no Diário Oficial.
+- **Fuzzy Matching Inteligente & Destinatários Exclusivos:**
+  - Mapeamento flexível de nomes (`member_matcher.py`) que reconhece apelidos e abreviações das planilhas (ex: `"Paulo Rezende"` -> **Paulo Henrique Gonçalves Rezende**).
+  - Envio restrito e seguro exclusivamente para os 3 servidores autorizados:
+    - *Reginaldo da Silva Bandeira* (`+55 67 99145-5446`)
+    - *Luiz Leonardo Villalba* (`+55 67 99647-7799`)
+    - *Paulo Henrique Gonçalves Rezende* (`+55 67 99247-1379`)
+  - Registro de auditoria contra envios duplicados (`whatsapp_disparos_log`).
+
+### 20. Sistema de Agendamentos & Cron Jobs em Segundo Plano
+
+- **Motor Autônomo em Background (`src/services/cron_scheduler.py`):**
+  - Thread daemon nativa inicializada automaticamente pelo entrypoint do container (`init.py`).
+  - Execução contínua sem depender do usuário estar com o navegador aberto.
+  - Verificação a cada 30 segundos dos intervalos definidos no banco relacional.
+- **Gestão Visual Completa (`⚙️ Configurações > ⏰ Agendamentos & Cron Jobs`):**
+  - _Modo Recorrente_: Configuração de intervalos em minutos, horas ou dias (ex: Portarias a cada 2 horas, Viagens a cada 4 horas).
+  - _Modo Horário Fixo Diário_: Configuração de horário exato (ex: `12:00` para os alertas WhatsApp) com filtro opcional de dias úteis.
+  - _Controle Individual_: Chave liga/desliga para cada rotina de sincronização e scrapers.
+  - _Disparo Imediato_: Botão **`🚀 Executar Agora`** para acionamento sob demanda em thread isolada.
+- **Auditoria & Histórico (`cron_logs`):**
+  - Tabela com rastreamento de início, término, duração em segundos, status (`🟢 Sucesso`, `🔴 Erro`, `⏳ Executando`) e mensagem de retorno de cada execução automática.
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -161,34 +219,45 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 automated-OTRS-and-CitSmart/
 ├── assets/
 │   └── css/styles.css                # Estilos CSS globais da aplicação (com ajuste responsivo de UI)
-├── debug_logs/                       # Logs organizados por módulo (otrs, citsmart, oxe, papercut, plantoes, etc.)
+├── debug_logs/                       # Logs organizados por módulo (otrs, citsmart, oxe, papercut, plantoes, viagens, etc.)
+├── models/                           # Modelos de Machine Learning e classificadores treinados serializados (.joblib)
+├── uploads/                          # Diretório de arquivos enviados, anexos e mídias temporárias
+├── 01 - Dados Brutos/                # Planilhas e relatórios brutos baixados pelos robôs
+├── 02 - Dados tratados/              # Dados intermediários limpos e normalizados
+├── 03 - Dados prontos/               # Bases consolidadas prontas para consumo
 ├── src/
-│   ├── components/                   # Componentes reutilizáveis do frontend (header, subtabs, calendar, pagination)
-│   ├── database/                     # Camada modular de banco de dados SQLite (chamados, ramais, mapas, plantões, etc.)
+│   ├── components/                   # Componentes reutilizáveis do frontend (header, subtabs, calendar, pagination, status_banner)
+│   ├── database/                     # Camada modular de banco de dados SQLite/Postgres (12 módulos relacionais e conexões)
 │   ├── js/                           # Arquivos estáticos de suporte ao cliente JS (server-info.js)
-│   ├── scrapers/                     # Bots e raspadores automatizados de coleta (otrs, citsmart, oxe, papercut, plantoes, faq, etc.)
-│   ├── scripts_powershell/           # Scripts de automação remota (Analisador, Manutenção, Perfis)
-│   ├── syncs/                        # Workers assíncronos de sincronização em segundo plano
-│   ├── tabs/                         # Módulos de páginas isolados por funcionalidade no dashboard Streamlit
+│   ├── protocol_handler/             # Disparador nativo local Windows (bancada://, instalador .cmd, registro .reg, launcher .ps1)
+│   ├── scrapers/                     # Bots e raspadores automatizados (otrs, citsmart, oxe, papercut, plantoes, ramais, unidades, faq)
+│   ├── scripts_powershell/           # Scripts de automação remota modularizados (analisador, manutencao, perfis)
+│   ├── services/                     # Serviços de background e integrações (cron_scheduler.py, evolution_client.py, member_matcher.py)
+│   ├── syncs/                        # Workers assíncronos de sincronização (doações, fiscalização, garantia, plantões, portarias, viagens, whatsapp)
+│   ├── tabs/                         # Módulos de páginas isolados por funcionalidade no dashboard Streamlit (16 abas completas)
+│   ├── config.py                     # Configurações centralizadas, logging e carregador do cofre/ambiente
+│   ├── crypto_utils.py               # Utilitários de criptografia Fernet (AES-128) e derivação PBKDF2 para senhas
+│   ├── manual_entries.py             # Base de dados de entradas e cadastros manuais de unidades
 │   ├── preprocess_chamados.py        # Limpeza e padronização dos chamados de TI
 │   ├── preprocess_oxe.py             # Tratamento e normalização dos ramais do OXE
+│   ├── salvar_senha.py               # Utilitário interativo de credenciais e cofre de senhas (Keyring)
 │   ├── tag_classifier.py             # Classificador de IA com NLP (spaCy + Scikit-Learn)
-│   ├── terminal.py                   # Formatador de logs com cores ANSI para o terminal
-│   ├── config.py                     # Configurações centralizadas, logging e carregador do keyring/ambiente
-│   └── salvar_senha.py               # Utilitário interativo de credenciais e cofre de senhas (Keyring)
+│   └── terminal.py                   # Formatador de logs com cores ANSI para o terminal
 ├── tests/                            # Suíte de testes unitários automatizados (NLP, scrapers, banco e tabs)
 ├── .env.example                      # Template de variáveis de ambiente
 ├── .env                              # Variáveis de ambiente locais (não commitado)
 ├── .dockerignore                     # Filtro de arquivos excluídos do contexto da imagem Docker
 ├── 00-iniciar.sh                     # Lançador principal Linux / WSL para Docker
 ├── 00-iniciar.cmd                    # Lançador principal Windows (duplo clique) para Docker
+├── sistema-bancada.desktop           # Atalho para o menu de aplicativos desktop do Linux / Ubuntu
 ├── Dockerfile                        # Especificação da imagem Docker containerizada
-├── docker-compose.yml                # Orquestrador Docker dos serviços web e banco de dados
+├── Dockerfile-MP-RedHat              # Especificação de imagem Docker para ambiente Red Hat Enterprise Linux
+├── docker-compose.yml                # Orquestrador Docker dos serviços web, postgres e evolution-api
 ├── requirements.txt                  # Lista de dependências Python (pip)
 ├── chamados.db                       # Banco de dados SQLite relacional local
-├── init.py                           # Entrypoint do container (exibe banner colorido, QR Code e inicia o Streamlit)
+├── init.py                           # Entrypoint do container (inicia o daemon de cron e o Streamlit)
 ├── dashboard.py                      # Orquestrador central do Streamlit Dashboard
-└── orquestrador.py                   # Script mestre do fluxo executado em background
+└── orquestrador.py                   # Script mestre de coleta e classificação de chamados executado em background
 ```
 
 ---
@@ -291,10 +360,12 @@ O sistema opera de forma totalmente containerizada através do **Docker Compose*
 
 ### 🐳 3. Estrutura de Containers (WSL / Debian)
 
-O projeto conta com arquitetura pronta para execução universal em containers:
+O projeto conta com arquitetura pronta para execução universal em containers orquestrada pelo **Docker Compose**:
 
-- **`Dockerfile` (WSL / Padrão Debian):** Imagem base `python:3.11-slim` com Playwright/Chromium headless instalado, healthcheck, suporte a portas dinâmicas via `STREAMLIT_PORT`, bypass de proxy SSL corporativo e fuso horário brasileiro (`America/Campo_Grande`).
-- **`docker-compose.yml`:** Orquestração com volumes persistentes para banco de dados SQLite (`chamados.db`), cofre de senhas do Linux (`~/.local/share/python_keyring`), pastas de dados (`01`, `02`, `03`, `models`, `debug_logs`) e mapeamento do código (`src/`, `init.py`) para **Live-Reload** em tempo real.
+- **`web` (`bancada_streamlit_app`):** Container principal baseado em `Dockerfile` (`python:3.11-slim`) com Playwright/Chromium headless, healthcheck ativo, fuso horário brasileiro (`America/Campo_Grande`), bypass de SSL corporativo e Live-Reload mapeado para `src/`, `assets/`, `dashboard.py` e `init.py`.
+- **`db` (`bancada_postgres_db`):** Banco relacional PostgreSQL 15 Alpine (`postgres:15-alpine`), garantindo persistência estruturada de dados através do volume dedicado `postgres_data`.
+- **`evolution-api` (`bancada_evolution_api`):** API integrada para WhatsApp (`evoapicloud/evolution-api`), conectada ao PostgreSQL para gerenciar sessões, QR Code e envio assíncrono de mensagens e alertas.
+- **Volumes Persistentes:** Banco de dados SQLite (`chamados.db`), instâncias Evolution (`evolution_instances`, `evolution_store`), cofre de senhas do Linux (`~/.local/share/python_keyring`), pastas de dados (`01`, `02`, `03`, `models`, `debug_logs`, `uploads`).
 
 ---
 

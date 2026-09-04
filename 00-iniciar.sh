@@ -189,10 +189,10 @@ start_system() {
         docker compose build web
     fi
 
-    # Inicia o container diretamente sem auto-build desnecessário
-    if ! docker compose up -d web; then
+    # Inicia os containers (web, db e evolution-api) diretamente sem auto-build desnecessário
+    if ! docker compose up -d; then
         echo ""
-        echo -e "${C_RED}[ERRO] Falha ao iniciar o container web do Sistema Bancada.${C_RESET}"
+        echo -e "${C_RED}[ERRO] Falha ao iniciar os containers do Sistema Bancada e Evolution API.${C_RESET}"
         exit 1
     fi
 

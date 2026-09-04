@@ -103,8 +103,8 @@ exit /b 0
 :start_system
 call :setup_docker_and_ip
 cls
-echo Iniciando Sistema Bancada (Porta: %PORT% ^| IP: %LOCAL_IP%)...
-%DOCKER_CMD% up -d web
+echo Iniciando Sistema Bancada e servicos (Porta: %PORT% ^| IP: %LOCAL_IP%)...
+%DOCKER_CMD% up -d
 timeout /t 2 /nobreak >nul
 start http://localhost:%PORT%/
 goto :stream_logs
@@ -114,7 +114,7 @@ call :setup_docker_and_ip
 cls
 echo Reconstruindo imagem e iniciando Sistema Bancada...
 %DOCKER_CMD% build web
-%DOCKER_CMD% up -d web
+%DOCKER_CMD% up -d
 timeout /t 2 /nobreak >nul
 start http://localhost:%PORT%/
 goto :stream_logs
