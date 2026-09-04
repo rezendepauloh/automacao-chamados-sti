@@ -70,7 +70,7 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 
 ### 9. Conferência de Portarias dos Membros da Bancada
 
-- **Integração com a API de Atos e Normas do MPMS:** Consulta automatizada para os servidores da bancada (_Paulo Rezende, Reginaldo Bandeira e Luiz Villalba_).
+- **Integração com a API de Atos e Normas do MPMS:** Consulta automatizada para os servidores da bancada.
 - **Sanitização Unicode & HTML:** Limpeza de tags HTML (`<strong>`), acentos e hífens Unicode quebrados (`\u0096`, `\u2013`), além de deduplicação inteligente.
 - **Modal de Detalhes & Download de PDF:** Visualizador completo da ementa, diário oficial e download direto do PDF do anexo (`/download/{atocod}`).
 
@@ -174,11 +174,8 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
   - _Viagens da Bancada_: Alertas com destino, datas de saída/retorno e chamado vinculado para todos os servidores da bancada que irão viajar.
   - _Novas Portarias_: Avisos instantâneos com número do ato e resumo da ementa sempre que os integrantes forem citados no Diário Oficial.
 - **Fuzzy Matching Inteligente & Destinatários Exclusivos:**
-  - Mapeamento flexível de nomes (`member_matcher.py`) que reconhece apelidos e abreviações das planilhas (ex: `"Paulo Rezende"` -> **Paulo Henrique Gonçalves Rezende**).
-  - Envio restrito e seguro exclusivamente para os 3 servidores autorizados:
-    - *Reginaldo da Silva Bandeira* (`+55 67 99145-5446`)
-    - *Luiz Leonardo Villalba* (`+55 67 99647-7799`)
-    - *Paulo Henrique Gonçalves Rezende* (`+55 67 99247-1379`)
+  - Mapeamento flexível de nomes (`member_matcher.py`) que reconhece apelidos e abreviações das planilhas.
+  - Envio restrito e seguro exclusivamente para os servidores autorizados.
   - Registro de auditoria contra envios duplicados (`whatsapp_disparos_log`).
 
 ### 20. Sistema de Agendamentos & Cron Jobs em Segundo Plano
