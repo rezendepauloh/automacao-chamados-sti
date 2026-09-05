@@ -27,9 +27,20 @@ def check_process_running(lock_file: Path) -> bool:
         else:
             try:
                 os.kill(pid, 0)
-                return True
             except (OSError, ProcessLookupError):
                 return False
+
+            cmdline_path = f"/proc/{pid}/cmdline"
+            if os.path.exists(cmdline_path):
+                try:
+                    with open(cmdline_path, "rb") as f:
+                        cmd = f.read().replace(b"\x00", b" ").decode("utf-8", errors="ignore").lower()
+                    # Se o lock for do orquestrador, garante que o processo é de fato o orquestrador
+                    if "automated_otrs_citsmart" in lock_file.name:
+                        return "orquestrador.py" in cmd
+                except Exception:
+                    return True
+            return True
     except Exception:
         pass
     return False

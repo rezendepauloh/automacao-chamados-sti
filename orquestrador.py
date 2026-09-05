@@ -42,9 +42,20 @@ def is_pid_running(pid: int) -> bool:
     else:
         try:
             os.kill(pid, 0)
-            return True
         except (OSError, ProcessLookupError):
             return False
+
+        # Validação aprofundada em Linux/Docker: verifica se o processo ativo é realmente o orquestrador
+        cmdline_path = f"/proc/{pid}/cmdline"
+        if os.path.exists(cmdline_path):
+            try:
+                with open(cmdline_path, "rb") as f:
+                    cmd = f.read().replace(b"\x00", b" ").decode("utf-8", errors="ignore").lower()
+                # Se o processo existe mas NÃO é o orquestrador (ex: PID reutilizado pelo Streamlit ou bash), descarta como lock órfão
+                return "orquestrador.py" in cmd
+            except Exception:
+                return True
+        return True
 
 def acquire_lock():
     if LOCK_FILE.exists():
