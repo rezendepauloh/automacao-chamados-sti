@@ -6,8 +6,20 @@ from src.database.settings_db import (
     set_setting,
     seed_settings_from_env_if_empty
 )
+import pandas as pd
 from src.database.connection import DB_TYPE, DB_PATH
 from src.components.subtabs import render_subtabs
+
+def format_br_datetime(val) -> str:
+    """Formata datas ISO para padrão brasileiro DD/MM/AAAA HH:MM:SS."""
+    if not val or pd.isna(val) or str(val).strip().lower() in ["none", "nan", "nunca", ""]:
+        return "Nunca"
+    try:
+        dt = pd.to_datetime(val)
+        return dt.strftime("%d/%m/%Y %H:%M:%S")
+    except Exception:
+        return str(val)
+
 
 CONFIG_SUBTAB_MAP = {
     "rede": "🔑 Rede & AD (OTRS / CitSmart)",
@@ -53,14 +65,28 @@ def render_configuracoes_page():
             st.toast("✅ Configurações reimportadas do .env com sucesso!", icon="🔄")
             st.rerun()
 
-    # Carrega as configurações atuais do banco (descriptografadas para o formulário)
-    settings = get_all_settings(decrypt=True)
+    # Carrega as configurações brutas do banco (com valores de senhas cifrados para o formulário)
+    settings = get_all_settings(decrypt=False)
     
     # Subtabs sincronizadas com URL Search Params (?subtab=slug)
     selected_subtab = render_subtabs(CONFIG_SUBTAB_MAP, default_slug="rede", key="config_subtabs_radio")
     st.markdown("<br>", unsafe_allow_html=True)
 
     form_values = {}
+
+    def render_password_input(label: str, key_name: str, widget_key: str, help_text: str = ""):
+        """Renderiza um campo de senha protegido com o valor criptografado em repouso."""
+        raw_val = settings.get(key_name, {}).get("value", "") or ""
+        val = st.text_input(
+            label,
+            value=raw_val,
+            type="password",
+            key=widget_key,
+            help=help_text or "🔒 Senha gravada no cofre seguro. Para alterá-la, basta digitar a nova senha aqui e salvar."
+        )
+        if raw_val:
+            st.caption("🔒 *Senha protegida no cofre criptografado. Digite uma nova senha caso deseje alterá-la.*")
+        return val, raw_val
 
     # -------------------------------------------------------------------------
     # TAB 1: Rede & AD
@@ -76,9 +102,9 @@ def render_configuracoes_page():
                 False, "rede", "Usuário de Rede / Active Directory"
             )
         with c2:
+            ad_pass_val, ad_pass_raw = render_password_input("Senha da Rede / AD", "AD_PASSWORD", "cfg_ad_pass", "Senha utilizada para login no OTRS e CitSmart")
             form_values["AD_PASSWORD"] = (
-                st.text_input("Senha da Rede / AD", value=settings.get("AD_PASSWORD", {}).get("value", ""), type="password", key="cfg_ad_pass", help="Armazenada de forma criptografada no banco"),
-                True, "rede", "Senha de Rede / Active Directory (OTRS & CitSmart)"
+                ad_pass_val, True, "rede", "Senha de Rede / Active Directory (OTRS & CitSmart)", ad_pass_raw
             )
 
         c3, c4 = st.columns(2)
@@ -115,9 +141,9 @@ def render_configuracoes_page():
                 False, "sccm", "Conta de Administrador para consultas SCCM"
             )
         with c2:
+            sccm_pass_val, sccm_pass_raw = render_password_input("Senha da Conta Administradora", "SCCM_ADMIN_PASSWORD", "cfg_sccm_pass", "Senha administrativa do SCCM para consultas WMI/CIM")
             form_values["SCCM_ADMIN_PASSWORD"] = (
-                st.text_input("Senha da Conta Administradora", value=settings.get("SCCM_ADMIN_PASSWORD", {}).get("value", ""), type="password", key="cfg_sccm_pass", help="Armazenada de forma criptografada"),
-                True, "sccm", "Senha da conta Administradora do SCCM"
+                sccm_pass_val, True, "sccm", "Senha da conta Administradora do SCCM", sccm_pass_raw
             )
 
         c3, c4 = st.columns(2)
@@ -146,9 +172,9 @@ def render_configuracoes_page():
                 False, "papercut", "Usuário Administrador do PaperCut"
             )
         with c2:
+            pc_pass_val, pc_pass_raw = render_password_input("Senha do PaperCut", "PAPERCUT_PASS", "cfg_pc_pass", "Senha do Administrador do PaperCut")
             form_values["PAPERCUT_PASS"] = (
-                st.text_input("Senha do PaperCut", value=settings.get("PAPERCUT_PASS", {}).get("value", ""), type="password", key="cfg_pc_pass"),
-                True, "papercut", "Senha do Administrador do PaperCut"
+                pc_pass_val, True, "papercut", "Senha do Administrador do PaperCut", pc_pass_raw
             )
 
         form_values["PAPERCUT_URL"] = (
@@ -181,9 +207,9 @@ def render_configuracoes_page():
                 False, "oxe", "Usuário de acesso à Central Telefônica OXE"
             )
         with c2:
+            oxe_pass_val, oxe_pass_raw = render_password_input("Senha do OXE", "OXE_PASS", "cfg_oxe_pass", "Senha de acesso à Central Telefônica OXE")
             form_values["OXE_PASS"] = (
-                st.text_input("Senha do OXE", value=settings.get("OXE_PASS", {}).get("value", ""), type="password", key="cfg_oxe_pass"),
-                True, "oxe", "Senha de acesso à Central Telefônica OXE"
+                oxe_pass_val, True, "oxe", "Senha de acesso à Central Telefônica OXE", oxe_pass_raw
             )
         form_values["OXE_URL"] = (
             st.text_input("URL da Central Telefônica", value=settings.get("OXE_URL", {}).get("value", "https://10.12.32.30"), key="cfg_oxe_url"),
@@ -275,9 +301,9 @@ def render_configuracoes_page():
         st.markdown("#### 🤖 Google Gemini AI")
         st.info("Chave de API do modelo generativo para enriquecimento e categorização de chamados.")
 
+        gem_val, gem_raw = render_password_input("Chave de API do Gemini (API Key)", "GEMINI_API_KEY", "cfg_gemini_key", "Chave da API do Google Gemini")
         form_values["GEMINI_API_KEY"] = (
-            st.text_input("Chave de API do Gemini (API Key)", value=settings.get("GEMINI_API_KEY", {}).get("value", ""), type="password", key="cfg_gemini_key", help="Armazenada de forma criptografada no banco"),
-            True, "ia", "Chave da API do Google Gemini"
+            gem_val, True, "ia", "Chave da API do Google Gemini", gem_raw
         )
 
     # -------------------------------------------------------------------------
@@ -310,9 +336,9 @@ def render_configuracoes_page():
                 False, "whatsapp", "Nome da Instância do WhatsApp na Evolution"
             )
         with col_w2:
+            evo_val, evo_raw = render_password_input("Chave de Autenticação (API Key)", "EVOLUTION_API_KEY", "cfg_evo_key", "Token de autenticação da Evolution API")
             form_values["EVOLUTION_API_KEY"] = (
-                st.text_input("Chave de Autenticação (API Key)", value=settings.get("EVOLUTION_API_KEY", {}).get("value", "bancada_secret_token_123"), type="password", key="cfg_evo_key"),
-                True, "whatsapp", "Token de autenticação da Evolution API"
+                evo_val, True, "whatsapp", "Token de autenticação da Evolution API", evo_raw
             )
             form_values["WHATSAPP_INSTITUCIONAL_NUMERO"] = (
                 st.text_input("Telefone Institucional da Bancada", value=settings.get("WHATSAPP_INSTITUCIONAL_NUMERO", {}).get("value", "+55 67 98478-2034"), key="cfg_evo_tel"),
@@ -433,12 +459,61 @@ def render_configuracoes_page():
                     st.success(f"Resultado: {res_sch}")
 
         # Histórico de disparos
-        with st.expander("📋 Ver Histórico Recente de Disparos WhatsApp"):
-            logs_df = get_whatsapp_disparos_log(limit=25)
-            if not logs_df.empty:
-                st.dataframe(logs_df, use_container_width=True)
-            else:
-                st.info("Nenhum disparo registrado até o momento.")
+        st.markdown("---")
+        from src.components.pagination import paginate_items, render_pagination_controls
+
+        col_w_title, col_w_perpage = st.columns([3, 1])
+        with col_w_title:
+            st.markdown("##### 📋 Histórico Recente de Disparos WhatsApp")
+            st.caption("Acompanhe o log detalhado de alertas enviados aos servidores da bancada.")
+        with col_w_perpage:
+            w_per_page_options = [10, 20, 50, 100, "Todos"]
+            w_selected_per_page = st.selectbox(
+                "📄 Itens por página:",
+                options=w_per_page_options,
+                index=0,
+                key="whatsapp_logs_table_items_per_page"
+            )
+            w_items_per_page_val = 999999 if str(w_selected_per_page).lower() == "todos" else int(w_selected_per_page)
+
+        logs_df = get_whatsapp_disparos_log(limit=250)
+        if not logs_df.empty:
+            df_w_display = logs_df.copy()
+            if "created_at" in df_w_display.columns:
+                df_w_display["created_at"] = df_w_display["created_at"].apply(format_br_datetime)
+
+            df_w_page, w_current_page, w_total_pages, w_total_items = paginate_items(
+                df_w_display,
+                page_key="whatsapp_logs_pag",
+                items_per_page=w_items_per_page_val
+            )
+
+            st.dataframe(
+                df_w_page,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", width="small"),
+                    "tipo_evento": st.column_config.TextColumn("Tipo de Evento", width="medium"),
+                    "evento_id": st.column_config.TextColumn("ID Evento", width="small"),
+                    "data_evento": st.column_config.TextColumn("Data Evento", width="small"),
+                    "destinatario": st.column_config.TextColumn("Destinatário", width="medium"),
+                    "mensagem": st.column_config.TextColumn("Mensagem Enviada", width="large"),
+                    "status": st.column_config.TextColumn("Status", width="small"),
+                    "created_at": st.column_config.TextColumn("Data/Hora Envio", width="medium"),
+                },
+                column_order=["id", "tipo_evento", "data_evento", "destinatario", "status", "created_at", "mensagem"],
+                hide_index=True,
+                width='stretch'
+            )
+
+            render_pagination_controls(
+                page_key="whatsapp_logs_pag",
+                current_page=w_current_page,
+                total_pages=w_total_pages,
+                total_items=w_total_items,
+                items_per_page=w_items_per_page_val
+            )
+        else:
+            st.info("Nenhum disparo registrado até o momento.")
 
     # -------------------------------------------------------------------------
     # TAB 9: Agendamentos & Cron Jobs
@@ -455,26 +530,22 @@ def render_configuracoes_page():
         )
         from src.services.cron_scheduler import get_cron_daemon
         from src.components.status_banner import read_log_lines
-        import pandas as pd
-
-        def format_br_datetime(val) -> str:
-            """Formata datas ISO para padrão brasileiro DD/MM/AAAA HH:MM:SS."""
-            if not val or pd.isna(val) or str(val).strip().lower() in ["none", "nan", "nunca", ""]:
-                return "Nunca"
-            try:
-                dt = pd.to_datetime(val)
-                return dt.strftime("%d/%m/%Y %H:%M:%S")
-            except Exception:
-                return str(val)
 
         # Mapeamento de logs específicos para cada tarefa
         TASK_LOG_PATH_MAP = {
-            "sync_portarias": Path("debug_logs") / "faq" / "sync_portarias.log",
-            "sync_viagens": Path("debug_logs") / "viagens" / "viagens_sync.log",
-            "sync_plantoes": Path("debug_logs") / "plantoes" / "sync_alerts.log",
-            "sync_fiscalizacao": Path("debug_logs") / "fiscalizacao" / "sync.log",
-            "orquestrador_chamados": Path("debug_logs") / "orquestrador" / "orquestrador.log",
             "whatsapp_d1": Path("debug_logs") / "plantoes" / "whatsapp_scheduler.log",
+            "sync_portarias": Path("debug_logs") / "faq" / "sync_portarias.log",
+            "sync_plantoes_matutino": Path("debug_logs") / "plantoes" / "plantoes.log",
+            "sync_plantoes_semanal": Path("debug_logs") / "plantoes" / "plantoes.log",
+            "sync_fiscalizacao": Path("debug_logs") / "fiscalizacao" / "sync.log",
+            "sync_garantia": Path("debug_logs") / "garantia" / "garantia.log",
+            "sync_viagens": Path("debug_logs") / "viagens" / "viagens_sync.log",
+            "sync_doacoes": Path("debug_logs") / "donations" / "donations.log",
+            "sync_unidades": Path("debug_logs") / "unidades" / "unidades_scraper.log",
+            "sync_ramais": Path("debug_logs") / "ramais" / "ramais_scraper.log",
+            "sync_oxe": Path("debug_logs") / "oxe" / "oxe_scraper.log",
+            "sync_papercut": Path("debug_logs") / "papercut" / "papercut_scraper.log",
+            "orquestrador_chamados": Path("debug_logs") / "orquestrador" / "orquestrador.log",
         }
 
         daemon = get_cron_daemon()
@@ -521,7 +592,18 @@ def render_configuracoes_page():
                     from src.components.status_banner import check_orquestrador_running
                     is_task_executing = check_orquestrador_running()
 
-                status_color = "#3b82f6" if is_task_executing else ("#22c55e" if ult_status == "sucesso" else ("#ef4444" if ult_status == "erro" else "#f59e0b"))
+                if is_task_executing:
+                    display_status = "EXECUTANDO..."
+                    status_color = "#3b82f6"
+                elif ult_status == "sucesso":
+                    display_status = "SUCESSO"
+                    status_color = "#22c55e"
+                elif ult_status == "erro":
+                    display_status = "ERRO"
+                    status_color = "#ef4444"
+                else:
+                    display_status = ult_status.upper() if ult_status else "PENDENTE"
+                    status_color = "#f59e0b"
 
                 with st.container(border=True):
                     # Cabeçalho da Tarefa
@@ -531,7 +613,7 @@ def render_configuracoes_page():
                         st.caption(f"📁 Categoria: `{cat}` | {desc}")
                     with c_h2:
                         st.caption(f"Última Execução: **{ult_exec}**")
-                        st.markdown(f"Status: <span style='color:{status_color}; font-weight:bold;'>{ult_status.upper()}</span>", unsafe_allow_html=True)
+                        st.markdown(f"Status: <span style='color:{status_color}; font-weight:bold;'>{display_status}</span>", unsafe_allow_html=True)
                     with c_h3:
                         if st.button("🚀 Executar Agora", key=f"btn_run_cron_{task_id}", use_container_width=True, disabled=is_task_executing):
                             with st.spinner(f"Iniciando {task_id}..."):
@@ -608,18 +690,61 @@ def render_configuracoes_page():
 
         # Histórico de Execuções
         st.markdown("---")
-        with st.expander("📋 Ver Histórico Recente de Execuções Automáticas (Logs)", expanded=False):
-            logs_cron_df = get_recent_cron_logs(limit=30)
-            if not logs_cron_df.empty:
-                # Formata Início e Fim para padrão brasileiro DD/MM/AAAA HH:MM:SS
-                df_display = logs_cron_df.copy()
-                if "inicio" in df_display.columns:
-                    df_display["inicio"] = df_display["inicio"].apply(format_br_datetime)
-                if "fim" in df_display.columns:
-                    df_display["fim"] = df_display["fim"].apply(format_br_datetime)
-                st.dataframe(df_display, use_container_width=True)
-            else:
-                st.info("Nenhuma execução registrada no agendador até o momento.")
+        from src.components.pagination import paginate_items, render_pagination_controls
+
+        col_h_title, col_h_perpage = st.columns([3, 1])
+        with col_h_title:
+            st.markdown("##### 📋 Histórico Recente de Execuções Automáticas")
+            st.caption("Acompanhe o log das tarefas disparadas pelo agendador ou manualmente.")
+        with col_h_perpage:
+            per_page_options = [10, 20, 50, 100, "Todos"]
+            selected_per_page = st.selectbox(
+                "📄 Itens por página:",
+                options=per_page_options,
+                index=0,
+                key="cron_logs_table_items_per_page"
+            )
+            items_per_page_val = 999999 if str(selected_per_page).lower() == "todos" else int(selected_per_page)
+
+        logs_cron_df = get_recent_cron_logs(limit=250)
+        if not logs_cron_df.empty:
+            df_display = logs_cron_df.copy()
+            if "inicio" in df_display.columns:
+                df_display["inicio"] = df_display["inicio"].apply(format_br_datetime)
+            if "fim" in df_display.columns:
+                df_display["fim"] = df_display["fim"].apply(format_br_datetime)
+
+            df_page, current_page, total_pages, total_items = paginate_items(
+                df_display,
+                page_key="cron_logs_pag",
+                items_per_page=items_per_page_val
+            )
+
+            st.dataframe(
+                df_page,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", width="small"),
+                    "rotina": st.column_config.TextColumn("Rotina / Tarefa", width="medium"),
+                    "inicio": st.column_config.TextColumn("Início", width="small"),
+                    "fim": st.column_config.TextColumn("Término", width="small"),
+                    "duracao_s": st.column_config.NumberColumn("Duração (s)", format="%.2f s", width="small"),
+                    "status": st.column_config.TextColumn("Status", width="small"),
+                    "mensagem": st.column_config.TextColumn("Mensagem / Detalhes", width="large"),
+                },
+                column_order=["id", "rotina", "inicio", "fim", "duracao_s", "status", "mensagem"],
+                hide_index=True,
+                width='stretch'
+            )
+
+            render_pagination_controls(
+                page_key="cron_logs_pag",
+                current_page=current_page,
+                total_pages=total_pages,
+                total_items=total_items,
+                items_per_page=items_per_page_val
+            )
+        else:
+            st.info("Nenhuma execução registrada no agendador até o momento.")
 
     # Botão de Ação Global para Salvar a aba ativa (apenas se houver campos de formulário)
     if form_values:
@@ -628,7 +753,17 @@ def render_configuracoes_page():
         with col_save:
             if st.button("💾 Salvar Configurações", type="primary", use_container_width=True):
                 salvos = 0
-                for key, (val, is_sec, cat, desc) in form_values.items():
+                for key, item in form_values.items():
+                    val = item[0]
+                    is_sec = item[1]
+                    cat = item[2]
+                    desc = item[3]
+                    raw_orig = item[4] if len(item) > 4 else None
+
+                    # Se for campo de senha protegido e o valor não foi alterado (continua o cipher do banco), não re-encripta
+                    if is_sec and raw_orig is not None and val == raw_orig:
+                        continue
+
                     if set_setting(key, val, is_secret=is_sec, category=cat, description=desc):
                         salvos += 1
                 

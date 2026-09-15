@@ -30,11 +30,19 @@ def execute_task_by_id(task_id: str) -> str:
     import tempfile
     logger.info(f"🚀 Iniciando execução da tarefa: {task_id}")
 
-    # Helper para criar e remover lock file de compatibilidade com a UI (apenas para rotinas que não gerenciam lock próprio)
+    # Helper para criar e remover lock file de compatibilidade com a UI
     lock_name_map = {
         "sync_portarias": "portarias_sync.lock",
         "sync_viagens": "viagens_sync.lock",
-        "sync_fiscalizacao": "fiscalizacao_sync.lock"
+        "sync_fiscalizacao": "fiscalizacao_sync.lock",
+        "sync_garantia": "garantia_sync.lock",
+        "sync_doacoes": "donations_sync.lock",
+        "sync_unidades": "automated_unidades_sync.lock",
+        "sync_ramais": "automated_ramais_sync.lock",
+        "sync_oxe": "oxe_scraper.lock",
+        "sync_papercut": "papercut_scraper.lock",
+        "sync_plantoes_matutino": "automated_plantoes_sync.lock",
+        "sync_plantoes_semanal": "automated_plantoes_sync.lock"
     }
 
     lock_file = None
@@ -62,23 +70,60 @@ def execute_task_by_id(task_id: str) -> str:
             ok = run_viagens_sync()
             return "Sincronização de viagens finalizada com sucesso." if ok else "Falha ou planilha não localizada."
 
-        elif task_id == "sync_plantoes":
+        elif task_id == "sync_plantoes_matutino":
+            from src.scrapers.plantoes_scraper import sync_matutino_from_sharepoint
             from src.syncs.sync_plantoes_alerts import check_and_generate_plantao_alerts
+            count = sync_matutino_from_sharepoint()
             check_and_generate_plantao_alerts()
-            return "Verificação de escalas de plantão concluída com sucesso."
+            return f"Plantão Matutino sincronizado com sucesso ({count} registros extraídos)."
+
+        elif task_id == "sync_plantoes_semanal":
+            from src.scrapers.plantoes_scraper import scrape_simp_plantoes
+            from src.syncs.sync_plantoes_alerts import check_and_generate_plantao_alerts
+            current_year = datetime.now().year
+            recs = scrape_simp_plantoes(ano=current_year)
+            check_and_generate_plantao_alerts()
+            return f"Plantão Semanal (SIMP) raspado com sucesso ({len(recs)} semanas processadas)."
 
         elif task_id == "sync_fiscalizacao":
             from src.syncs.sync_fiscalizacao import run_fiscalizacao_sync
+            run_fiscalizacao_sync()
+            return "Sincronização de fiscalização de contratos concluída com sucesso."
+
+        elif task_id == "sync_garantia":
             from src.syncs.sync_garantia import run_garantia_sync
-            try:
-                run_fiscalizacao_sync()
-            except Exception as e1:
-                logger.warning(f"Aviso na sincronização de fiscalização: {e1}")
-            try:
-                run_garantia_sync()
-            except Exception as e2:
-                logger.warning(f"Aviso na sincronização de garantia: {e2}")
-            return "Sincronização de fiscalização e garantia concluída."
+            run_garantia_sync()
+            return "Sincronização de garantias de equipamentos concluída com sucesso."
+
+        elif task_id == "sync_doacoes":
+            from src.syncs.sync_donations import run_donations_sync
+            run_donations_sync()
+            return "Sincronização de doações e redistribuições concluída com sucesso."
+
+        elif task_id == "sync_unidades":
+            from src.scrapers.unidades_scraper import run_unidades_scraper
+            run_unidades_scraper(fast=False)
+            return "Catálogo de unidades do portal MPMS atualizado com sucesso."
+
+        elif task_id == "sync_ramais":
+            from src.scrapers.ramais_scraper import run_ramais_scraper
+            run_ramais_scraper()
+            return "Catálogo de ramais telefônicos da Intranet atualizado com sucesso."
+
+        elif task_id == "sync_oxe":
+            from src.scrapers.oxe_scraper import scrape_oxe
+            from src.preprocess_oxe import preprocess_oxe
+            ok = scrape_oxe()
+            if ok:
+                preprocess_oxe()
+                return "Central Telefônica OXE sincronizada e pré-processada com sucesso."
+            else:
+                raise RuntimeError("Falha na coleta de dados da Central Telefônica OXE.")
+
+        elif task_id == "sync_papercut":
+            from src.scrapers.papercut_scraper import run_papercut_scraper
+            run_papercut_scraper()
+            return "Gestão de impressoras PaperCut sincronizada com sucesso."
 
         elif task_id == "orquestrador_chamados":
             import subprocess

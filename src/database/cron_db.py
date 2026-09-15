@@ -21,12 +21,60 @@ DEFAULT_TASKS = [
         "nome": "📜 Varredura de Novas Portarias MPMS",
         "categoria": "Diário Oficial",
         "ativo": 1,
-        "tipo_agendamento": "intervalo",
-        "intervalo_valor": 2,
-        "intervalo_unidade": "horas",
+        "tipo_agendamento": "horario_fixo",
+        "intervalo_valor": 1,
+        "intervalo_unidade": "dias",
         "horario_fixo": "12:00",
+        "apenas_dias_uteis": 1,
+        "descricao": "Consulta a API pública do MPMS em busca de publicações diárias envolvendo servidores da bancada."
+    },
+    {
+        "task_id": "sync_plantoes_matutino",
+        "nome": "🌅 Escala de Plantão Matutino (DIT)",
+        "categoria": "Planilhas",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 6,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "08:00",
         "apenas_dias_uteis": 0,
-        "descricao": "Consulta a API pública do MPMS em busca de publicações envolvendo servidores da bancada."
+        "descricao": "Sincroniza a planilha oficial do Plantão Matutino do SharePoint e gera alertas de notificação."
+    },
+    {
+        "task_id": "sync_plantoes_semanal",
+        "nome": "📅 Escala de Plantão Semanal (SIMP)",
+        "categoria": "Planilhas",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 6,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "08:00",
+        "apenas_dias_uteis": 0,
+        "descricao": "Raspa a escala semanal do SIMP via web e gera notificações para os membros da bancada."
+    },
+    {
+        "task_id": "sync_fiscalizacao",
+        "nome": "📑 Fiscalização de Contratos",
+        "categoria": "Planilhas",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 12,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "07:30",
+        "apenas_dias_uteis": 0,
+        "descricao": "Sincroniza as planilhas corporativas de fiscalização de contratos de TI do SharePoint."
+    },
+    {
+        "task_id": "sync_garantia",
+        "nome": "🛡️ Controle de Garantias",
+        "categoria": "Planilhas",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 12,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "07:30",
+        "apenas_dias_uteis": 0,
+        "descricao": "Sincroniza a planilha corporativa de controle de prazos e termos de garantia de equipamentos."
     },
     {
         "task_id": "sync_viagens",
@@ -41,28 +89,64 @@ DEFAULT_TASKS = [
         "descricao": "Baixa a planilha oficial de viagens da bancada do SharePoint e atualiza o calendário e lista."
     },
     {
-        "task_id": "sync_plantoes",
-        "nome": "📅 Escalas de Plantão Matutino e Semanal",
+        "task_id": "sync_doacoes",
+        "nome": "🖥️ Doações & Redistribuições de Máquinas",
         "categoria": "Planilhas",
         "ativo": 1,
         "tipo_agendamento": "intervalo",
-        "intervalo_valor": 6,
-        "intervalo_unidade": "horas",
+        "intervalo_valor": 7,
+        "intervalo_unidade": "dias",
         "horario_fixo": "08:00",
         "apenas_dias_uteis": 0,
-        "descricao": "Verifica escalas de plantão e gera alertas de notificação no painel do sistema."
+        "descricao": "Sincroniza a planilha de movimentação, doação e redistribuição de computadores e equipamentos."
     },
     {
-        "task_id": "sync_fiscalizacao",
-        "nome": "📑 Fiscalização de Contratos & Garantias",
-        "categoria": "Planilhas",
+        "task_id": "sync_unidades",
+        "nome": "🏢 Catálogo de Unidades do MPMS",
+        "categoria": "Telefonia & Unidades",
         "ativo": 1,
         "tipo_agendamento": "intervalo",
-        "intervalo_valor": 12,
-        "intervalo_unidade": "horas",
-        "horario_fixo": "07:30",
+        "intervalo_valor": 7,
+        "intervalo_unidade": "dias",
+        "horario_fixo": "06:00",
         "apenas_dias_uteis": 0,
-        "descricao": "Sincroniza as planilhas corporativas de fiscalização de contratos e controle de garantias."
+        "descricao": "Varre as comarcas e procuradorias no portal público do MPMS para atualizar o catálogo institucional."
+    },
+    {
+        "task_id": "sync_ramais",
+        "nome": "📞 Catálogo de Ramais Telefônicos (Intranet)",
+        "categoria": "Telefonia & Unidades",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 7,
+        "intervalo_unidade": "dias",
+        "horario_fixo": "06:30",
+        "apenas_dias_uteis": 0,
+        "descricao": "Baixa os PDFs oficiais de telefonia da Intranet do MPMS e atualiza os ramais locais."
+    },
+    {
+        "task_id": "sync_oxe",
+        "nome": "☎️ Central Telefônica (Alcatel OXE)",
+        "categoria": "Telefonia & Unidades",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 7,
+        "intervalo_unidade": "dias",
+        "horario_fixo": "07:00",
+        "apenas_dias_uteis": 0,
+        "descricao": "Coleta e unifica ramais, utilizadores, endereços IP e MAC addresses da central Alcatel OXE."
+    },
+    {
+        "task_id": "sync_papercut",
+        "nome": "🖨️ Gestão de Impressoras (PaperCut)",
+        "categoria": "Hardware & Infraestrutura",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 7,
+        "intervalo_unidade": "dias",
+        "horario_fixo": "07:15",
+        "apenas_dias_uteis": 0,
+        "descricao": "Exporta relatórios de filas e MFDs do PaperCut e unifica 360 graus os ativos de impressão."
     },
     {
         "task_id": "orquestrador_chamados",
@@ -164,9 +248,39 @@ def setup_cron_tables():
     seed_cron_tasks_if_empty()
 
 def seed_cron_tasks_if_empty():
-    """Insere as rotinas padrão caso não existam."""
+    """Insere as rotinas padrão caso não existam e migra tarefas antigas desacopladas."""
     conn = get_connection()
     cursor = conn.cursor()
+
+    # Migração / Limpeza: se existir a tarefa antiga agregada 'sync_plantoes', desativa-a ou remove
+    try:
+        if DB_TYPE in ["postgres", "postgresql"]:
+            cursor.execute("DELETE FROM cron_schedules WHERE task_id = 'sync_plantoes';")
+        else:
+            cursor.execute("DELETE FROM cron_schedules WHERE task_id = 'sync_plantoes';")
+        conn.commit()
+    except Exception:
+        pass
+
+    # Atualiza o nome da tarefa sync_fiscalizacao caso ainda esteja com o nome agregado antigo
+    try:
+        if DB_TYPE in ["postgres", "postgresql"]:
+            cursor.execute("""
+            UPDATE cron_schedules 
+            SET nome = '📑 Fiscalização de Contratos',
+                descricao = 'Sincroniza as planilhas corporativas de fiscalização de contratos de TI do SharePoint.'
+            WHERE task_id = 'sync_fiscalizacao' AND nome LIKE '%Garantias%';
+            """)
+        else:
+            cursor.execute("""
+            UPDATE cron_schedules 
+            SET nome = '📑 Fiscalização de Contratos',
+                descricao = 'Sincroniza as planilhas corporativas de fiscalização de contratos de TI do SharePoint.'
+            WHERE task_id = 'sync_fiscalizacao' AND nome LIKE '%Garantias%';
+            """)
+        conn.commit()
+    except Exception:
+        pass
 
     for task in DEFAULT_TASKS:
         try:
@@ -177,7 +291,10 @@ def seed_cron_tasks_if_empty():
                     intervalo_valor, intervalo_unidade, horario_fixo,
                     apenas_dias_uteis, descricao
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (task_id) DO NOTHING;
+                ON CONFLICT (task_id) DO UPDATE SET
+                    nome = EXCLUDED.nome,
+                    categoria = EXCLUDED.categoria,
+                    descricao = EXCLUDED.descricao;
                 """, (
                     task["task_id"], task["nome"], task["categoria"], task["ativo"],
                     task["tipo_agendamento"], task["intervalo_valor"], task["intervalo_unidade"],
@@ -185,18 +302,37 @@ def seed_cron_tasks_if_empty():
                 ))
             else:
                 cursor.execute("""
-                INSERT OR IGNORE INTO cron_schedules (
+                INSERT INTO cron_schedules (
                     task_id, nome, categoria, ativo, tipo_agendamento,
                     intervalo_valor, intervalo_unidade, horario_fixo,
                     apenas_dias_uteis, descricao
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (task_id) DO UPDATE SET
+                    nome = excluded.nome,
+                    categoria = excluded.categoria,
+                    descricao = excluded.descricao;
                 """, (
                     task["task_id"], task["nome"], task["categoria"], task["ativo"],
                     task["tipo_agendamento"], task["intervalo_valor"], task["intervalo_unidade"],
                     task["horario_fixo"], task["apenas_dias_uteis"], task["descricao"]
                 ))
-        except Exception:
-            pass
+        except Exception as e:
+            # Fallback para versões mais antigas do SQLite sem ON CONFLICT DO UPDATE
+            try:
+                if DB_TYPE not in ["postgres", "postgresql"]:
+                    cursor.execute("""
+                    INSERT OR IGNORE INTO cron_schedules (
+                        task_id, nome, categoria, ativo, tipo_agendamento,
+                        intervalo_valor, intervalo_unidade, horario_fixo,
+                        apenas_dias_uteis, descricao
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """, (
+                        task["task_id"], task["nome"], task["categoria"], task["ativo"],
+                        task["tipo_agendamento"], task["intervalo_valor"], task["intervalo_unidade"],
+                        task["horario_fixo"], task["apenas_dias_uteis"], task["descricao"]
+                    ))
+            except Exception:
+                pass
 
     conn.commit()
     cursor.close()

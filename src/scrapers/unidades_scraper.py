@@ -337,20 +337,16 @@ def save_final_excel(df: pd.DataFrame, output_path: Path):
     
     logger.info("Concluído!")
 
-def main():
+def run_unidades_scraper(fast: bool = False):
+    """Executa a raspagem de unidades ou atualização rápida de manuais."""
     print_header("SCRAPER UNIDADES - CATÁLOGO MPMS", color=CYAN)
     logger.info("🤖 Iniciando raspagem e catálogo de Unidades e Promotorias...")
-    
-    parser = argparse.ArgumentParser(description="Scraper de Unidades do MPMS (Promotorias e Procuradorias)")
-    parser.add_argument("--fast", action="store_true", help="Atualiza apenas entradas manuais mantendo registros web existentes")
-    args = parser.parse_args()
 
     out_file = BASE_DIR / "01 - Dados Brutos" / "unidades_mpms.xlsx"
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
-    if args.fast:
+    if fast:
         logger.info("⚡ === MODO RÁPIDO: ATUALIZANDO APENAS ENTRADAS MANUAIS ===")
-        
         if not out_file.exists():
             logger.error(f"❌ ERRO: O arquivo {out_file.name} não existe.")
             logger.error("Execute o script sem parâmetros primeiro para criar a base.")
@@ -377,7 +373,6 @@ def main():
         return
 
     logger.info("🌐 === MODO COMPLETO: INICIANDO SCRAPER (WEB REQUESTS EM TEMPO REAL) ===")
-    
     all_data = []
 
     cities = get_cities()
@@ -408,6 +403,12 @@ def main():
 
     save_final_excel(df, out_file)
     logger.info(f"✅ Catálogo de Unidades salvo com SUCESSO! Total de {len(df)} registros em {out_file.name}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Scraper de Unidades do MPMS (Promotorias e Procuradorias)")
+    parser.add_argument("--fast", action="store_true", help="Atualiza apenas entradas manuais mantendo registros web existentes")
+    args = parser.parse_args()
+    run_unidades_scraper(fast=args.fast)
 
 if __name__ == "__main__":
     lock_file = Path(tempfile.gettempdir()) / "automated_unidades_sync.lock"

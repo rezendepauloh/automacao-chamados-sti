@@ -181,16 +181,32 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 ### 20. Sistema de Agendamentos & Cron Jobs em Segundo Plano
 
 - **Motor Autônomo em Background (`src/services/cron_scheduler.py`):**
-  - Thread daemon nativa inicializada automaticamente pelo entrypoint do container (`init.py`).
-  - Execução contínua sem depender do usuário estar com o navegador aberto.
-  - Verificação a cada 30 segundos dos intervalos definidos no banco relacional.
+  - Thread daemon nativa (`BancadaCronDaemon`) inicializada automaticamente pelo entrypoint do container (`init.py`).
+  - Execução contínua em segundo plano sem depender do usuário manter o navegador aberto.
+  - Verificação a cada 30 segundos dos intervalos e horários configurados no banco de dados relacional.
+  - Controle atômico de concorrência com travas de processo (`.lock`) por tarefa.
 - **Gestão Visual Completa (`⚙️ Configurações > ⏰ Agendamentos & Cron Jobs`):**
-  - _Modo Recorrente_: Configuração de intervalos em minutos, horas ou dias (ex: Portarias a cada 2 horas, Viagens a cada 4 horas).
-  - _Modo Horário Fixo Diário_: Configuração de horário exato (ex: `12:00` para os alertas WhatsApp) com filtro opcional de dias úteis.
-  - _Controle Individual_: Chave liga/desliga para cada rotina de sincronização e scrapers.
+  - _Modo Recorrente_: Configuração flexível de intervalos em minutos, horas ou dias.
+  - _Modo Horário Fixo Diário_: Configuração de horário exato (ex: `12:00`) com filtro opcional de dias úteis.
+  - _Controle Individual_: Chave liga/desliga independente para cada rotina automática.
   - _Disparo Imediato_: Botão **`🚀 Executar Agora`** para acionamento sob demanda em thread isolada.
+  - _Acompanhamento em Tempo Real_: Accordion dinâmico que exibe as últimas linhas de log ao vivo enquanto a tarefa é processada em segundo plano.
+- **Rotinas Automáticas Integradas (13 Tarefas Desacopladas):**
+  1. **Alertas WhatsApp (`whatsapp_d1`):** Disparos automáticos D-1 às 12:00 em dias úteis para plantões, viagens e portarias.
+  2. **Varredura de Portarias (`sync_portarias`):** Monitoramento diário da API de Atos e Normas do MPMS gerando alertas na central.
+  3. **Plantão Matutino DIT (`sync_plantoes_matutino`):** Download da planilha do SharePoint e sincronização de escalas matutinas.
+  4. **Plantão Semanal SIMP (`sync_plantoes_semanal`):** Raspagem das escalas semanais do SIMP via web com notificações antecipadas.
+  5. **Fiscalização de Contratos (`sync_fiscalizacao`):** Sincronização da planilha corporativa de contratos SAJ/TI do SharePoint.
+  6. **Controle de Garantias (`sync_garantia`):** Sincronização da planilha de termos e prazos de garantia de equipamentos.
+  7. **Viagens da Bancada (`sync_viagens`):** Atualização periódica do cronograma oficial de viagens técnicas da equipe.
+  8. **Doações & Redistribuições (`sync_doacoes`):** Sincronização do inventário de máquinas destinadas a doação ou redistribuição.
+  9. **Catálogo de Unidades (`sync_unidades`):** Varredura das comarcas e procuradorias no portal institucional do MPMS.
+  10. **Catálogo de Ramais (`sync_ramais`):** Download dos PDFs de telefonia da Intranet e extração de ramais no banco.
+  11. **Central Telefônica OXE (`sync_oxe`):** Coleta e unificação de ramais, usuários, endereços IP e MAC addresses da central Alcatel.
+  12. **Impressoras PaperCut (`sync_papercut`):** Extração de relatórios de filas e MFDs com unificação 360° no banco.
+  13. **Coleta & Classificação de Chamados TI (`orquestrador_chamados`):** Robô de extração OTRS/CitSmart e classificação de tags por IA.
 - **Auditoria & Histórico (`cron_logs`):**
-  - Tabela com rastreamento de início, término, duração em segundos, status (`🟢 Sucesso`, `🔴 Erro`, `⏳ Executando`) e mensagem de retorno de cada execução automática.
+  - Registro de auditoria com rastreamento de início, término, duração em segundos, status (`🟢 Sucesso`, `🔴 Erro`, `⏳ Executando`) e mensagem de retorno de cada execução.
 
 ## 🛠️ Tecnologias Utilizadas
 

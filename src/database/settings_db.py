@@ -207,6 +207,12 @@ def seed_settings_from_env_if_empty(force: bool = False):
         ("ATOS_NORMAS_API_URL", os.getenv("ATOS_NORMAS_API_URL", "https://www.mpms.mp.br/atos-e-normas/listAll"), False, "urls", "Endpoint da API de Atos e Normas MPMS"),
         ("ATOS_NORMAS_DOWNLOAD_URL", os.getenv("ATOS_NORMAS_DOWNLOAD_URL", "https://www.mpms.mp.br/atos-e-normas/download/"), False, "urls", "URL base para download de Atos e Normas"),
 
+        # WhatsApp & Evolution API
+        ("EVOLUTION_API_URL", os.getenv("EVOLUTION_API_URL", "http://evolution-api:8080"), False, "whatsapp", "URL do serviço Evolution API"),
+        ("EVOLUTION_INSTANCE_NAME", os.getenv("EVOLUTION_INSTANCE_NAME", "bancada_sti"), False, "whatsapp", "Nome da Instância do WhatsApp na Evolution"),
+        ("EVOLUTION_API_KEY", os.getenv("EVOLUTION_API_KEY", "bancada_secret_token_123"), True, "whatsapp", "Token de autenticação da Evolution API"),
+        ("WHATSAPP_INSTITUCIONAL_NUMERO", os.getenv("WHATSAPP_INSTITUCIONAL_NUMERO", "+55 67 98478-2034"), False, "whatsapp", "Número de telefone institucional da bancada"),
+
         # Planilhas e Nuvem
         ("SHAREPOINT_RELATIVE_PATH", os.getenv("SHAREPOINT_RELATIVE_PATH", r"OneDrive - Ministerio Público do Estado de Mato Grosso do Sul\Documentos SharePoint DIT-Manutenção\Chamados\Chamados_Unificados_Final.xlsx"), False, "sharepoint", "Caminho relativo da Planilha de Chamados no OneDrive/SharePoint"),
         ("DONATIONS_EXCEL_RELATIVE_PATH", os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Doações e Baixas"),
