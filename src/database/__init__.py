@@ -131,7 +131,26 @@ from .cron_db import (
     get_recent_cron_logs
 )
 
+from .ad_db import (
+    setup_ad_tables,
+    save_ad_cache,
+    get_ad_sync_meta,
+    get_ad_ous,
+    get_ad_users_df,
+    get_ad_departments,
+    get_ad_groups_df,
+    get_group_members
+)
+
 __all__ = [
+    "setup_ad_tables",
+    "save_ad_cache",
+    "get_ad_sync_meta",
+    "get_ad_ous",
+    "get_ad_users_df",
+    "get_ad_departments",
+    "get_ad_groups_df",
+    "get_group_members",
     "DB_PATH",
     "get_connection",
     "setup_ramais_table",

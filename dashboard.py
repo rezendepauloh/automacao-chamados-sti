@@ -138,6 +138,11 @@ elif selected_page == "🖨️ Impressoras (PaperCut)":
     importlib.reload(src.tabs.impressoras)
     src.tabs.impressoras.render_impressoras_page()
 
+elif selected_page == "🌳 Active Directory (AD)":
+    import src.tabs.active_directory
+    importlib.reload(src.tabs.active_directory)
+    src.tabs.active_directory.render_ad_page()
+
 elif selected_page == "⚡ Scripts de Automação":
     import src.tabs.scripts_automacao
     importlib.reload(src.tabs.scripts_automacao)

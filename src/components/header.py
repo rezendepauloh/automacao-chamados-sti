@@ -14,6 +14,7 @@ PAGE_TO_SLUG = {
     "✈️ Viagens da Bancada": "viagens",
     "🛡️ Controle de Garantia": "garantia",
     "🖨️ Impressoras (PaperCut)": "impressoras",
+    "🌳 Active Directory (AD)": "active-directory",
     "⚡ Scripts de Automação": "scripts-automacao",
     "📚 FAQ & Tutoriais": "faq",
     "🔔 Central de Notificações": "notificacoes",
@@ -96,6 +97,8 @@ def render_header_navigation() -> str:
             set_page("🛡️ Controle de Garantia")
         if st.button("🖨️ Impressoras (PaperCut)", width='stretch', type=get_btn_type("🖨️ Impressoras (PaperCut)")):
             set_page("🖨️ Impressoras (PaperCut)")
+        if st.button("🌳 Active Directory (AD)", width='stretch', type=get_btn_type("🌳 Active Directory (AD)")):
+            set_page("🌳 Active Directory (AD)")
 
         if st.button("⚡ Scripts de Automação", width='stretch', type=get_btn_type("⚡ Scripts de Automação")):
             set_page("⚡ Scripts de Automação")

@@ -28,7 +28,7 @@ CONFIG_SUBTAB_MAP = {
     "oxe": "📞 Central Telefônica (OXE)",
     "urls": "🌐 Portais & Links Web",
     "sharepoint": "📂 SharePoint & Planilhas",
-    "ia": "🤖 Inteligência Artificial (Gemini)",
+    "ia": "🤖 Inteligência Artificial & ML",
     "whatsapp": "📱 WhatsApp & Alertas (Evolution)",
     "schedules": "⏰ Agendamentos & Cron Jobs"
 }
@@ -295,15 +295,63 @@ def render_configuracoes_page():
             )
 
     # -------------------------------------------------------------------------
-    # TAB 7: IA Gemini
+    # TAB 7: IA Gemini & Machine Learning
     # -------------------------------------------------------------------------
-    elif selected_subtab == "🤖 Inteligência Artificial (Gemini)":
-        st.markdown("#### 🤖 Google Gemini AI")
-        st.info("Chave de API do modelo generativo para enriquecimento e categorização de chamados.")
+    elif selected_subtab == "🤖 Inteligência Artificial & ML":
+        st.markdown("#### 🤖 Google Gemini AI & Modelos de Machine Learning")
+        st.info("Configuração do modelo generativo de IA e parâmetros de paralelismo para retreinamento do classificador de chamados.")
 
         gem_val, gem_raw = render_password_input("Chave de API do Gemini (API Key)", "GEMINI_API_KEY", "cfg_gemini_key", "Chave da API do Google Gemini")
         form_values["GEMINI_API_KEY"] = (
             gem_val, True, "ia", "Chave da API do Google Gemini", gem_raw
+        )
+
+        st.markdown("##### ⚙️ Desempenho do Classificador de Chamados (Scikit-Learn / spaCy)")
+        
+        # Detecção de núcleos da máquina
+        try:
+            detected_cores = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+        except Exception:
+            detected_cores = os.cpu_count() or 1
+
+        current_n_jobs = settings.get("ML_N_JOBS", {}).get("value", "auto") or "auto"
+        
+        c_ml1, c_ml2 = st.columns([2, 2])
+        with c_ml1:
+            opts = ["auto", "-1", "1", "2", "3", "4", "custom"]
+            display_map = {
+                "auto": f"Automático Inteligente (reserva 1 núcleo) - {max(1, detected_cores - 1)} worker(s)",
+                "-1": f"Máximo Desempenho (-1) - Todos os {detected_cores} núcleos",
+                "1": "Sequencial Seguro (1 worker)",
+                "2": "2 workers",
+                "3": "3 workers",
+                "4": "4 workers",
+                "custom": "Valor Customizado..."
+            }
+            if current_n_jobs not in ["auto", "-1", "1", "2", "3", "4"]:
+                sel_idx = opts.index("custom")
+            else:
+                sel_idx = opts.index(current_n_jobs)
+
+            selected_mode = st.selectbox(
+                "Paralelismo de Treinamento (n_jobs)",
+                opts,
+                index=sel_idx,
+                format_func=lambda x: display_map.get(x, x),
+                key="cfg_ml_n_jobs_mode",
+                help="Controla a quantidade de processos concorrentes utilizados pelo GridSearchCV no treinamento do classificador."
+            )
+
+        with c_ml2:
+            if selected_mode == "custom":
+                custom_val = st.text_input("Número de Workers", value=current_n_jobs, key="cfg_ml_n_jobs_custom")
+                final_val = custom_val.strip()
+            else:
+                final_val = selected_mode
+                st.markdown(f"<br><span style='color: var(--metric-title-color, #94a3b8); font-size: 13px;'>Ambiente detectou <b>{detected_cores} núcleos lógicos</b>.</span>", unsafe_allow_html=True)
+
+        form_values["ML_N_JOBS"] = (
+            final_val, False, "ia", "Número de workers paralelos para treinamento de ML (auto, -1 ou número de CPUs)"
         )
 
     # -------------------------------------------------------------------------

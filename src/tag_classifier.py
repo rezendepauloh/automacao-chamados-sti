@@ -38,7 +38,7 @@ from config import (
     TREINO_PATH, MODEL_PATH, DEBUG_DIR_TAG,
     OUTPUT_DIR_TRATADOS, OUTPUT_DIR_PRONTO,
     setup_logging, cleanup_old_files,
-    clean_otrs_description
+    clean_otrs_description, get_ml_n_jobs
 )
 from terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
@@ -187,10 +187,13 @@ def train_and_tune_model(train_df: pd.DataFrame) -> Pipeline:
         }
     ]
 
+    n_jobs = get_ml_n_jobs()
+    logger.info(f"⚡ Executando GridSearchCV com paralelismo: n_jobs={n_jobs}...")
+
     grid = GridSearchCV(
         pipe, param_grid, scoring="f1_weighted",
         cv=StratifiedKFold(3, shuffle=True, random_state=42),
-        n_jobs=1, verbose=0 # mantido 0 para não poluir os logs de produção
+        n_jobs=n_jobs, verbose=0 # mantido 0 para não poluir os logs de produção
     )
     
     grid.fit(X.tolist(), y.tolist())

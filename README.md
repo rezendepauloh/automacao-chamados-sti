@@ -23,8 +23,13 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Pipeline de NLP Especializado em TI:**
   - Limpeza de texto avançada com `spaCy` (remoção de stop words, pontuação).
   - Regras de negócio customizadas para preservar termos técnicos (ex: _ssd_, _memoriaram_, _enderecoip_) e numerações cruciais.
-- **Arena de Algoritmos (GridSearchCV):** O sistema treina e compara múltiplos modelos (`LinearSVC`, `RandomForestClassifier`, `MultinomialNB`, `ComplementNB`) para eleger o que possui a melhor métrica de _F1-Weighted_.
-- **Retreinamento Autônomo:** O sistema monitora a data de modificação da base de treino (`st_mtime`). Se novos chamados forem adicionados pelo usuário, a IA detecta a mudança e se retreina automaticamente na próxima execução.
+- **Arena de Algoritmos Otimizada com Paralelismo (`GridSearchCV`):** O sistema treina e compara múltiplos modelos (`LinearSVC`, `RandomForestClassifier`, `MultinomialNB`, `ComplementNB`) avaliando centenas de combinações de hiperparâmetros em busca do melhor _F1-Weighted_.
+- **Paralelismo Inteligente (`ML_N_JOBS`):**
+  - Execução concorrente acelerada via `joblib` com suporte nativo a ambientes Linux (WSL) e contêineres Docker via *forking* POSIX.
+  - Modo `auto` (padrão): detecta a quantidade de CPUs lógicas disponíveis no contêiner e aloca `max(1, cores - 1)` workers, reservando 1 núcleo para garantir que o painel Streamlit e os serviços de background permaneçam fluidos.
+  - Modo `-1` (máximo desempenho): mobiliza 100% dos núcleos disponíveis para retreinamento ultra-rápido (~1.88x a 2.02x de aceleração em relação ao modo sequencial).
+  - Controle dinâmico e flexível diretamente na aba **🤖 Inteligência Artificial & ML** do painel de Configurações, com persistência no banco SQLite/Postgres e suporte a variável de ambiente `.env`.
+- **Retreinamento Autônomo:** O sistema monitora a data de modificação da base de treino (`st_mtime`). Se novos chamados forem adicionados pelo usuário ou sincronizados pelo banco, a IA detecta a mudança e se retreina automaticamente na próxima execução.
 
 ### 3. Engenharia de Dados & Integração Segura com Excel
 
@@ -153,7 +158,31 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
   - _Registro do Portal_: Exibe a ficha completa formatada em modo de leitura.
 - **Acompanhamento de Robôs em Segundo Plano (Accordions & Logs):** Indicadores no sidebar com botões desabilitados durante a execução, acompanhamento do progresso através de `st.expander` com leitor de logs em tempo real e notificação em balão `st.toast` ao concluir.
 
-### 18. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
+### 18. Módulo de Árvore e Consulta do Active Directory (AD / LDAP)
+
+- **Conexão Corporativa Multiplataforma (`ldap3`):**
+  - Integração nativa 100% Python via protocolo LDAPv3 sobre TCP (portas 389 e 636 LDAPS) com bind autenticado via UPN (`user@domain`).
+  - Totalmente compatível com **Linux WSL (Ubuntu)**, contêineres **Docker** e futura migração para **Red Hat Enterprise Linux (RHEL)**, sem dependências legadas de APIs Windows COM (`pyad`/`win32com`).
+  - Credenciais seguras gerenciadas dinamicamente via cofre criptografado (`AD_USER`, `AD_PASSWORD`, `AD_DOMAIN`, `AD_MMC`).
+- **Arquitetura de Cache Relacional em Alta Performance (`ad_db.py`):**
+  - Armazenamento local das Unidades Organizacionais (OUs), Usuários e Grupos de Segurança no banco relacional (compatível com SQLite e PostgreSQL).
+  - Garante navegação instantânea e zero sobrecarga aos Domain Controllers corporativos a cada requisição no Streamlit.
+- **Árvore Interativa das Unidades Organizacionais (GoJS OrgChart):**
+  - Visualização em diagrama hierárquico interativo com renderização HTML/JS via GoJS (`streamlit.components.v1.html`).
+  - Injeção de nó raiz corporativo centralizador unificando todas as OUs de topo da floresta do Active Directory.
+  - Expansão e recolhimento dinâmico de nós, centralização automática de zoom e busca em tempo real com realce de nós correspondentes e abertura do caminho até a raiz.
+- **Gestão de Contas de Usuários:**
+  - Métricas de topo com contadores de usuários ativos e contas bloqueadas/desativadas (detecção de flags de bitwise do `userAccountControl` do Active Directory).
+  - Filtros dinâmicos por status de conta, departamento e busca textual em tempo real por Login (`sAMAccountName`), Nome Completo ou E-mail.
+  - Proteção e sanitização automática contra caracteres de controle restritos (`IllegalCharacterError`) na exportação direta para planilha Excel (`.xlsx`) e CSV com fallback.
+  - Paginação inteligente integrada (`pagination.py`) e sub-navegação isolada persistente por URL (`?tab=active-directory&subtab=arvore|usuarios|grupos|sync`).
+- **Auditoria de Grupos de Segurança:**
+  - Listagem dos grupos de segurança e escopos do domínio corporativo.
+  - Modal interativo (`@st.dialog`) exibindo os membros associados ao grupo com status da conta e departamento.
+- **Painel de Diagnóstico & Sincronização:**
+  - Ferramenta de teste de latência e conectividade com o DC e botão de sincronização manual com barra de progresso em tempo real.
+
+### 19. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
 
 - **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
 - **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro (incluindo o popover do "+X mais"), estilização vermelha `#ff4b4b` para abas ativas e exibição completa de chamados técnicos, plantões, garantias, portarias e viagens.

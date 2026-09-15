@@ -197,8 +197,9 @@ def seed_settings_from_env_if_empty(force: bool = False):
         ("OXE_PASS", oxe_pass, True, "oxe", "Senha de acesso à Central Telefônica OXE"),
         ("OXE_URL", os.getenv("OXE_URL", "https://10.12.32.30"), False, "oxe", "URL da Central Telefônica OXE"),
 
-        # IA Gemini
+        # Inteligência Artificial & Machine Learning
         ("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""), True, "ia", "Chave da API do Google Gemini"),
+        ("ML_N_JOBS", os.getenv("ML_N_JOBS", "auto"), False, "ia", "Número de workers paralelos para treinamento de ML (auto, -1 ou número de CPUs)"),
 
         # Portais e URLs
         ("CITSMART_LINK", os.getenv("CITSMART_LINK", "https://suporte.mpms.mp.br"), False, "urls", "URL principal do CitSmart"),

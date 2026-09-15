@@ -219,6 +219,37 @@ DEBUG_DIR_TAG.mkdir(parents=True, exist_ok=True)
 TREINO_PATH = OUTPUT_DIR_TRATADOS / "Chamados_Treino.xlsx"
 MODEL_PATH  = MODEL_DIR / "tag_classifier.joblib"
 
+def get_ml_n_jobs() -> int:
+    """
+    Determina o número ideal de workers para o treinamento de Machine Learning.
+    Lê a configuração ML_N_JOBS do banco/ambiente:
+      - 'auto' (padrão): calcula max(1, cores_disponiveis - 1) para preservar 1 core para a interface Streamlit e o SO.
+      - '-1': utiliza todos os núcleos disponíveis para máximo desempenho.
+      - Inteiro >= 1: utiliza o número explícito de processos configurado.
+    """
+    raw_val = _cfg("ML_N_JOBS", "auto").strip().lower()
+    
+    # Detecção segura de núcleos disponíveis respeitando afinidade/cgroups do Docker
+    try:
+        if hasattr(os, "sched_getaffinity"):
+            available_cores = len(os.sched_getaffinity(0))
+        else:
+            available_cores = os.cpu_count() or 1
+    except Exception:
+        available_cores = os.cpu_count() or 1
+
+    if raw_val in ["auto", "", "default"]:
+        # Se houver mais de 2 cores, deixa 1 núcleo livre para manter a UI e o sistema fluidos
+        return max(1, available_cores - 1) if available_cores > 2 else available_cores
+    
+    try:
+        val = int(raw_val)
+        return val if val != 0 else max(1, available_cores - 1)
+    except ValueError:
+        return max(1, available_cores - 1)
+
+ML_N_JOBS = get_ml_n_jobs()
+
 # Sync Master
 DEBUG_DIR_SYNC = BASE_DIR / "debug_logs" / "sync"
 DEBUG_DIR_SYNC.mkdir(parents=True, exist_ok=True)
