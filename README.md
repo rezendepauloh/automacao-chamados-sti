@@ -167,24 +167,53 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Arquitetura de Cache Relacional em Alta Performance (`ad_db.py`):**
   - Armazenamento local das Unidades Organizacionais (OUs), Usuários e Grupos de Segurança no banco relacional (compatível com SQLite e PostgreSQL).
   - Garante navegação instantânea e zero sobrecarga aos Domain Controllers corporativos a cada requisição no Streamlit.
-- **Árvore Interativa das Unidades Organizacionais (GoJS OrgChart):**
+- **Árvore Interativa das Unidades Organizacionais (GoJS OrgChart & People View):**
   - Visualização em diagrama hierárquico interativo com renderização HTML/JS via GoJS (`streamlit.components.v1.html`).
   - Injeção de nó raiz corporativo centralizador unificando todas as OUs de topo da floresta do Active Directory.
+  - **Cards Corporativos Ricos (Estilo OrgChart Editor & FamilyTree):**
+    - Contadores instantâneos de pessoas (`👥 X users`), computadores (`💻 Y comps`) e sub-unidades (`📁 Z`).
+    - Exibição inline dos usuários alocados na Unidade Organizacional com Nome Completo, Cargo, E-mail institucional (`✉️`) e Ramal Telefônico (`📞`).
   - Expansão e recolhimento dinâmico de nós, centralização automática de zoom e busca em tempo real com realce de nós correspondentes e abertura do caminho até a raiz.
 - **Gestão de Contas de Usuários:**
   - Métricas de topo com contadores de usuários ativos e contas bloqueadas/desativadas (detecção de flags de bitwise do `userAccountControl` do Active Directory).
   - Filtros dinâmicos por status de conta, departamento e busca textual em tempo real por Login (`sAMAccountName`), Nome Completo ou E-mail.
+  - Tabela interativa com seleção de linha (`on_select='rerun'`) e modal nativo (`@st.dialog`) com **Ficha Completa do Usuário**:
+    - **Identificação & Crachá:** Nome Completo, Login de Rede, Badge de Status e destaque para o **ID do Cartão / Crachá RFID PaperCut (`pager`)** para liberação de impressões.
+    - **Organização:** Cargo (`title`), Lotação (`department`), Empresa (`company`), Escritório/Sala (`physicalDeliveryOfficeName`), Superior/Gestor Imediato (`manager`) e Descrição (`description`).
+    - **Comunicação:** E-mail com link `mailto:`, Ramal/Telefone (`telephoneNumber`) e Celular (`mobile`).
+    - **Auditoria & Segurança:** Data de Criação (`whenCreated`), Último Logon (`lastLogonTimestamp`) formatado em `DD/MM/AAAA HH:MM:SS`, OU pai, Distinguished Name (DN) e decodificação amigável de flags UAC.
+    - **Associações:** Tabela expansível listando todos os **Grupos de Segurança** aos quais o usuário pertence (`memberOf`).
   - Proteção e sanitização automática contra caracteres de controle restritos (`IllegalCharacterError`) na exportação direta para planilha Excel (`.xlsx`) e CSV com fallback.
-  - Paginação inteligente integrada (`pagination.py`) e sub-navegação isolada persistente por URL (`?tab=active-directory&subtab=arvore|usuarios|grupos|sync`).
+- **Gestão de Computadores & Servidores (`objectClass=computer`):**
+  - Monitoramento e inventário das estações de trabalho e servidores ingressados no domínio Active Directory.
+  - Indicadores KPI em tempo real: Total de Máquinas, Máquinas Ativas, Máquinas Desativadas e Servidores de Rede.
+  - Painel retrátil de **Distribuição de Sistemas Operacionais** no parque computacional com contagem e percentual.
+  - **Filtros Avançados:**
+    - Categoria de Máquina (*Todas*, *Estações de Trabalho*, *Servidores*).
+    - Status (*Todos*, *Ativos*, *Desativados*).
+    - Auditoria de Inatividade / Último Logon (*> 30 dias*, *> 90 dias*, *> 180 dias*, *Sem Logon Registrado*).
+    - Multi-select de Sistemas Operacionais (Windows 10, Windows 11, Windows Server, etc.).
+    - Busca textual em tempo real por Nome, DNS FQDN, Descrição ou Responsável (`managedBy`).
+  - Tabela com paginação inteligente e seleção de linha (`on_select='rerun'`) abrindo modal nativo (`@st.dialog`) com a **Ficha Completa da Máquina**:
+    - **Ações Rápidas com 1 Clique (Protocolo `bancada://`):**
+      - 🖥️ **Conexão Remota (RDP):** dispara o MSTSC diretamente para o hostname do computador.
+      - 📂 **Compartilhamento Administrativo (C$):** abre o Explorer local do Windows em `\\hostname\c$`.
+      - ⚡ **Teste de Ping (ICMP):** dispara ping contínuo no console do Windows.
+    - **Identificação & Rede:** Nome da Máquina (`name`/`sAMAccountName`), FQDN / DNS Hostname (`dNSHostName`), Status e flags UAC (ex: `WORKSTATION_TRUST_ACCOUNT`).
+    - **Sistema Operacional & Hardware:** Sistema Operacional (`operatingSystem`), Versão / Build (`operatingSystemVersion`), Descrição/Função e Responsável (`managedBy`).
+    - **Auditoria & Domínio:** Data de Ingresso no Domínio (`whenCreated`), Última Atividade / Logon (`lastLogonTimestamp`), OU de alocação e Distinguished Name (DN) completo.
+  - Exportação direta dos computadores em planilhas Excel (`.xlsx`) e arquivos CSV (`.csv`).
 - **Auditoria de Grupos de Segurança:**
   - Listagem dos grupos de segurança e escopos do domínio corporativo.
-  - Modal interativo (`@st.dialog`) exibindo os membros associados ao grupo com status da conta e departamento.
+  - Modal interativo (`@st.dialog`) exibindo os membros associados ao grupo com status da conta, departamento, ID do cartão RFID (`pager`) e ramal/telefone.
 - **Painel de Diagnóstico & Sincronização:**
+  - Métricas de cache corporativo com contadores de OUs, Usuários, Computadores/Servidores e Grupos.
   - Ferramenta de teste de latência e conectividade com o DC e botão de sincronização manual com barra de progresso em tempo real.
 
 ### 19. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
 
 - **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
+- **Cards KPI / Métricas Padronizados (`src/components/metric_cards.py`):** Componente unificado para exibição de indicadores de desempenho (`render_metric_card` e `render_metric_cards`), integrando-se aos temas visual claro/escuro via variáveis CSS, eliminando blocos de HTML inline redundantes e padronizando todas as abas da aplicação (Active Directory, Chamados, Telefonia OXE, Impressoras PaperCut, Garantias, Viagens, Portarias, Redistribuição e Fiscalização).
 - **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro (incluindo o popover do "+X mais"), estilização vermelha `#ff4b4b` para abas ativas e exibição completa de chamados técnicos, plantões, garantias, portarias e viagens.
 - **Fechamento Automático de Chamados Ausentes (`close_missing_tickets_by_base`):** Mecanismo de sincronização relacional no SQLite que identifica chamados encerrados nos portais de origem e atualiza seu status para `'Fechado'`, com trava de segurança por volume mínimo (`active_ids >= 3`).
 - **Conformidade com a API Moderna do Streamlit:** Migração global de parâmetros legados de largura para `width='stretch'` e componentes de HTML customizados para `st.components.v1.html(...)`.

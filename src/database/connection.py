@@ -25,4 +25,11 @@ def get_connection():
             password=pg_pass
         )
     else:
-        return sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        try:
+            conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA busy_timeout = 30000;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+        except Exception:
+            pass
+        return conn

@@ -14,6 +14,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_cards
 from src.components.status_banner import render_log_expander
 from src.database import get_viagens_df, sync_viagens_from_excel
 from src.syncs.sync_viagens import check_viagens_sync_running, read_viagens_last_log_lines
@@ -226,30 +227,28 @@ def render_viagens_page():
             df_filtered = df_filtered[mask]
 
         # CARDS KPI
-        k1, k2, k3 = st.columns(3)
-        with k1:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #06b6d4;">
-                    <div class="metric-title">TOTAL DE VIAGENS</div>
-                    <div class="metric-value" style="color: #06b6d4;">{len(df_filtered)}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k2:
-            comarcas_unicas = len(df_filtered["localidade"].dropna().unique())
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #10b981;">
-                    <div class="metric-title">COMARCAS / DESTINOS</div>
-                    <div class="metric-value" style="color: #10b981;">{comarcas_unicas}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k3:
-            chamados_atendidos = len(df_filtered[df_filtered["chamado"].str.strip() != ""])
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #3b82f6;">
-                    <div class="metric-title">COM CHAMADO REGISTRADO</div>
-                    <div class="metric-value" style="color: #3b82f6;">{chamados_atendidos}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        chamados_atendidos = len(df_filtered[df_filtered["chamado"].str.strip() != ""])
+        comarcas_unicas = len(df_filtered["localidade"].dropna().unique())
+        render_metric_cards([
+            {
+                "title": "TOTAL DE VIAGENS",
+                "value": len(df_filtered),
+                "border_color": "#06b6d4",
+                "value_color": "#06b6d4",
+            },
+            {
+                "title": "COMARCAS / DESTINOS",
+                "value": comarcas_unicas,
+                "border_color": "#10b981",
+                "value_color": "#10b981",
+            },
+            {
+                "title": "COM CHAMADO REGISTRADO",
+                "value": chamados_atendidos,
+                "border_color": "#3b82f6",
+                "value_color": "#3b82f6",
+            },
+        ])
 
         st.markdown("<br>", unsafe_allow_html=True)
 

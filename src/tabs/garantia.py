@@ -11,6 +11,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_cards
 from src.components.status_banner import render_log_expander
 from src.syncs.sync_garantia import check_garantia_sync_running, read_garantia_last_log_lines
 
@@ -185,35 +186,31 @@ def render_garantia_page():
             df_filtered_c = df_filtered_c[mask]
 
         # CARDS KPI
-        k1, k2, k3, k4 = st.columns(4)
-        with k1:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #3b82f6;">
-                    <div class="metric-title">TOTAL DE CONTRATOS</div>
-                    <div class="metric-value">{len(df_filtered_c)}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k2:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #10b981;">
-                    <div class="metric-title">GARANTIAS ATIVAS</div>
-                    <div class="metric-value" style="color: #10b981;">{len(df_filtered_c[df_filtered_c['status_garantia'] == 'Garantia Ativa'])}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k3:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #f59e0b;">
-                    <div class="metric-title">VENCENDO EM 30 DIAS</div>
-                    <div class="metric-value" style="color: #f59e0b;">{len(df_filtered_c[df_filtered_c['status_garantia'] == 'A Vencer (≤ 30 dias)'])}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k4:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #ef4444;">
-                    <div class="metric-title">GARANTIAS VENCIDAS</div>
-                    <div class="metric-value" style="color: #ef4444;">{len(df_filtered_c[df_filtered_c['status_garantia'] == 'Garantia Vencida'])}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        render_metric_cards([
+            {
+                "title": "TOTAL DE CONTRATOS",
+                "value": len(df_filtered_c),
+                "border_color": "#3b82f6",
+            },
+            {
+                "title": "GARANTIAS ATIVAS",
+                "value": len(df_filtered_c[df_filtered_c['status_garantia'] == 'Garantia Ativa']),
+                "border_color": "#10b981",
+                "value_color": "#10b981",
+            },
+            {
+                "title": "VENCENDO EM 30 DIAS",
+                "value": len(df_filtered_c[df_filtered_c['status_garantia'] == 'A Vencer (≤ 30 dias)']),
+                "border_color": "#f59e0b",
+                "value_color": "#f59e0b",
+            },
+            {
+                "title": "GARANTIAS VENCIDAS",
+                "value": len(df_filtered_c[df_filtered_c['status_garantia'] == 'Garantia Vencida']),
+                "border_color": "#ef4444",
+                "value_color": "#ef4444",
+            },
+        ])
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -314,35 +311,31 @@ def render_garantia_page():
             df_filtered_ch = df_filtered_ch[mask]
 
         # CARDS KPI
-        k1, k2, k3, k4 = st.columns(4)
-        with k1:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #3b82f6;">
-                    <div class="metric-title">TOTAL DE CHAMADOS</div>
-                    <div class="metric-value">{len(df_filtered_ch)}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k2:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #10b981;">
-                    <div class="metric-title">CONCLUÍDOS</div>
-                    <div class="metric-value" style="color: #10b981;">{len(df_filtered_ch[df_filtered_ch['status'].str.lower().str.contains('conclu', na=False)])}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k3:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #f59e0b;">
-                    <div class="metric-title">EM ATENDIMENTO</div>
-                    <div class="metric-value" style="color: #f59e0b;">{len(df_filtered_ch[df_filtered_ch['status'].str.lower().str.contains('atend', na=False)])}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with k4:
-            st.markdown(f"""
-                <div class="metric-card" style="border-left-color: #a855f7;">
-                    <div class="metric-title">ABRIR DMP / PAUSADOS</div>
-                    <div class="metric-value" style="color: #a855f7;">{len(df_filtered_ch[df_filtered_ch['status'].str.lower().str.contains('dmp|paus', na=False)])}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        render_metric_cards([
+            {
+                "title": "TOTAL DE CHAMADOS",
+                "value": len(df_filtered_ch),
+                "border_color": "#3b82f6",
+            },
+            {
+                "title": "CONCLUÍDOS",
+                "value": len(df_filtered_ch[df_filtered_ch['status'].str.lower().str.contains('conclu', na=False)]),
+                "border_color": "#10b981",
+                "value_color": "#10b981",
+            },
+            {
+                "title": "EM ATENDIMENTO",
+                "value": len(df_filtered_ch[df_filtered_ch['status'].str.lower().str.contains('atend', na=False)]),
+                "border_color": "#f59e0b",
+                "value_color": "#f59e0b",
+            },
+            {
+                "title": "ABRIR DMP / PAUSADOS",
+                "value": len(df_filtered_ch[df_filtered_ch['status'].str.lower().str.contains('dmp|paus', na=False)]),
+                "border_color": "#a855f7",
+                "value_color": "#a855f7",
+            },
+        ])
 
         st.markdown("<br>", unsafe_allow_html=True)
 

@@ -16,6 +16,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_cards
 
 
 def get_val(row, *keys, default="-"):
@@ -107,39 +108,28 @@ def render_central_telefonica_page():
     ramais_com_ip = len(df[is_valid_series(df[col_ip])]) if col_ip and col_ip in df.columns else 0
     ramais_analogicos = len(df[df[col_tipo].astype(str).str.upper().str.contains('ANALOG', na=False)]) if col_tipo and col_tipo in df.columns else 0
 
-    c1, c2, c3, c4 = st.columns(4)
-
-    with c1:
-        st.markdown(f"""
-            <div class="metric-card-oxe">
-                <div class="metric-title-oxe">TOTAL DE RAMAIS</div>
-                <div class="metric-value-oxe">{total_ramais}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with c2:
-        st.markdown(f"""
-            <div class="metric-card-oxe" style="border-left-color: #10b981;">
-                <div class="metric-title-oxe">TELEFONES IP COM MAC</div>
-                <div class="metric-value-oxe">{ramais_com_mac}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with c3:
-        st.markdown(f"""
-            <div class="metric-card-oxe" style="border-left-color: #3b82f6;">
-                <div class="metric-title-oxe">RAMAIS COM ENDEREÇO IP</div>
-                <div class="metric-value-oxe">{ramais_com_ip}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with c4:
-        st.markdown(f"""
-            <div class="metric-card-oxe" style="border-left-color: #f59e0b;">
-                <div class="metric-title-oxe">RAMAIS ANALÓGICOS / OUTROS</div>
-                <div class="metric-value-oxe">{ramais_analogicos}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    render_metric_cards([
+        {
+            "title": "TOTAL DE RAMAIS",
+            "value": total_ramais,
+            "border_color": "#3b82f6",
+        },
+        {
+            "title": "TELEFONES IP COM MAC",
+            "value": ramais_com_mac,
+            "border_color": "#10b981",
+        },
+        {
+            "title": "RAMAIS COM ENDEREÇO IP",
+            "value": ramais_com_ip,
+            "border_color": "#3b82f6",
+        },
+        {
+            "title": "RAMAIS ANALÓGICOS / OUTROS",
+            "value": ramais_analogicos,
+            "border_color": "#f59e0b",
+        },
+    ])
 
     st.markdown("---")
 

@@ -11,6 +11,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_card
 from src.components.status_banner import render_log_expander
 from src.syncs.sync_fiscalizacao import check_fiscalizacao_sync_running, read_fiscalizacao_last_log_lines
 from src.database import (
@@ -268,17 +269,22 @@ def render_contracts_page():
         total_fiscal = count_titular + count_suplente
         primeiro_nome = fiscal.split()[0] + " " + fiscal.split()[-1]
 
+        extra_html = (
+            '<div style="display:flex; justify-content:space-around; margin-top:8px; font-size:0.8rem;">'
+            f'<span>📌 Titular: <b>{count_titular}</b></span>'
+            f'<span>🔄 Suplente: <b>{count_suplente}</b></span>'
+            '</div>'
+        )
         with kpi_cols[i % 3]:
-            st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #ff4b4b; text-align: center;">
-                <div class="metric-title" style="color:#ff4b4b;">👤 {primeiro_nome}</div>
-                <div class="metric-value">{total_fiscal} <span style="font-size:0.9rem; opacity: 0.7;">processos</span></div>
-                <div style="display:flex; justify-content:space-around; margin-top:8px; font-size:0.8rem;">
-                    <span>📌 Titular: <b>{count_titular}</b></span>
-                    <span>🔄 Suplente: <b>{count_suplente}</b></span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_metric_card(
+                title=f"👤 {primeiro_nome}",
+                value=total_fiscal,
+                border_color="#ff4b4b",
+                title_color="#ff4b4b",
+                subtitle="processos",
+                extra_html=extra_html,
+                text_align="center",
+            )
 
 
     st.markdown("<br>", unsafe_allow_html=True)

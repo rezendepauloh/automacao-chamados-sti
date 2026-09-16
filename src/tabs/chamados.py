@@ -20,6 +20,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_cards
 
 DB_PATH = root_dir / "chamados.db"
 
@@ -581,34 +582,29 @@ def render_chamados_page():
         else:
             filtered_df = filtered_df[clean_df_ids.isin(selected_ids)]
         
-    col1, col2, col3 = st.columns(3)
     total_ch = len(filtered_df)
     abertos_ch = len(filtered_df[filtered_df['status'] == 'Aberto']) if 'status' in filtered_df.columns else 0
     fechados_ch = len(filtered_df[filtered_df['status'] == 'Fechado']) if 'status' in filtered_df.columns else 0
 
-    with col1:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #3b82f6;">
-                <div class="metric-title">TOTAL DE CHAMADOS</div>
-                <div class="metric-value">{total_ch}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #f59e0b;">
-                <div class="metric-title">ABERTOS</div>
-                <div class="metric-value" style="color: #f59e0b;">{abertos_ch}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #10b981;">
-                <div class="metric-title">FECHADOS</div>
-                <div class="metric-value" style="color: #10b981;">{fechados_ch}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    render_metric_cards([
+        {
+            "title": "TOTAL DE CHAMADOS",
+            "value": total_ch,
+            "border_color": "#3b82f6",
+        },
+        {
+            "title": "ABERTOS",
+            "value": abertos_ch,
+            "border_color": "#f59e0b",
+            "value_color": "#f59e0b",
+        },
+        {
+            "title": "FECHADOS",
+            "value": fechados_ch,
+            "border_color": "#10b981",
+            "value_color": "#10b981",
+        },
+    ])
 
 
     

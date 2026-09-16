@@ -15,6 +15,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_cards
 
 def get_printer_url(ip_raw: str) -> str:
     """Retorna URL formatada caso o valor seja um endereço IPv4 válido."""
@@ -214,8 +215,6 @@ def render_impressoras_page():
     # -----------------------------------------------------------------------------
     # CARDS KPIS
     # -----------------------------------------------------------------------------
-    col1, col2, col3, col4, col5 = st.columns(5)
-
     total_ativos = len(df_filtered)
     total_filas = len(df_filtered[df_filtered['tipo'] == 'Fila de Impressão'])
     total_mfds = len(df_filtered[df_filtered['tipo'] != 'Fila de Impressão'])
@@ -223,47 +222,36 @@ def render_impressoras_page():
     status_lower = df_filtered['status'].str.lower()
     total_ok = len(df_filtered[status_lower.isin(['ok', 'online', 'ativo', 'ready', 'pronto'])])
     total_erros = total_ativos - total_ok
-    total_paginas = df_filtered['total_paginas'].sum()
 
-    with col1:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #3b82f6;">
-                <div class="metric-title">TOTAL DE ATIVOS</div>
-                <div class="metric-value">{total_ativos}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #8b5cf6;">
-                <div class="metric-title">FILAS DE IMPRESSÃO</div>
-                <div class="metric-value">{total_filas}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #ec4899;">
-                <div class="metric-title">DISPOSITIVOS (MFDs)</div>
-                <div class="metric-value">{total_mfds}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #10b981;">
-                <div class="metric-title">DISPOSITIVOS OK</div>
-                <div class="metric-value" style="color: #10b981;">{total_ok}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col5:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #ef4444;">
-                <div class="metric-title">ALERTAS / COM ERRO</div>
-                <div class="metric-value" style="color: #ef4444;">{total_erros}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    render_metric_cards([
+        {
+            "title": "TOTAL DE ATIVOS",
+            "value": total_ativos,
+            "border_color": "#3b82f6",
+        },
+        {
+            "title": "FILAS DE IMPRESSÃO",
+            "value": total_filas,
+            "border_color": "#8b5cf6",
+        },
+        {
+            "title": "DISPOSITIVOS (MFDs)",
+            "value": total_mfds,
+            "border_color": "#ec4899",
+        },
+        {
+            "title": "DISPOSITIVOS OK",
+            "value": total_ok,
+            "border_color": "#10b981",
+            "value_color": "#10b981",
+        },
+        {
+            "title": "ALERTAS / COM ERRO",
+            "value": total_erros,
+            "border_color": "#ef4444",
+            "value_color": "#ef4444",
+        },
+    ])
 
     st.markdown("<br>", unsafe_allow_html=True)
 

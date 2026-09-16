@@ -10,6 +10,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_cards
 from src.components.status_banner import render_log_expander
 from src.syncs.sync_portarias import check_portarias_sync_running, read_portarias_last_log_lines
 
@@ -220,42 +221,32 @@ def render_portarias_page():
 
 
     # Métrica de Resumo em Cards
-    m1, m2, m3, m4 = st.columns(4)
     count_paulo = sum(1 for p in all_portarias if "Paulo" in str(p['membros']))
     count_reginaldo = sum(1 for p in all_portarias if "Reginaldo" in str(p['membros']))
     count_luiz = sum(1 for p in all_portarias if "Luiz" in str(p['membros']))
 
-    with m1:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #3b82f6;">
-                <div class="metric-title">TOTAL EXIBIDO</div>
-                <div class="metric-value">{len(filtered_portarias)}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with m2:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #10b981;">
-                <div class="metric-title">PAULO REZENDE</div>
-                <div class="metric-value">{count_paulo}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with m3:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #f59e0b;">
-                <div class="metric-title">REGINALDO BANDEIRA</div>
-                <div class="metric-value">{count_reginaldo}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with m4:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #8b5cf6;">
-                <div class="metric-title">LUIZ VILLALBA</div>
-                <div class="metric-value">{count_luiz}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    render_metric_cards([
+        {
+            "title": "TOTAL EXIBIDO",
+            "value": len(filtered_portarias),
+            "border_color": "#3b82f6",
+        },
+        {
+            "title": "PAULO REZENDE",
+            "value": count_paulo,
+            "border_color": "#10b981",
+        },
+        {
+            "title": "REGINALDO BANDEIRA",
+            "value": count_reginaldo,
+            "border_color": "#f59e0b",
+        },
+        {
+            "title": "LUIZ VILLALBA",
+            "value": count_luiz,
+            "border_color": "#8b5cf6",
+        },
+    ])
 
 
     st.markdown("<br>", unsafe_allow_html=True)

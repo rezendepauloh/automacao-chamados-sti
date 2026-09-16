@@ -185,7 +185,8 @@ def sync_active_directory_cache(page_size: int = 500, progress_callback: Optiona
         user_filter = "(&(objectClass=user)(!(objectClass=computer)))"
         user_attrs = [
             "sAMAccountName", "displayName", "mail", "department", "title",
-            "distinguishedName", "userAccountControl", "whenCreated", "lastLogonTimestamp"
+            "distinguishedName", "userAccountControl", "whenCreated", "lastLogonTimestamp",
+            "pager", "telephoneNumber", "mobile", "physicalDeliveryOfficeName", "company", "manager", "description"
         ]
 
         # Usa paged search do ldap3
@@ -215,6 +216,24 @@ def sync_active_directory_cache(page_size: int = 500, progress_callback: Optiona
                 parent_ou = _extract_parent_dn(dn_val)
                 is_act = _is_account_active(uac)
 
+                pager_val = attrs.get('pager') or ''
+                tel_val = attrs.get('telephoneNumber') or ''
+                mobile_val = attrs.get('mobile') or ''
+                office_val = attrs.get('physicalDeliveryOfficeName') or ''
+                company_val = attrs.get('company') or ''
+                desc_val = attrs.get('description') or ''
+                manager_val = attrs.get('manager') or ''
+
+                # Se manager for um DN completo, extrai o CN para facilitar leitura
+                if manager_val and "CN=" in str(manager_val).upper():
+                    m_parts = [p for p in str(manager_val).split(",") if p.upper().startswith("CN=")]
+                    if m_parts:
+                        manager_display = m_parts[0][3:].strip()
+                    else:
+                        manager_display = str(manager_val)
+                else:
+                    manager_display = str(manager_val)
+
                 users.append({
                     "sam_account_name": _clean_str(sam),
                     "display_name": _clean_str(display_name),
@@ -226,7 +245,14 @@ def sync_active_directory_cache(page_size: int = 500, progress_callback: Optiona
                     "is_active": is_act,
                     "user_account_control": int(uac) if uac is not None else 512,
                     "when_created": when_created,
-                    "last_logon": last_logon
+                    "last_logon": last_logon,
+                    "pager": _clean_str(pager_val),
+                    "telephone_number": _clean_str(tel_val),
+                    "mobile": _clean_str(mobile_val),
+                    "office": _clean_str(office_val),
+                    "company": _clean_str(company_val),
+                    "manager": _clean_str(manager_display),
+                    "description": _clean_str(desc_val)
                 })
 
         log(f"Usuários extraídos: {len(users)}", symbol="👥", color=CYAN)
@@ -282,14 +308,78 @@ def sync_active_directory_cache(page_size: int = 500, progress_callback: Optiona
         log(f"Grupos extraídos: {len(groups)}, Relações: {len(memberships)}", symbol="🛡️", color=CYAN)
 
         if progress_callback:
-            progress_callback(90, "Gravando dados de cache no banco de dados...")
+            progress_callback(85, "Consultando Computadores e Servidores do domínio...")
 
-        # 4. Salvar tudo no banco relacional
+        # 4. Busca de Computadores & Servidores
+        computers: List[Dict[str, Any]] = []
+        comp_filter = "(objectClass=computer)"
+        comp_attrs = [
+            "name", "sAMAccountName", "dNSHostName", "operatingSystem", "operatingSystemVersion",
+            "description", "managedBy", "distinguishedName", "userAccountControl", "whenCreated", "lastLogonTimestamp"
+        ]
+
+        comp_generator = conn.extend.standard.paged_search(
+            search_base=base_dn,
+            search_filter=comp_filter,
+            search_scope=ldap3.SUBTREE,
+            attributes=comp_attrs,
+            paged_size=page_size,
+            generator=True
+        )
+
+        for resp in comp_generator:
+            if resp.get('type') == 'searchResEntry':
+                attrs = resp.get('attributes', {})
+                dn_val = resp.get('dn', '')
+                c_name = attrs.get('name') or attrs.get('sAMAccountName') or ''
+                if not c_name:
+                    continue
+                c_name = str(c_name).rstrip('$')
+                dns_host = attrs.get('dNSHostName') or ''
+                os_name = attrs.get('operatingSystem') or ''
+                os_ver = attrs.get('operatingSystemVersion') or ''
+                desc_val = attrs.get('description') or ''
+                managed_val = attrs.get('managedBy') or ''
+                uac = attrs.get('userAccountControl')
+                when_created = _convert_ad_timestamp(attrs.get('whenCreated'))
+                last_logon = _convert_ad_timestamp(attrs.get('lastLogonTimestamp'))
+                parent_ou = _extract_parent_dn(dn_val)
+                is_act = _is_account_active(uac)
+
+                # Limpa managedBy caso seja um DN para exibir nome amigável
+                if managed_val and "CN=" in str(managed_val).upper():
+                    m_parts = [p for p in str(managed_val).split(",") if p.upper().startswith("CN=")]
+                    managed_display = m_parts[0][3:].strip() if m_parts else str(managed_val)
+                else:
+                    managed_display = str(managed_val)
+
+                computers.append({
+                    "name": _clean_str(c_name),
+                    "dns_hostname": _clean_str(dns_host),
+                    "operating_system": _clean_str(os_name),
+                    "os_version": _clean_str(os_ver),
+                    "description": _clean_str(desc_val),
+                    "managed_by": _clean_str(managed_display),
+                    "dn": str(dn_val),
+                    "parent_ou_dn": str(parent_ou),
+                    "is_active": is_act,
+                    "user_account_control": int(uac) if uac is not None else 4096,
+                    "when_created": when_created,
+                    "last_logon": last_logon
+                })
+
+        log(f"Computadores extraídos: {len(computers)}", symbol="💻", color=CYAN)
+
+        if progress_callback:
+            progress_callback(95, "Gravando dados de cache no banco de dados...")
+
+        # 5. Salvar tudo no banco relacional
         save_ad_cache(
             ous=ous,
             users=users,
             groups=groups,
             memberships=memberships,
+            computers=computers,
             status="success",
             error_message=""
         )
@@ -297,19 +387,20 @@ def sync_active_directory_cache(page_size: int = 500, progress_callback: Optiona
         if progress_callback:
             progress_callback(100, "Sincronização concluída com sucesso!")
 
-        log(f"Sincronização concluída: {len(ous)} OUs, {len(users)} Usuários, {len(groups)} Grupos.", symbol="✅", color=GREEN)
+        log(f"Sincronização concluída: {len(ous)} OUs, {len(users)} Usuários, {len(groups)} Grupos, {len(computers)} Computadores.", symbol="✅", color=GREEN)
         return {
             "success": True,
             "total_ous": len(ous),
             "total_users": len(users),
             "total_groups": len(groups),
+            "total_computers": len(computers),
             "total_memberships": len(memberships),
             "error": None
         }
 
     except Exception as e:
         log(f"Erro durante a sincronização do Active Directory: {e}", symbol="❌", color=RED)
-        save_ad_cache([], [], [], [], status="error", error_message=str(e))
+        save_ad_cache([], [], [], [], computers=[], status="error", error_message=str(e))
         return {"success": False, "error": str(e)}
     finally:
         conn.unbind()

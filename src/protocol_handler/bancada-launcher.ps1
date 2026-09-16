@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # Script: bancada-launcher.ps1
 # Função: Executor local do Protocol Handler 'bancada://' para estações Windows.
 # ==============================================================================
@@ -93,6 +93,21 @@ New-Item -ItemType Directory -Path $tempFolder -Force | Out-Null
 Write-Host " [INFO] Pasta temporária criada : $tempFolder" -ForegroundColor Gray
 
 try {
+    if ($tool -eq "rdp") {
+        Write-Host " [INFO] Iniciando Conexão de Área de Trabalho Remota (RDP) para $targetHost..." -ForegroundColor Green
+        Start-Process "mstsc.exe" -ArgumentList "/v:$targetHost"
+        Write-Host " [OK] Conexão RDP disparada com sucesso!" -ForegroundColor Green
+    } elseif ($tool -eq "explorer") {
+        $sharePath = if ($params['path']) { "\\$targetHost\$($params['path'])" } else { "\\$targetHost\c$" }
+        Write-Host " [INFO] Abrindo compartilhamento de rede: $sharePath..." -ForegroundColor Green
+        Start-Process "explorer.exe" -ArgumentList $sharePath
+        Write-Host " [OK] Compartilhamento aberto no Explorer com sucesso!" -ForegroundColor Green
+    } elseif ($tool -eq "ping") {
+        Write-Host " [INFO] Disparando teste de conectividade ICMP contínuo para $targetHost (Ctrl+C para parar)..." -ForegroundColor Yellow
+        ping.exe $targetHost -t
+        Write-Host " [OK] Teste de conectividade finalizado." -ForegroundColor Green
+    } else {
+
     # Lista de arquivos a obter
     $scriptFiles = @()
     if ($tool -eq "analisador") {
@@ -173,6 +188,7 @@ try {
     } elseif ($tool -eq "perfis") {
         & $mainScript -ComputerName $targetHost -UsersToPurge $usersPurge
     }
+}
 
     Write-Host ""
     Write-Host " [OK] Execução concluída com sucesso!" -ForegroundColor Green

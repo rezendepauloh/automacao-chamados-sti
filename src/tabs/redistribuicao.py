@@ -5,6 +5,7 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.metric_cards import render_metric_cards
 from src.components.status_banner import render_log_expander
 from src.syncs.sync_donations import check_donations_sync_running, read_donations_last_log_lines
 
@@ -282,53 +283,43 @@ def render_donations_page():
         ]
 
     st.markdown("---")
-    kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
-    
     total_equip = len(df_filtered)
     doados = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'doação'])
     redistribuicoes = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'redistribuição'])
     baixas = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'baixa'])
     garantias = len(df_filtered[df_filtered['tipo_movimentacao'].str.lower() == 'garantia'])
-    
-    with kpi_col1:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #3b82f6;">
-                <div class="metric-title">EQUIPAMENTOS</div>
-                <div class="metric-value">{total_equip}</div>
-            </div>
-        """, unsafe_allow_html=True)
 
-    with kpi_col2:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #10b981;">
-                <div class="metric-title">DOAÇÕES</div>
-                <div class="metric-value" style="color: #10b981;">{doados}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with kpi_col3:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #8b5cf6;">
-                <div class="metric-title">REDISTRIBUIÇÕES</div>
-                <div class="metric-value" style="color: #8b5cf6;">{redistribuicoes}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with kpi_col4:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #ef4444;">
-                <div class="metric-title">BAIXAS</div>
-                <div class="metric-value" style="color: #ef4444;">{baixas}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with kpi_col5:
-        st.markdown(f"""
-            <div class="metric-card" style="border-left-color: #f59e0b;">
-                <div class="metric-title">GARANTIAS</div>
-                <div class="metric-value" style="color: #f59e0b;">{garantias}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    render_metric_cards([
+        {
+            "title": "EQUIPAMENTOS",
+            "value": total_equip,
+            "border_color": "#3b82f6",
+        },
+        {
+            "title": "DOAÇÕES",
+            "value": doados,
+            "border_color": "#10b981",
+            "value_color": "#10b981",
+        },
+        {
+            "title": "REDISTRIBUIÇÕES",
+            "value": redistribuicoes,
+            "border_color": "#8b5cf6",
+            "value_color": "#8b5cf6",
+        },
+        {
+            "title": "BAIXAS",
+            "value": baixas,
+            "border_color": "#ef4444",
+            "value_color": "#ef4444",
+        },
+        {
+            "title": "GARANTIAS",
+            "value": garantias,
+            "border_color": "#f59e0b",
+            "value_color": "#f59e0b",
+        },
+    ])
 
 
     st.markdown("---")

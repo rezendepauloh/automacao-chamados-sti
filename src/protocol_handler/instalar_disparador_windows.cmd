@@ -18,7 +18,7 @@ reg add "HKCU\Software\Classes\bancada" /ve /d "URL:Sistema Bancada Protocol" /f
 reg add "HKCU\Software\Classes\bancada" /v "URL Protocol" /d "" /f >nul
 reg add "HKCU\Software\Classes\bancada\shell" /f >nul
 reg add "HKCU\Software\Classes\bancada\shell\open" /f >nul
-reg add "HKCU\Software\Classes\bancada\shell\open\command" /ve /d "powershell.exe -NoExit -ExecutionPolicy Bypass -File \"%USERPROFILE%\.bancada\bancada-launcher.ps1\" \"%%1\"" /f >nul
+reg add "HKCU\Software\Classes\bancada\shell\open\command" /ve /d "powershell.exe -NoProfile -NoExit -ExecutionPolicy Bypass -File \"%USERPROFILE%\.bancada\bancada-launcher.ps1\" \"%%1\"" /f >nul
 
 if %ERRORLEVEL% equ 0 (
     echo [OK] Protocolo 'bancada://' registrado com sucesso no HKCU!
