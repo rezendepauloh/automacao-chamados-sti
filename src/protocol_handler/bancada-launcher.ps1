@@ -4,208 +4,208 @@
 # ==============================================================================
 
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
-    [string]$UriString
+    [Parameter(Mandatory = $false, Position = 0)]
+    [string]$UriString = ""
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Remove o prefixo do protocolo e normaliza a query string
-$cleanUri = $UriString -replace "^bancada:/*", ""
-$cleanUri = $cleanUri -replace "^run/*\?", ""
-if ($cleanUri -match "\?(.*)$") {
-    $cleanUri = $matches[1]
-}
-
-# Parse dos parâmetros da query string
-$params = @{}
-$cleanUri.Split('&') | ForEach-Object {
-    if ($_ -match "^(?<key>[^=]+)=(?<val>.*)$") {
-        $key = [System.Uri]::UnescapeDataString($matches['key'])
-        $val = [System.Uri]::UnescapeDataString($matches['val'])
-        $params[$key] = $val
-    }
-}
-
-$tool       = $params['tool']
-$targetHost = $params['host']
-$serverUrl  = $params['server']
-$skipMajor  = $params['skip_major'] -eq 'true'
-$timeoutSec = if ($params['timeout']) { [int]$params['timeout'] } else { 30 }
-$usersPurge = $params['users']
-$psEngine   = $params['ps_engine']
-
-# Detecta e escolhe o executável do PowerShell desejado
-$pwsh7Path = "C:\Program Files\PowerShell\7\pwsh.exe"
-$hasPwsh7 = Test-Path $pwsh7Path
-if (-not $hasPwsh7) {
-    $cmdTest = Get-Command "pwsh.exe" -ErrorAction SilentlyContinue
-    if ($cmdTest) {
-        $pwsh7Path = $cmdTest.Source
-        $hasPwsh7 = $true
-    }
-}
-
-$desiredEngine = "powershell.exe"
-if ($psEngine -eq "pwsh") {
-    if ($hasPwsh7) { $desiredEngine = $pwsh7Path }
-} elseif ($psEngine -eq "powershell") {
-    $desiredEngine = "powershell.exe"
-} else {
-    # Detectar Automaticamente (Padrão): usa pwsh se existir, senão powershell 5.1
-    if ($hasPwsh7) {
-        $desiredEngine = $pwsh7Path
-    } else {
-        $desiredEngine = "powershell.exe"
-    }
-}
-
-# Se estamos rodando no Windows PowerShell 5.1 e o usuário/auto pediu pwsh.exe, inicia o pwsh.exe e encerra este processo imediatamente pelo PID
-if ($PSVersionTable.PSVersion.Major -lt 7 -and $desiredEngine -ne "powershell.exe" -and $hasPwsh7) {
-    Start-Process -FilePath $desiredEngine -ArgumentList @("-NoExit", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath, "`"$UriString`"")
-    # Força encerramento do processo atual (powershell.exe) pelo PID, superando a flag -NoExit da chamada inicial
-    Stop-Process -Id $PID -Force
-}
-
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "       SISTEMA BANCADA — DISPARADOR LOCAL WINDOWS" -ForegroundColor Cyan
-Write-Host "============================================================" -ForegroundColor Cyan
-
-$currentEngineName = if ($PSVersionTable.PSVersion.Major -ge 7) { "⚡ PowerShell 7+ ($($PSVersionTable.PSVersion))" } else { "💻 Windows PowerShell 5.1" }
-Write-Host " [INFO] Interpretador em uso  : $currentEngineName" -ForegroundColor Cyan
-Write-Host " [INFO] Ferramenta solicitada : $tool" -ForegroundColor Green
-Write-Host " [INFO] Máquina alvo          : $targetHost" -ForegroundColor Green
-if ($serverUrl) {
-    Write-Host " [INFO] Servidor de Origem    : $serverUrl" -ForegroundColor Gray
-}
-
-if (-not $tool -or -not $targetHost) {
-    Write-Error "Parâmetros insuficientes na chamada: tool e host são obrigatórios."
-    Write-Host "Pressione ENTER para fechar..."
-    Read-Host
-    exit 1
-}
-
-# Cria diretório temporário isolado para a execução
-$tempFolder = Join-Path $env:TEMP ("bancada_" + [System.Guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $tempFolder -Force | Out-Null
-Write-Host " [INFO] Pasta temporária criada : $tempFolder" -ForegroundColor Gray
-
+# Garante que NENHUMA falha ou encerramento feche o PowerShell sem o usuário ver
 try {
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "       SISTEMA BANCADA — DISPARADOR LOCAL WINDOWS" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Cyan
+
+    # Se chamado sem argumentos (ex: teste manual), solicita o link
+    if ([string]::IsNullOrWhiteSpace($UriString)) {
+        Write-Host " [AVISO] Nenhuma URL recebida por argumento de linha de comando." -ForegroundColor Yellow
+        $UriString = Read-Host " Insira ou cole a URL bancada:// (ou pressione Enter para sair)"
+        if ([string]::IsNullOrWhiteSpace($UriString)) {
+            Write-Host " Nenhuma URL informada. Encerrando." -ForegroundColor Gray
+            return
+        }
+    }
+
+    Write-Host " [DEBUG] Argumento bruto recebido: $UriString" -ForegroundColor Gray
+
+    # Limpeza profunda da URI (aspas, barras extras que browsers às vezes injetam no final)
+    $cleanUri = $UriString.Trim().Trim('"').Trim("'").Trim('/')
+    
+    # Remove prefixo do protocolo: bancada://run? ou bancada:/run? ou bancada:? ou bancada://
+    $cleanUri = $cleanUri -replace '^bancada:/*(run/?)?\??', ''
+    if ($cleanUri.Contains('?')) {
+        $cleanUri = $cleanUri.Substring($cleanUri.IndexOf('?') + 1)
+    }
+
+    # Extrai os parâmetros chave=valor
+    $params = @{}
+    $pairs = $cleanUri.Split('&')
+    foreach ($pair in $pairs) {
+        if ($pair -match "^(?<key>[^=]+)=(?<val>.*)$") {
+            try {
+                $k = [System.Uri]::UnescapeDataString($matches['key'])
+                $v = [System.Uri]::UnescapeDataString($matches['val'])
+                $params[$k] = $v
+            } catch {
+                $params[$matches['key']] = $matches['val']
+            }
+        }
+    }
+
+    $tool       = if ($params['tool']) { $params['tool'].ToLower().Trim() } else { "" }
+    $targetHost = if ($params['host']) { $params['host'].Trim() } else { "" }
+    $serverUrl  = $params['server']
+    $skipMajor  = $params['skip_major'] -eq 'true'
+    $timeoutSec = if ($params['timeout']) { [int]$params['timeout'] } else { 30 }
+    $usersPurge = $params['users']
+    $psEngine   = $params['ps_engine']
+
+    $currentEngineName = if ($PSVersionTable.PSVersion.Major -ge 7) { "⚡ PowerShell 7+ ($($PSVersionTable.PSVersion))" } else { "💻 Windows PowerShell 5.1 ($($PSVersionTable.PSVersion))" }
+    Write-Host " [INFO] Interpretador em uso  : $currentEngineName" -ForegroundColor Cyan
+    Write-Host " [INFO] Ferramenta solicitada : $tool" -ForegroundColor Green
+    Write-Host " [INFO] Máquina alvo          : $targetHost" -ForegroundColor Green
+    if ($serverUrl) {
+        Write-Host " [INFO] Servidor de Origem    : $serverUrl" -ForegroundColor Gray
+    }
+
+    if (-not $tool -or -not $targetHost) {
+        Write-Host ""
+        Write-Host " [ERRO] Parâmetros insuficientes na chamada:" -ForegroundColor Red
+        Write-Host "        tool='$tool', host='$targetHost'" -ForegroundColor Red
+        Write-Host "        URL original: $UriString" -ForegroundColor Yellow
+        return
+    }
+
+    # Ferramentas leves locais (rdp, explorer, ping) rodam IMEDIATAMENTE no processo atual sem troca de engine
     if ($tool -eq "rdp") {
-        Write-Host " [INFO] Iniciando Conexão de Área de Trabalho Remota (RDP) para $targetHost..." -ForegroundColor Green
+        Write-Host " [INFO] Iniciando Conexão de Área de Trabalho Remota (MSTSC) para: $targetHost" -ForegroundColor Green
         Start-Process "mstsc.exe" -ArgumentList "/v:$targetHost"
         Write-Host " [OK] Conexão RDP disparada com sucesso!" -ForegroundColor Green
-    } elseif ($tool -eq "explorer") {
+        return
+    }
+    
+    if ($tool -eq "explorer") {
         $sharePath = if ($params['path']) { "\\$targetHost\$($params['path'])" } else { "\\$targetHost\c$" }
-        Write-Host " [INFO] Abrindo compartilhamento de rede: $sharePath..." -ForegroundColor Green
+        Write-Host " [INFO] Abrindo compartilhamento de rede no Explorer: $sharePath" -ForegroundColor Green
         Start-Process "explorer.exe" -ArgumentList $sharePath
-        Write-Host " [OK] Compartilhamento aberto no Explorer com sucesso!" -ForegroundColor Green
-    } elseif ($tool -eq "ping") {
-        Write-Host " [INFO] Disparando teste de conectividade ICMP contínuo para $targetHost (Ctrl+C para parar)..." -ForegroundColor Yellow
+        Write-Host " [OK] Compartilhamento aberto no Windows Explorer com sucesso!" -ForegroundColor Green
+        return
+    }
+    
+    if ($tool -eq "ping") {
+        Write-Host " [INFO] Disparando teste de conectividade ICMP contínuo para $targetHost (Pressione Ctrl+C para parar)..." -ForegroundColor Yellow
+        Write-Host ""
         ping.exe $targetHost -t
+        Write-Host ""
         Write-Host " [OK] Teste de conectividade finalizado." -ForegroundColor Green
-    } else {
-
-    # Lista de arquivos a obter
-    $scriptFiles = @()
-    if ($tool -eq "analisador") {
-        $scriptFiles = @("Analisador.ps1", "GeradorHtml.ps1", "Mapeamentos.ps1", "cred_admin.xml")
-        $mainScript = Join-Path $tempFolder "Analisador.ps1"
-    } elseif ($tool -eq "manutencao") {
-        $scriptFiles = @("Manutencao.ps1", "cred_admin.xml")
-        $mainScript = Join-Path $tempFolder "Manutencao.ps1"
-    } elseif ($tool -eq "perfis") {
-        $scriptFiles = @("RemoverUsuarios.ps1", "cred_admin.xml")
-        $mainScript = Join-Path $tempFolder "RemoverUsuarios.ps1"
-    } else {
-        throw "Ferramenta desconhecida: '$tool'"
+        return
     }
 
-    # Baixa ou copia os arquivos do script
-    Write-Host " [INFO] Obtendo arquivos necessarios para '$tool'..." -ForegroundColor Yellow
-    foreach ($file in $scriptFiles) {
-        $destPath = Join-Path $tempFolder $file
-        $copied = $false
+    # Para scripts pesados de manutenção/análise, checa se deve migrar para pwsh 7
+    $pwsh7Path = "C:\Program Files\PowerShell\7\pwsh.exe"
+    $hasPwsh7 = Test-Path $pwsh7Path
+    if (-not $hasPwsh7) {
+        $cmdTest = Get-Command "pwsh.exe" -ErrorAction SilentlyContinue
+        if ($cmdTest) {
+            $pwsh7Path = $cmdTest.Source
+            $hasPwsh7 = $true
+        }
+    }
 
-        # 1) Tenta caminhos do WSL / rede local
-        $candidates = @(
-            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$tool\$file",
-            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$tool\$file",
-            "\\wsl.localhost\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$tool\$file",
-            "\\wsl$\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$tool\$file"
-        )
-        foreach ($cand in $candidates) {
-            if (Test-Path $cand) {
-                Copy-Item $cand $destPath -Force
-                Write-Host "  -> [WSL OK] $file obtido de $cand" -ForegroundColor Gray
-                $copied = $true
-                break
-            }
+    $desiredEngine = if ($hasPwsh7 -and $psEngine -ne "powershell") { $pwsh7Path } else { "powershell.exe" }
+
+    if ($PSVersionTable.PSVersion.Major -lt 7 -and $desiredEngine -ne "powershell.exe" -and $hasPwsh7) {
+        Write-Host " [INFO] Migrando execução para PowerShell 7..." -ForegroundColor Cyan
+        Start-Process -FilePath $desiredEngine -ArgumentList @("-NoExit", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath, "`"$UriString`"")
+        return
+    }
+
+    # Cria diretório temporário isolado para a execução
+    $tempFolder = Join-Path $env:TEMP ("bancada_" + [System.Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $tempFolder -Force | Out-Null
+    Write-Host " [INFO] Pasta temporária criada : $tempFolder" -ForegroundColor Gray
+
+    try {
+        # Lista de arquivos a obter
+        $scriptFiles = @()
+        if ($tool -eq "analisador") {
+            $scriptFiles = @("Analisador.ps1", "GeradorHtml.ps1", "Mapeamentos.ps1", "cred_admin.xml")
+            $mainScript = Join-Path $tempFolder "Analisador.ps1"
+        } elseif ($tool -eq "manutencao") {
+            $scriptFiles = @("Manutencao.ps1", "cred_admin.xml")
+            $mainScript = Join-Path $tempFolder "Manutencao.ps1"
+        } elseif ($tool -eq "perfis") {
+            $scriptFiles = @("RemoverUsuarios.ps1", "cred_admin.xml")
+            $mainScript = Join-Path $tempFolder "RemoverUsuarios.ps1"
+        } else {
+            Write-Host " [ERRO] Ferramenta desconhecida: '$tool'" -ForegroundColor Red
+            return
         }
 
-        # 2) Se nao achou no WSL, tenta download via HTTP se serverUrl estiver definido
-        if (-not $copied -and $serverUrl) {
-            $downloadUrl = "$serverUrl/api/scripts/$tool/$file"
+        # Baixa os scripts do servidor bancada
+        if (-not $serverUrl) {
+            $serverUrl = "http://localhost:8502"
+        }
+        $serverUrl = $serverUrl.TrimEnd('/')
+
+        Write-Host " [INFO] Baixando scripts auxiliares de $serverUrl..." -ForegroundColor Gray
+        foreach ($file in $scriptFiles) {
+            $url = "$serverUrl/static/scripts/$file"
+            $dest = Join-Path $tempFolder $file
             try {
-                Invoke-RestMethod -Uri $downloadUrl -OutFile $destPath -TimeoutSec 15
-                Write-Host "  -> [HTTP OK] $file baixado de $downloadUrl" -ForegroundColor Gray
-                $copied = $true
+                Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -TimeoutSec 15
+                Write-Host "   -> Baixado: $file" -ForegroundColor Gray
             } catch {
-                Write-Warning "  -> [FALHA] Nao foi possivel baixar $file via $downloadUrl"
+                Write-Host "   [!] Aviso ao baixar $file via $url : $($_.Exception.Message)" -ForegroundColor Yellow
             }
         }
 
-        if (-not (Test-Path $destPath)) {
-            Write-Warning "  -> [AVISO] Arquivo $file nao foi localizado."
+        if (-not (Test-Path $mainScript)) {
+            Write-Host " [ERRO] O script principal não foi encontrado em: $mainScript" -ForegroundColor Red
+            return
+        }
+
+        # Monta os argumentos
+        $outDir = Join-Path $env:USERPROFILE "DeviceReports"
+        if (-not (Test-Path $outDir)) {
+            New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+        }
+
+        # Monta os argumentos via hashtable (splatting) e executa de forma segura
+        if ($tool -eq "analisador") {
+            $splat = @{
+                ComputerName = $targetHost
+                OutputFolder = $outDir
+                TimeoutSec   = $timeoutSec
+            }
+            if ($skipMajor) { $splat['SkipMajorData'] = $true }
+            & $mainScript @splat
+        } elseif ($tool -eq "manutencao") {
+            & $mainScript -ComputerName $targetHost -Verbose
+        } elseif ($tool -eq "perfis") {
+            & $mainScript -ComputerName $targetHost -UsersToPurge $usersPurge
+        }
+
+        Write-Host ""
+        Write-Host " [OK] Execução do script concluída com sucesso!" -ForegroundColor Green
+
+    } finally {
+        # Remove a pasta temporária dos scripts baixados para não deixar resquícios
+        if ($tempFolder -and (Test-Path $tempFolder)) {
+            Write-Host " [INFO] Limpando pasta temporária de execução..." -ForegroundColor Gray
+            Remove-Item -Path $tempFolder -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
-
-    if (-not (Test-Path $mainScript)) {
-        throw "Não foi possível obter o script principal '$mainScript'."
-    }
-
-    Write-Host " [INFO] Disparando execução local no Windows..." -ForegroundColor Yellow
-
-    # Monta os argumentos
-    $outDir = Join-Path $env:USERPROFILE "DeviceReports"
-    if (-not (Test-Path $outDir)) {
-        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-    }
-
-    # Monta os argumentos via hashtable (splatting) e executa de forma segura
-    if ($tool -eq "analisador") {
-        $splat = @{
-            ComputerName = $targetHost
-            OutputFolder = $outDir
-            TimeoutSec   = $timeoutSec
-        }
-        if ($skipMajor) { $splat['SkipMajorData'] = $true }
-        & $mainScript @splat
-    } elseif ($tool -eq "manutencao") {
-        & $mainScript -ComputerName $targetHost -Verbose
-    } elseif ($tool -eq "perfis") {
-        & $mainScript -ComputerName $targetHost -UsersToPurge $usersPurge
-    }
-}
-
-    Write-Host ""
-    Write-Host " [OK] Execução concluída com sucesso!" -ForegroundColor Green
 
 } catch {
     Write-Host ""
-    Write-Host " [ERRO] Ocorreu uma falha durante a execução:" -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host " [ERRO FATAL] Ocorreu uma falha no launcher:" -ForegroundColor Red
+    Write-Host $_.Exception.ToString() -ForegroundColor Red
 } finally {
-    # Remove a pasta temporária dos scripts baixados para não deixar resquícios
-    if (Test-Path $tempFolder) {
-        Write-Host " [INFO] Limpando pasta temporária de execução..." -ForegroundColor Gray
-        Remove-Item -Path $tempFolder -Recurse -Force -ErrorAction SilentlyContinue
-    }
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host " Execução finalizada! Pressione ENTER para fechar a janela..." -ForegroundColor Yellow
+    Write-Host " Execução finalizada. Pressione ENTER para fechar esta janela..." -ForegroundColor Yellow
     Write-Host "============================================================" -ForegroundColor Cyan
     Read-Host
 }
