@@ -30,7 +30,8 @@ CONFIG_SUBTAB_MAP = {
     "sharepoint": "📂 SharePoint & Planilhas",
     "ia": "🤖 Inteligência Artificial & ML",
     "whatsapp": "📱 WhatsApp & Alertas (Evolution)",
-    "schedules": "⏰ Agendamentos & Cron Jobs"
+    "schedules": "⏰ Agendamentos & Cron Jobs",
+    "protocol_handler": "⚡ Disparador Local (bancada://)"
 }
 
 def render_configuracoes_page():
@@ -793,6 +794,92 @@ def render_configuracoes_page():
             )
         else:
             st.info("Nenhuma execução registrada no agendador até o momento.")
+
+    # -------------------------------------------------------------------------
+    # TAB 10: Disparador Local (bancada://)
+    # -------------------------------------------------------------------------
+    elif selected_subtab == "⚡ Disparador Local (bancada://)":
+        st.markdown("#### ⚡ Disparador Local do Sistema Bancada (Protocol Handler `bancada://`)")
+        st.markdown("""
+        O protocolo customizado **`bancada://`** permite que links clicados no navegador (como na aba **Active Directory** e **Scripts de Automação**) disparem diretamente no seu Windows:
+        - 🖥️ **Conexão Remota (RDP / MSTSC)** na máquina desejada com 1 clique;
+        - 📂 **Compartilhamento de Rede (`\\\\máquina\\c$`)** aberto instantaneamente no Windows Explorer;
+        - ⚡ **Teste de Conectividade ICMP (Ping)** contínuo no console;
+        - 🛠️ **Scripts de Manutenção, Diagnóstico e Remoção de Perfis** executados de forma segura e transparente.
+        """)
+
+        st.info("💡 **Instalação Necessária Apenas 1 Vez por Máquina**: Para que o navegador reconheça as ações rápidas sem bloqueios, instale o disparador na sua máquina do Windows utilizando os arquivos abaixo.")
+
+        proto_dir = Path(__file__).parent.parent / "protocol_handler"
+        installer_cmd = proto_dir / "instalar_disparador_windows.cmd"
+        reg_file = proto_dir / "instalar_protocolo_bancada.reg"
+        launcher_ps1 = proto_dir / "bancada-launcher.ps1"
+
+        c_down1, c_down2 = st.columns(2)
+        with c_down1:
+            st.markdown("""
+            <div style="background: var(--metric-bg, #1e293b); border: 1px solid #3b82f6; border-radius: 10px; padding: 18px; margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; color: #60a5fa;">🚀 1. Instalador Automático (.cmd)</h4>
+                <p style="font-size: 13px; color: #94a3b8; margin: 0 0 14px 0;">
+                    Copia o script launcher para <code>%USERPROFILE%\\.bancada\\</code> e registra automaticamente a URL <code>bancada://</code> no Registro do Windows do usuário logado.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            if installer_cmd.exists():
+                st.download_button(
+                    label="📥 Baixar instalar_disparador_windows.cmd",
+                    data=installer_cmd.read_bytes(),
+                    file_name="instalar_disparador_windows.cmd",
+                    mime="application/octet-stream",
+                    type="primary",
+                    use_container_width=True,
+                    key="btn_down_cmd_config"
+                )
+            else:
+                st.error("Arquivo instalar_disparador_windows.cmd não encontrado no servidor.")
+
+        with c_down2:
+            st.markdown("""
+            <div style="background: var(--metric-bg, #1e293b); border: 1px solid #10b981; border-radius: 10px; padding: 18px; margin-bottom: 12px;">
+                <h4 style="margin: 0 0 8px 0; color: #34d399;">📝 2. Registro Manual (.reg)</h4>
+                <p style="font-size: 13px; color: #94a3b8; margin: 0 0 14px 0;">
+                    Chaves de Registro (HKCU) caso queira inspecionar ou importar diretamente as entradas do protocolo no Registro do Windows.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            if reg_file.exists():
+                st.download_button(
+                    label="📥 Baixar instalar_protocolo_bancada.reg",
+                    data=reg_file.read_bytes(),
+                    file_name="instalar_protocolo_bancada.reg",
+                    mime="text/plain",
+                    use_container_width=True,
+                    key="btn_down_reg_config"
+                )
+            else:
+                st.error("Arquivo instalar_protocolo_bancada.reg não encontrado no servidor.")
+
+        st.markdown("---")
+        with st.expander("🔍 Como funciona e Arquivos Técnicos", expanded=False):
+            st.markdown(r"""
+            1. **O que é instalado?**
+               - Uma pasta `%USERPROFILE%\.bancada\` é criada no seu perfil de usuário do Windows.
+               - O script `bancada-launcher.ps1` é copiado para lá.
+               - A chave `HKCU\Software\Classes\bancada` é configurada para chamar o script com o PowerShell nativo.
+            2. **Por que é seguro?**
+               - Não requer permissão de Administrador da máquina (grava apenas no `HKCU` do seu usuário).
+               - O script valida todos os parâmetros antes de disparar qualquer aplicativo.
+               - Para ferramentas locais leves (`rdp`, `explorer`, `ping`), ele executa de forma direta e instantânea.
+            """)
+            if launcher_ps1.exists():
+                st.caption(f"Versão local do `bancada-launcher.ps1` ({launcher_ps1.stat().st_size} bytes)")
+                st.download_button(
+                    label="📥 Baixar bancada-launcher.ps1 individualmente",
+                    data=launcher_ps1.read_bytes(),
+                    file_name="bancada-launcher.ps1",
+                    mime="text/plain",
+                    key="btn_down_launcher_ps1_config"
+                )
 
     # Botão de Ação Global para Salvar a aba ativa (apenas se houver campos de formulário)
     if form_values:

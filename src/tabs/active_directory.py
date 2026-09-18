@@ -2,6 +2,7 @@ import os
 import io
 import re
 import json
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -1320,7 +1321,10 @@ def render_gojs_tree_component(nodes: list, ou_entities: dict = None, height: in
               </div>
             </div>
 
-            <div style="margin-top: 14px; font-weight: 600; font-size: 13px; color: #f59e0b;">⚡ Ações Rápidas de Suporte (Protocolo Bancada)</div>
+            <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: baseline;">
+              <span style="font-weight: 600; font-size: 13px; color: #f59e0b;">⚡ Ações Rápidas de Suporte (Protocolo Bancada)</span>
+              <span style="font-size: 11px; color: #64748b;">(Requer disparador instalado &bull; <a href="?tab=configuracoes&subtab=protocol_handler" target="_blank" style="color: #38bdf8; text-decoration: underline;">Baixar</a>)</span>
+            </div>
             <div class="quick-actions">
               <a class="action-link" href="bancada://run?tool=rdp&host=${{encodeURIComponent(targetHost)}}">
                 <div class="action-btn rdp">
@@ -1564,6 +1568,7 @@ def show_computer_details_dialog(comp_row):
 
     # Ações Rápidas de Suporte / Infraestrutura via Protocolo Bancada
     st.markdown("#### ⚡ Ações Rápidas na Estação / Servidor")
+    st.caption("Disparo nativo no Windows via protocolo `bancada://`. Requer instalação única do disparador na máquina do técnico ([⚙️ Baixar em Configurações](?tab=configuracoes&subtab=protocol_handler)).")
     b_col1, b_col2, b_col3 = st.columns(3)
     target_addr = dns_host if dns_host and dns_host != "-" else name
 
@@ -1602,6 +1607,18 @@ def show_computer_details_dialog(comp_row):
             unsafe_allow_html=True
         )
         st.caption("Ping contínuo no console")
+
+    proto_cmd = Path(__file__).parent.parent / "protocol_handler" / "instalar_disparador_windows.cmd"
+    if proto_cmd.exists():
+        with st.expander("🛠️ Instalar disparador local nesta máquina (`instalar_disparador_windows.cmd`)", expanded=False):
+            st.info("Execute este instalador uma única vez no seu Windows para habilitar os botões de 1 clique acima:")
+            st.download_button(
+                label="📥 Baixar instalador_disparador_windows.cmd",
+                data=proto_cmd.read_bytes(),
+                file_name="instalar_disparador_windows.cmd",
+                mime="application/octet-stream",
+                key=f"btn_ad_dlg_cmd_{name}"
+            )
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Fechar Ficha da Máquina", key="close_comp_dialog_btn", use_container_width=True):

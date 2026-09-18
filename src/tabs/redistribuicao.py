@@ -181,7 +181,9 @@ def render_donations_page():
         else:
             movs_str = "Movimentação"
             
-        subject = f"[DOAÇÃO] - Preparação de {movs_str} de equipamentos do dia {formatted_date}"
+        total_prep = len(df_date)
+        equip_word = "equipamento" if total_prep == 1 else "equipamentos"
+        subject = f"[DOAÇÃO] - Preparação de {movs_str} de equipamentos ({total_prep} {equip_word}) do dia {formatted_date}"
         
         st.write("📋 **Assunto do Chamado:**")
         st.code(subject, language="text")
@@ -190,10 +192,12 @@ def render_donations_page():
         html_parts = []
         html_parts.append("<div style='font-family: Arial, Helvetica, sans-serif; color: #000000; line-height: 1.5;'>")
         html_parts.append("<p>Prezados, boa tarde.</p>")
-        html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos os seguintes equipamentos, sendo eles:</p>")
+        html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos um total de <strong>{total_prep} {equip_word}</strong>, sendo eles:</p>")
         
         for mov_type, grp in df_date.groupby('tipo_movimentacao'):
-            html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()}:</strong></p>")
+            qtd_grp = len(grp)
+            qtd_word = "máquina/equipamento" if qtd_grp == 1 else "máquinas/equipamentos"
+            html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()} ({qtd_grp} {qtd_word}):</strong></p>")
             
             has_ssd = grp['ssd'].astype(str).str.strip().any()
             has_obs = grp['motivo_baixa'].astype(str).str.strip().any()
@@ -205,6 +209,7 @@ def render_donations_page():
             
             headers_html = [
                 f"<tr>",
+                f"<th style='{th_style}'><span style=\"color:#ffffff\">#</span></th>",
                 f"<th style='{th_style}'><span style=\"color:#ffffff\">Patrimônio</span></th>",
                 f"<th style='{th_style}'><span style=\"color:#ffffff\">Modelo</span></th>",
                 f"<th style='{th_style}'><span style=\"color:#ffffff\">Serial Number PC</span></th>",
@@ -219,6 +224,7 @@ def render_donations_page():
             table_html.append("".join(headers_html))
             
             for idx, (_, row) in enumerate(grp.iterrows()):
+                item_num = idx + 1
                 pat = str(row.get('patrimonio', '')).strip()
                 mod = str(row.get('modelo', '')).strip()
                 ser = str(row.get('serial_number', '')).strip()
@@ -230,6 +236,7 @@ def render_donations_page():
                 
                 row_html = [
                     f"<tr>",
+                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; text-align: center; font-weight: bold; {bg_style}'>{item_num}</td>",
                     f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{pat}</td>",
                     f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{mod}</td>",
                     f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ser}</td>",
@@ -243,6 +250,14 @@ def render_donations_page():
                 
                 table_html.append("".join(row_html))
  
+            # Linha de rodapé com total do grupo
+            colspan_extra = 0
+            if has_ssd: colspan_extra += 1
+            if has_obs: colspan_extra += 1
+            total_cols = 5 + colspan_extra
+            footer_html = f"<tr><td colspan='{total_cols}' style='border: 2px solid #cccccc; padding: 6px 10px; background-color: #e9ecef; font-weight: bold; text-align: right;'>Total {mov_type}: {qtd_grp} {qtd_word}</td></tr>"
+            table_html.append(footer_html)
+
             table_html.append("</table>")
             html_parts.append("".join(table_html))
             

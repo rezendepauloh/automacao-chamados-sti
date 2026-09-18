@@ -443,16 +443,35 @@ def render_scripts_automacao_page():
 
     # Informações e instalador do disparador para técnicos (1 clique)
     launcher_installer = Path(__file__).parent.parent / "protocol_handler" / "instalar_disparador_windows.cmd"
-    if launcher_installer.exists():
-        with st.expander("🛠️ Configuração do Disparador Windows (Apenas 1ª vez por máquina)", expanded=False):
-            st.info("Para que o navegador dispare os scripts nativamente no Windows sem precisar de intervenção manual, execute o instalador abaixo uma única vez na máquina do técnico:")
-            st.download_button(
-                label="📥 Baixar Instalador do Disparador Windows (.cmd)",
-                data=launcher_installer.read_bytes(),
-                file_name="instalar_disparador_windows.cmd",
-                mime="application/octet-stream",
-                key="btn_download_bancada_launcher_installer"
-            )
+    reg_installer = Path(__file__).parent.parent / "protocol_handler" / "instalar_protocolo_bancada.reg"
+    with st.expander("🛠️ Disparador Local Windows (`bancada://`) — Necessário Instalar 1ª Vez", expanded=False):
+        st.info("""
+        Para que os disparos com 1 clique funcionem diretamente no Windows (MSTSC/RDP, Compartilhamento C$, Ping e Execução de Scripts), é necessário registrar o disparador local na sua máquina uma única vez.
+        
+        👉 Você também pode gerenciar e baixar em **⚙️ Configurações > Disparador Local (bancada://)**.
+        """)
+        c_inst1, c_inst2 = st.columns(2)
+        with c_inst1:
+            if launcher_installer.exists():
+                st.download_button(
+                    label="📥 Baixar Instalador Automático (.cmd)",
+                    data=launcher_installer.read_bytes(),
+                    file_name="instalar_disparador_windows.cmd",
+                    mime="application/octet-stream",
+                    type="primary",
+                    use_container_width=True,
+                    key="btn_download_bancada_launcher_installer"
+                )
+        with c_inst2:
+            if reg_installer.exists():
+                st.download_button(
+                    label="📥 Baixar Registro do Windows (.reg)",
+                    data=reg_installer.read_bytes(),
+                    file_name="instalar_protocolo_bancada.reg",
+                    mime="text/plain",
+                    use_container_width=True,
+                    key="btn_download_bancada_reg_installer"
+                )
 
     # Suporte a URL query param ?subtab=slug
     url_subtab = st.query_params.get("subtab", "analisador")
