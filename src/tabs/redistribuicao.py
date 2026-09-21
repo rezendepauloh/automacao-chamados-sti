@@ -189,15 +189,49 @@ def render_donations_page():
         st.code(subject, language="text")
         st.markdown("---")
             
+        def _pluralize_equip(name: str, count: int) -> str:
+            n_lower = name.lower().strip()
+            if count == 1:
+                return f"1 {n_lower}"
+            # Regras simples de plural em português
+            if n_lower.endswith(('r', 's', 'z')):
+                return f"{count} {n_lower}es"
+            elif n_lower.endswith('m'):
+                return f"{count} {n_lower[:-1]}ns"
+            elif n_lower.endswith('l'):
+                return f"{count} {n_lower[:-1]}is"
+            elif n_lower.endswith(('a', 'e', 'i', 'o', 'u')):
+                return f"{count} {n_lower}s"
+            return f"{count} {n_lower}s"
+
+        def _format_equip_breakdown(grp_df) -> str:
+            counts = grp_df['equipamento'].fillna('Equipamento').astype(str).str.strip().value_counts()
+            parts = []
+            for eq_name, c in counts.items():
+                if eq_name:
+                    parts.append(_pluralize_equip(eq_name, c))
+            if not parts:
+                return ""
+            if len(parts) == 1:
+                return f"sendo {parts[0]}"
+            return f"sendo {', '.join(parts[:-1])} e {parts[-1]}"
+
+        # Resumo global para a frase de abertura
+        global_breakdown = _format_equip_breakdown(df_date)
+        intro_breakdown_str = f" ({global_breakdown})" if global_breakdown else ""
+
         html_parts = []
         html_parts.append("<div style='font-family: Arial, Helvetica, sans-serif; color: #000000; line-height: 1.5;'>")
         html_parts.append("<p>Prezados, boa tarde.</p>")
-        html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos um total de <strong>{total_prep} {equip_word}</strong>, sendo eles:</p>")
+        html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos um total de <strong>{total_prep} {equip_word}</strong>{intro_breakdown_str}, sendo eles:</p>")
         
         for mov_type, grp in df_date.groupby('tipo_movimentacao'):
             qtd_grp = len(grp)
-            qtd_word = "máquina/equipamento" if qtd_grp == 1 else "máquinas/equipamentos"
-            html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()} ({qtd_grp} {qtd_word}):</strong></p>")
+            qtd_word = "equipamento" if qtd_grp == 1 else "equipamentos"
+            grp_breakdown = _format_equip_breakdown(grp)
+            grp_breakdown_str = f", {grp_breakdown}" if grp_breakdown else ""
+
+            html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()} ({qtd_grp} {qtd_word}{grp_breakdown_str}):</strong></p>")
             
             has_ssd = grp['ssd'].astype(str).str.strip().any()
             has_obs = grp['motivo_baixa'].astype(str).str.strip().any()
@@ -250,12 +284,13 @@ def render_donations_page():
                 
                 table_html.append("".join(row_html))
  
-            # Linha de rodapé com total do grupo
+            # Linha de rodapé com total do grupo detalhado por tipo de equipamento
             colspan_extra = 0
             if has_ssd: colspan_extra += 1
             if has_obs: colspan_extra += 1
             total_cols = 5 + colspan_extra
-            footer_html = f"<tr><td colspan='{total_cols}' style='border: 2px solid #cccccc; padding: 6px 10px; background-color: #e9ecef; font-weight: bold; text-align: right;'>Total {mov_type}: {qtd_grp} {qtd_word}</td></tr>"
+            footer_text = f"Total {mov_type}: {qtd_grp} {qtd_word}{grp_breakdown_str}"
+            footer_html = f"<tr><td colspan='{total_cols}' style='border: 2px solid #cccccc; padding: 6px 10px; background-color: #e9ecef; font-weight: bold; text-align: right;'>{footer_text}</td></tr>"
             table_html.append(footer_html)
 
             table_html.append("</table>")
