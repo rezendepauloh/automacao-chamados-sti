@@ -61,6 +61,13 @@ def setup_environment(local_ip: str) -> None:
     if not db_file.exists():
         db_file.touch()
 
+    # Gera/atualiza o arquivo de calendário estático .ics para consumo do Outlook
+    try:
+        from src.services.ics_export import update_published_ics_file
+        update_published_ics_file()
+    except Exception:
+        pass
+
 def print_banner(local_ip: str, port: int) -> None:
     """Exibe o banner estilizado com status e QR Code em ASCII."""
     full_url = f"http://{local_ip}:{port}/"

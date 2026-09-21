@@ -15,6 +15,7 @@ PAGE_TO_SLUG = {
     "🛡️ Controle de Garantia": "garantia",
     "🖨️ Impressoras (PaperCut)": "impressoras",
     "🌳 Active Directory (AD)": "active-directory",
+    "💻 Inventário SCCM": "sccm",
     "⚡ Scripts de Automação": "scripts-automacao",
     "📚 FAQ & Tutoriais": "faq",
     "🔔 Central de Notificações": "notificacoes",
@@ -99,6 +100,8 @@ def render_header_navigation() -> str:
             set_page("🖨️ Impressoras (PaperCut)")
         if st.button("🌳 Active Directory (AD)", width='stretch', type=get_btn_type("🌳 Active Directory (AD)")):
             set_page("🌳 Active Directory (AD)")
+        if st.button("💻 Inventário SCCM", width='stretch', type=get_btn_type("💻 Inventário SCCM")):
+            set_page("💻 Inventário SCCM")
 
         if st.button("⚡ Scripts de Automação", width='stretch', type=get_btn_type("⚡ Scripts de Automação")):
             set_page("⚡ Scripts de Automação")

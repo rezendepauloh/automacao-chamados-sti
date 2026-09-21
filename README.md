@@ -79,9 +79,16 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 - **Sanitização Unicode & HTML:** Limpeza de tags HTML (`<strong>`), acentos e hífens Unicode quebrados (`\u0096`, `\u2013`), além de deduplicação inteligente.
 - **Modal de Detalhes & Download de PDF:** Visualizador completo da ementa, diário oficial e download direto do PDF do anexo (`/download/{atocod}`).
 
-### 10. Escala de Plantões da Bancada (Matutino & Semanal)
+### 10. Escala de Plantões, Calendário Geral & Integração com o Microsoft Outlook
 
-- **Calendário Interativo FullCalendar v6:** Exibição dinâmica das escalas em modo dark glassmorphism.
+- **Calendário Geral Unificado (FullCalendar v6):** Visão centralizada com filtros rápidos para Registros Manuais, Plantões Matutinos, Plantões Semanais, Contratos de Garantia, Portarias da Bancada (Férias/Fiscais), Viagens e Chamados Técnicos (OTRS e CitSmart).
+- **Exportação Universal para o Microsoft Outlook (RFC 5545 iCalendar):**
+  - _Download de Arquivo `.ics`_: Botão com 1 clique na interface que exporta os eventos selecionados com títulos padronizados, descrições detalhadas, categorias, alarmes e localidades para importação em qualquer calendário do Outlook.
+  - _Assinatura Dinâmica da Web (`Inscrever-se da Web`)_:
+    - No ambiente corporativo (Red Hat / Produção), a aplicação publica o arquivo consolidado de eventos em rota estática (`/app/static/calendario.ics`).
+    - **Sincronização 100% Autônoma:** No Outlook (Web, Desktop ou Mobile), basta clicar em *Adicionar calendário > Inscrever-se da Web* e colar a URL da aplicação (`https://<servidor-bancada-mpms>/app/static/calendario.ics`).
+    - **Zero Duplicidade:** Todos os eventos possuem identificador persistente e padronizado (`UID:{id}@bancada-sti.mpms.mp.br`). Quando o Outlook sincroniza, ele atualiza ou adiciona eventos novos sem jamais gerar registros repetidos.
+  - _Atualização Automatizada via Daemon_: O motor em segundo plano (`cron_scheduler`) atualiza o arquivo `.ics` publicado a cada 2 horas ou sempre que os robôs sincronizarem plantões, portarias ou viagens.
 - **Coleta Autônoma (`plantoes_scraper.py`):** Bot de sincronização das escalas de Plantão Matutino (PGJ) e Plantão Semanal (SIMP).
 - **Sub-Navegação Persistente:** Suporte a query parameters (`?tab=plantoes&subtab=agenda|matutino|semanal`).
 
@@ -210,7 +217,26 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
   - Métricas de cache corporativo com contadores de OUs, Usuários, Computadores/Servidores e Grupos.
   - Ferramenta de teste de latência e conectividade com o DC e botão de sincronização manual com barra de progresso em tempo real.
 
-### 19. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
+### 19. Módulo de Inventário SCCM (Ativos, Conformidade & Controle Remoto)
+
+- **Consulta Remota WMI/CIM Multiplataforma (`sccm_service.py`):**
+  - Conexão segura ao servidor SCCM (`srv-1046.in.mpe.ms.gov.br`) no namespace `root\sms\site_PGJ` utilizando credenciais administrativas salvas no cofre (`SCCM_ADMIN_USER` / `SCCM_ADMIN_PASSWORD`) com autenticação DCOM `PacketPrivacy`.
+  - **Sincronização Híbrida via Protocol Handler (`bancada://run?tool=sccm_sync`):** Devido à ausência de DCOM PacketPrivacy nativo no Linux/pwsh, a sincronização pode ser acionada diretamente da interface via `bancada://` para executar no PowerShell da sua estação Windows local, extraindo em segundos os milhares de registros e disponibilizando `sccm_inventory.json` para importação imediata (`import_sccm_inventory_json`).
+- **Estrutura de Sub-abas (Espelhamento do Console MECM/SCCM):**
+  - 💻 **Dispositivos (`SMS_R_System` / `SMS_CM_RES_COLL_SMS00001`):** Inventário completo das 2.800+ estações e servidores com Hostname, Último Usuário logado, IP(s) válidos, Endereço MAC, Fabricante, Modelo, Versão e Build do Windows, Versão do Cliente SCCM e Site do Active Directory.
+  - 👤 **Usuários (`SMS_R_User`):** Catálogo de utilizadores gerenciados, grupos associados e Distinguished Name.
+  - 📁 **Coleções de Dispositivos & Usuários (`SMS_Collection`):** Monitoramento de todas as 400+ coleções dinâmicas de dispositivos (Tipo 2) e coleções de usuários (Tipo 1) com contagem de membros em tempo real.
+  - 🛡️ **Configurações & Conformidade:** Painel diagnóstico da saúde dos agentes SCCM, listando estações ativas e identificando máquinas sem comunicação recente para intervenção preventiva da bancada.
+- **Ações Remotas com 1 Clique via Protocol Handler (`bancada://`):**
+  - 🎮 **Controle Remoto Oficial SCCM (`tool=cmrc`):** Dispara instantaneamente o executável oficial `CmRcViewer.exe` instalado no Windows para abrir a sessão de assistência remota sem precisar navegar no console do SCCM.
+  - 🖥️ **Conexão RDP (`tool=rdp`):** Conecta via Área de Trabalho Remota (MSTSC).
+  - 📂 **Explorer C$ (`tool=explorer`):** Acessa o compartilhamento administrativo `\\hostname\c$`.
+  - ⚡ **Teste de Ping (`tool=ping`):** Dispara teste contínuo de latência ICMP.
+- **Cache Relacional de Alta Performance (`sccm_db.py`):**
+  - Armazenamento estruturado no banco relacional (`chamados.db` / PostgreSQL), permitindo que buscas, filtros e abertura de fichas técnicas ocorram em milissegundos.
+  - Sincronização em segundo plano via interface ou agendada pelo `cron_scheduler`.
+
+### 20. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
 
 - **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
 - **Cards KPI / Métricas Padronizados (`src/components/metric_cards.py`):** Componente unificado para exibição de indicadores de desempenho (`render_metric_card` e `render_metric_cards`), integrando-se aos temas visual claro/escuro via variáveis CSS, eliminando blocos de HTML inline redundantes e padronizando todas as abas da aplicação (Active Directory, Chamados, Telefonia OXE, Impressoras PaperCut, Garantias, Viagens, Portarias, Redistribuição e Fiscalização).

@@ -159,6 +159,18 @@ DEFAULT_TASKS = [
         "horario_fixo": "08:00",
         "apenas_dias_uteis": 1,
         "descricao": "Executa o robô de extração de chamados OTRS/CitSmart e classificação de tags por IA."
+    },
+    {
+        "task_id": "sync_calendario_ics",
+        "nome": "📅 Publicação do Calendário Bancada STI (.ics)",
+        "categoria": "Calendário & Outlook",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 2,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "07:30",
+        "apenas_dias_uteis": 0,
+        "descricao": "Atualiza o arquivo .ics unificado para que o Microsoft Outlook (Web/Desktop) sincronize automaticamente todos os eventos."
     }
 ]
 

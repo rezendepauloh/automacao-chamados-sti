@@ -142,6 +142,16 @@ from .ad_db import (
     get_group_members
 )
 
+from .sccm_db import (
+    setup_sccm_tables,
+    save_sccm_devices,
+    save_sccm_users,
+    save_sccm_collections,
+    get_sccm_devices_df,
+    get_sccm_users_df,
+    get_sccm_collections_df
+)
+
 __all__ = [
     "setup_ad_tables",
     "save_ad_cache",

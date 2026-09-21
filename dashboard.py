@@ -143,6 +143,11 @@ elif selected_page == "🌳 Active Directory (AD)":
     importlib.reload(src.tabs.active_directory)
     src.tabs.active_directory.render_ad_page()
 
+elif selected_page == "💻 Inventário SCCM":
+    import src.tabs.sccm
+    importlib.reload(src.tabs.sccm)
+    src.tabs.sccm.render_sccm_page()
+
 elif selected_page == "⚡ Scripts de Automação":
     import src.tabs.scripts_automacao
     importlib.reload(src.tabs.scripts_automacao)

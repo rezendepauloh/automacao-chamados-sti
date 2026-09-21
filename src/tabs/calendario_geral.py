@@ -16,6 +16,7 @@ from src.database import (
 from src.tabs.plantoes import format_phone_number, is_bancada_member
 from src.tabs.garantia import parse_date_to_iso_and_br
 from src.tabs.portarias import fetch_portarias_bancada
+from src.services.ics_export import generate_ics_calendar
 
 
 
@@ -619,6 +620,43 @@ def render_calendario_geral_page():
         filtered_events = matching_events
 
     render_master_calendar(filtered_events)
+
+    # --- BOTÃO NO SIDEBAR: EXPORTAÇÃO OUTLOOK (.ICS) ---
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## 📅 Exportar Calendário")
+    ics_content = generate_ics_calendar(filtered_events, calendar_name="Bancada STI - Calendário")
+    st.sidebar.download_button(
+        label=f"📥 Baixar Calendário (.ics) [{len(filtered_events)}]",
+        data=ics_content,
+        file_name=f"calendario_bancada_sti_{datetime.now().strftime('%Y%m%d')}.ics",
+        mime="text/calendar",
+        help="Baixar todos os eventos selecionados em formato .ics para o Microsoft Outlook",
+        use_container_width=True,
+        type="secondary"
+    )
+
+    # --- ACCORDION INFORMATIVO ABAIXO DO CALENDÁRIO ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("💡 Como sincronizar este calendário no seu Outlook (Web e Desktop)"):
+        st.markdown("""
+        ### 🔄 Método 1: Assinatura Automática via Web (Recomendado no Red Hat / Produção)
+        *Sem duplicidades e com atualização contínua e autônoma no seu Outlook:*
+        1. No seu Outlook (Web ou Desktop), clique no menu lateral em **"Adicionar calendário"** *(acima de 'Meus calendários')*.
+        2. Selecione a opção **"Inscrever-se da Web"** (ou *Assinar da Web*).
+        3. Cole a URL pública/corporativa do servidor da Bancada:
+           ```text
+           https://<servidor-bancada-mpms>/app/static/calendario.ics
+           ```
+           *(Em ambiente de teste/rede interna: `http://10.111.64.76:8501/app/static/calendario.ics`)*.
+        4. Defina o nome (ex: **"Bancada STI"**), escolha um ícone e clique em **Importar**.
+        5. **Pronto!** O Outlook fará a sincronização autônoma de novos plantões, viagens e portarias sem necessidade de uploads manuais.
+
+        ---
+        ### 📥 Método 2: Importação Manual via Arquivo (.ics)
+        1. Clique no botão **"📥 Baixar Calendário (.ics)"** na barra lateral esquerda.
+        2. No Outlook Web, clique em **"Adicionar calendário" > "Fazer upload do arquivo"**.
+        3. Selecione o arquivo `.ics` baixado, escolha o calendário desejado e confirme a importação.
+        """)
 
     # --- TABELA DE RESULTADOS DA PESQUISA (EXIBIDA SE HOUVER BUSCA) ---
     if search_query:

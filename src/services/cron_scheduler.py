@@ -123,7 +123,12 @@ def execute_task_by_id(task_id: str) -> str:
         elif task_id == "sync_papercut":
             from src.scrapers.papercut_scraper import run_papercut_scraper
             run_papercut_scraper()
-            return "Gestão de impressoras PaperCut sincronizada com sucesso."
+            return "Relatórios do PaperCut sincronizados e desduplicados com sucesso."
+
+        elif task_id == "sync_calendario_ics":
+            from src.services.ics_export import update_published_ics_file
+            path = update_published_ics_file()
+            return f"Calendário ICS atualizado com sucesso em {path}."
 
         elif task_id == "orquestrador_chamados":
             import subprocess

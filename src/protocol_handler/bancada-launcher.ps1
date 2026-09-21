@@ -69,7 +69,62 @@ try {
         Write-Host " [INFO] Servidor de Origem    : $serverUrl" -ForegroundColor Gray
     }
 
-    if (-not $tool -or -not $targetHost) {
+    if ($tool -eq "sccm_sync") {
+        Write-Host " [INFO] Iniciando Sincronização do Inventário SCCM via WMI/CIM..." -ForegroundColor Cyan
+        $outPath = Join-Path $env:USERPROFILE "sccm_inventory.json"
+        $serverHost = if ($targetHost) { $targetHost } else { "srv-1046.in.mpe.ms.gov.br" }
+        $sec = ConvertTo-SecureString "Abcd4268#" -AsPlainText -Force
+        $cred = New-Object System.Management.Automation.PSCredential("MPE\paulo_admin", $sec)
+
+        Write-Host " [1/3] Consultando Coleções de Dispositivos e Usuários..." -ForegroundColor Yellow
+        $colQuery = "SELECT CollectionID, Name, CollectionType, MemberCount, Comment, LastRefreshTime FROM SMS_Collection"
+        $collections = Get-WmiObject -ComputerName $serverHost -Namespace "root\sms\site_PGJ" -Query $colQuery -Credential $cred -Authentication PacketPrivacy
+        Write-Host "       -> $($collections.Count) coleções encontradas." -ForegroundColor Green
+
+        Write-Host " [2/3] Consultando Dispositivos do SCCM (SMS_CM_RES_COLL_SMS00001)..." -ForegroundColor Yellow
+        $devQuery = "SELECT ResourceID, Name, Domain, IsClient, ClientVersion, SMSID, DeviceOwner, DistinguishedName FROM SMS_CM_RES_COLL_SMS00001"
+        $devices = Get-WmiObject -ComputerName $serverHost -Namespace "root\sms\site_PGJ" -Query $devQuery -Credential $cred -Authentication PacketPrivacy
+        Write-Host "       -> $($devices.Count) estações encontradas." -ForegroundColor Green
+
+        Write-Host " [3/3] Consultando Usuários do SCCM (SMS_R_User)..." -ForegroundColor Yellow
+        $userQuery = "SELECT ResourceID, UserName, FullUserName, WindowsNTDomain, DistinguishedName FROM SMS_R_User"
+        $users = Get-WmiObject -ComputerName $serverHost -Namespace "root\sms\site_PGJ" -Query $userQuery -Credential $cred -Authentication PacketPrivacy
+        Write-Host "       -> $($users.Count) usuários encontrados." -ForegroundColor Green
+
+        $exportData = @{
+            generated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+            collections = @($collections | Select-Object CollectionID, Name, CollectionType, MemberCount, Comment, LastRefreshTime)
+            devices = @($devices | Select-Object ResourceID, Name, Domain, IsClient, ClientVersion, SMSID, DeviceOwner, DistinguishedName)
+            users = @($users | Select-Object ResourceID, UserName, FullUserName, WindowsNTDomain, DistinguishedName)
+        }
+
+        $json = $exportData | ConvertTo-Json -Depth 4 -Compress
+        [System.IO.File]::WriteAllText($outPath, $json, [System.Text.Encoding]::UTF8)
+        Write-Host ""
+        Write-Host " [OK] Inventário SCCM exportado com sucesso para:" -ForegroundColor Green
+        Write-Host "      $outPath" -ForegroundColor Gray
+
+        # Se existir caminho de projeto acessível, copia diretamente
+        $wslPath = "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json"
+        $wslPathOld = "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json"
+        try {
+            if (Test-Path "\\wsl.localhost\Ubuntu-24.04") {
+                Copy-Item $outPath $wslPath -Force
+                Write-Host " [OK] Atualizado em $wslPath" -ForegroundColor Green
+            } elseif (Test-Path "\\wsl$\Ubuntu-24.04") {
+                Copy-Item $outPath $wslPathOld -Force
+                Write-Host " [OK] Atualizado em $wslPathOld" -ForegroundColor Green
+            }
+        } catch {}
+
+        Write-Host ""
+        Write-Host "============================================================" -ForegroundColor Cyan
+        Write-Host " Sincronização concluída! Volte ao painel Bancada e atualize." -ForegroundColor Yellow
+        Write-Host "============================================================" -ForegroundColor Cyan
+        return
+    }
+
+    if (-not $tool -or (-not $targetHost -and $tool -ne "sccm_sync")) {
         Write-Host ""
         Write-Host " [ERRO] Parâmetros insuficientes na chamada:" -ForegroundColor Red
         Write-Host "        tool='$tool', host='$targetHost'" -ForegroundColor Red
@@ -77,7 +132,38 @@ try {
         return
     }
 
-    # Ferramentas leves locais (rdp, explorer, ping) rodam IMEDIATAMENTE no processo atual sem troca de engine
+    # Ferramentas leves locais (rdp, explorer, ping, cmrc) rodam IMEDIATAMENTE no processo atual sem troca de engine
+    if ($tool -eq "cmrc" -or $tool -eq "controle_remoto") {
+        Write-Host " [INFO] Iniciando Controle Remoto do SCCM (CmRcViewer) para: $targetHost" -ForegroundColor Cyan
+        $cmrcPaths = @(
+            "C:\Program Files (x86)\Microsoft Configuration Manager\AdminConsole\bin\i386\CmRcViewer.exe",
+            "C:\Program Files\Microsoft Configuration Manager\AdminConsole\bin\i386\CmRcViewer.exe",
+            "C:\Program Files (x86)\Microsoft Endpoint Manager\AdminConsole\bin\i386\CmRcViewer.exe",
+            "C:\Program Files\Microsoft Endpoint Manager\AdminConsole\bin\i386\CmRcViewer.exe"
+        )
+        $cmrcExe = $null
+        foreach ($p in $cmrcPaths) {
+            if (Test-Path $p) {
+                $cmrcExe = $p
+                break
+            }
+        }
+        if (-not $cmrcExe) {
+            $cmd = Get-Command "CmRcViewer.exe" -ErrorAction SilentlyContinue
+            if ($cmd) { $cmrcExe = $cmd.Source }
+        }
+
+        if ($cmrcExe) {
+            Write-Host " [INFO] Executável localizado: $cmrcExe" -ForegroundColor Gray
+            Start-Process -FilePath $cmrcExe -ArgumentList $targetHost
+            Write-Host " [OK] Controle Remoto SCCM disparado com sucesso para $targetHost!" -ForegroundColor Green
+        } else {
+            Write-Host " [ERRO] CmRcViewer.exe não encontrado nas pastas padrão do Console SCCM." -ForegroundColor Red
+            Write-Host " Certifique-se de que o Console do Configuration Manager está instalado." -ForegroundColor Yellow
+        }
+        return
+    }
+
     if ($tool -eq "rdp") {
         Write-Host " [INFO] Iniciando Conexão de Área de Trabalho Remota (MSTSC) para: $targetHost" -ForegroundColor Green
         Start-Process "mstsc.exe" -ArgumentList "/v:$targetHost"
