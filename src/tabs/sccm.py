@@ -53,43 +53,19 @@ def modal_device_details(device_row: dict):
 
     with col1:
         cmrc_url = f"bancada://run?tool=cmrc&host={name}"
-        st.markdown(f"""
-        <a href="{cmrc_url}" style="text-decoration:none;">
-            <button style="width:100%; height:45px; background-color:#0284c7; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">
-                🎮 Controle Remoto
-            </button>
-        </a>
-        """, unsafe_allow_html=True)
+        st.link_button("🎮 Controle Remoto", url=cmrc_url, use_container_width=True, help="Abre o CmRcViewer nativo do SCCM.")
 
     with col2:
         rdp_url = f"bancada://run?tool=rdp&host={name}"
-        st.markdown(f"""
-        <a href="{rdp_url}" style="text-decoration:none;">
-            <button style="width:100%; height:45px; background-color:#16a34a; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">
-                🖥️ Conexão RDP
-            </button>
-        </a>
-        """, unsafe_allow_html=True)
+        st.link_button("🖥️ Conexão RDP", url=rdp_url, use_container_width=True, help="Inicia MSTSC (Área de Trabalho Remota).")
 
     with col3:
         exp_url = f"bancada://run?tool=explorer&host={name}"
-        st.markdown(f"""
-        <a href="{exp_url}" style="text-decoration:none;">
-            <button style="width:100%; height:45px; background-color:#d97706; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">
-                📂 Explorer C$
-            </button>
-        </a>
-        """, unsafe_allow_html=True)
+        st.link_button("📂 Explorer C$", url=exp_url, use_container_width=True, help=f"Abre o compartilhamento administrativo \\\\{name}\\c$")
 
     with col4:
         ping_url = f"bancada://run?tool=ping&host={name}"
-        st.markdown(f"""
-        <a href="{ping_url}" style="text-decoration:none;">
-            <button style="width:100%; height:45px; background-color:#475569; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">
-                ⚡ Teste Ping
-            </button>
-        </a>
-        """, unsafe_allow_html=True)
+        st.link_button("⚡ Teste Ping", url=ping_url, use_container_width=True, help="Dispara ping contínuo na estação.")
 
     st.markdown("---")
 
@@ -292,13 +268,13 @@ def render_sccm_page():
     
     # 1. Disparo de sincronização direta via bancada:// (executa com privilégios nativos no Windows)
     bancada_sync_url = "bancada://run?tool=sccm_sync&host=srv-1046.in.mpe.ms.gov.br"
-    st.sidebar.markdown(f"""
-    <a href="{bancada_sync_url}" style="text-decoration:none;">
-        <button style="width:100%; height:42px; background-color:#0284c7; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer; margin-bottom:10px;">
-            ⚡ Sincronizar via Bancada (Windows)
-        </button>
-    </a>
-    """, unsafe_allow_html=True)
+    st.sidebar.link_button(
+        "⚡ Sincronizar via Bancada (Windows)",
+        url=bancada_sync_url,
+        type="primary",
+        use_container_width=True,
+        help="Dispara a coleta do inventário SCCM via WMI/CIM com privilégios locais do Windows."
+    )
 
     if st.sidebar.button("📥 Importar Dados Coletados", use_container_width=True):
         with st.spinner("Importando arquivo de inventário sccm_inventory.json..."):

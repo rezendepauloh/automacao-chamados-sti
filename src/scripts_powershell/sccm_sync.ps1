@@ -18,8 +18,8 @@ $colQuery = "SELECT CollectionID, Name, CollectionType, MemberCount, Comment, La
 $collections = Get-WmiObject -ComputerName $SiteServer -Namespace "root\sms\site_$SiteCode" -Query $colQuery -Credential $cred -Authentication PacketPrivacy
 Write-Host "       -> $($collections.Count) colecoes encontradas." -ForegroundColor Green
 
-Write-Host " [2/3] Consultando Dispositivos do SCCM (SMS_CM_RES_COLL_SMS00001)..." -ForegroundColor Yellow
-$devQuery = "SELECT ResourceID, Name, Domain, IsClient, ClientVersion, SMSID, DeviceOwner, DistinguishedName FROM SMS_CM_RES_COLL_SMS00001"
+Write-Host " [2/3] Consultando Dispositivos do SCCM (SMS_R_System)..." -ForegroundColor Yellow
+$devQuery = "SELECT ResourceID, Name, LastLogonUserName, IPAddresses, MACAddresses, OperatingSystemNameandVersion, Build, ClientVersion, Active, ADSiteName, DistinguishedName FROM SMS_R_System"
 $devices = Get-WmiObject -ComputerName $SiteServer -Namespace "root\sms\site_$SiteCode" -Query $devQuery -Credential $cred -Authentication PacketPrivacy
 Write-Host "       -> $($devices.Count) estacoes encontradas." -ForegroundColor Green
 
@@ -31,7 +31,7 @@ Write-Host "       -> $($users.Count) usuarios encontrados." -ForegroundColor Gr
 $exportData = @{
     generated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
     collections = @($collections | Select-Object CollectionID, Name, CollectionType, MemberCount, Comment, LastRefreshTime)
-    devices = @($devices | Select-Object ResourceID, Name, Domain, IsClient, ClientVersion, SMSID, DeviceOwner, DistinguishedName)
+    devices = @($devices | Select-Object ResourceID, Name, LastLogonUserName, IPAddresses, MACAddresses, OperatingSystemNameandVersion, Build, ClientVersion, Active, ADSiteName, DistinguishedName)
     users = @($users | Select-Object ResourceID, UserName, FullUserName, WindowsNTDomain, DistinguishedName)
 }
 

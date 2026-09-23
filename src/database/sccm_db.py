@@ -110,7 +110,10 @@ def save_sccm_devices(devices_list: List[Dict[str, Any]]) -> int:
         os_ver = str(dev.get("Build") or dev.get("os_version") or "").strip()
         client_ver = str(dev.get("ClientVersion") or dev.get("client_version") or "").strip()
         
-        client_active = 1 if dev.get("ClientActiveStatus", 1) in [1, True, "1", "True"] else 0
+        raw_act = dev.get("ClientActiveStatus")
+        if raw_act is None:
+            raw_act = dev.get("Active", 1)
+        client_active = 1 if raw_act in [1, True, "1", "True"] else 0
         last_active = str(dev.get("LastActiveTime") or dev.get("last_active_time") or "").strip()
         ad_site = str(dev.get("ADSiteName") or dev.get("ad_site_name") or "").strip()
         dn = str(dev.get("DistinguishedName") or dev.get("distinguished_name") or "").strip()

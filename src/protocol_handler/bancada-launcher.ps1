@@ -81,8 +81,8 @@ try {
         $collections = Get-WmiObject -ComputerName $serverHost -Namespace "root\sms\site_PGJ" -Query $colQuery -Credential $cred -Authentication PacketPrivacy
         Write-Host "       -> $($collections.Count) coleções encontradas." -ForegroundColor Green
 
-        Write-Host " [2/3] Consultando Dispositivos do SCCM (SMS_CM_RES_COLL_SMS00001)..." -ForegroundColor Yellow
-        $devQuery = "SELECT ResourceID, Name, Domain, IsClient, ClientVersion, SMSID, DeviceOwner, DistinguishedName FROM SMS_CM_RES_COLL_SMS00001"
+        Write-Host " [2/3] Consultando Dispositivos do SCCM (SMS_R_System)..." -ForegroundColor Yellow
+        $devQuery = "SELECT ResourceID, Name, LastLogonUserName, IPAddresses, MACAddresses, OperatingSystemNameandVersion, Build, ClientVersion, Active, ADSiteName, DistinguishedName FROM SMS_R_System"
         $devices = Get-WmiObject -ComputerName $serverHost -Namespace "root\sms\site_PGJ" -Query $devQuery -Credential $cred -Authentication PacketPrivacy
         Write-Host "       -> $($devices.Count) estações encontradas." -ForegroundColor Green
 
@@ -94,7 +94,7 @@ try {
         $exportData = @{
             generated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
             collections = @($collections | Select-Object CollectionID, Name, CollectionType, MemberCount, Comment, LastRefreshTime)
-            devices = @($devices | Select-Object ResourceID, Name, Domain, IsClient, ClientVersion, SMSID, DeviceOwner, DistinguishedName)
+            devices = @($devices | Select-Object ResourceID, Name, LastLogonUserName, IPAddresses, MACAddresses, OperatingSystemNameandVersion, Build, ClientVersion, Active, ADSiteName, DistinguishedName)
             users = @($users | Select-Object ResourceID, UserName, FullUserName, WindowsNTDomain, DistinguishedName)
         }
 
@@ -104,18 +104,23 @@ try {
         Write-Host " [OK] Inventário SCCM exportado com sucesso para:" -ForegroundColor Green
         Write-Host "      $outPath" -ForegroundColor Gray
 
-        # Se existir caminho de projeto acessível, copia diretamente
-        $wslPath = "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json"
-        $wslPathOld = "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json"
-        try {
-            if (Test-Path "\\wsl.localhost\Ubuntu-24.04") {
-                Copy-Item $outPath $wslPath -Force
-                Write-Host " [OK] Atualizado em $wslPath" -ForegroundColor Green
-            } elseif (Test-Path "\\wsl$\Ubuntu-24.04") {
-                Copy-Item $outPath $wslPathOld -Force
-                Write-Host " [OK] Atualizado em $wslPathOld" -ForegroundColor Green
-            }
-        } catch {}
+        # Se existir caminho de projeto acessível no WSL, copia diretamente
+        $wslCandidates = @(
+            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json"
+        )
+        foreach ($targetWsl in $wslCandidates) {
+            try {
+                $dir = Split-Path $targetWsl -Parent
+                if (Test-Path $dir) {
+                    Copy-Item $outPath $targetWsl -Force
+                    Write-Host " [OK] Atualizado no WSL em: $targetWsl" -ForegroundColor Green
+                    break
+                }
+            } catch {}
+        }
 
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Cyan
