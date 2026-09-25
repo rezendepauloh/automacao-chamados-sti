@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # Script: bancada-launcher.ps1
 # Função: Executor local do Protocol Handler 'bancada://' para estações Windows.
 # ==============================================================================
@@ -106,10 +106,12 @@ try {
 
         # Se existir caminho de projeto acessível no WSL, copia diretamente
         $wslCandidates = @(
-            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
             "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json"
+            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json"
         )
         foreach ($targetWsl in $wslCandidates) {
             try {
@@ -234,21 +236,61 @@ try {
             return
         }
 
-        # Baixa os scripts do servidor bancada
-        if (-not $serverUrl) {
-            $serverUrl = "http://localhost:8502"
-        }
-        $serverUrl = $serverUrl.TrimEnd('/')
+        # Primeiro tenta localizar e copiar diretamente dos repositórios locais do WSL (se estiver no ambiente do desenvolvedor)
+        $subfolder = if ($tool -eq "analisador") { "analisador" } elseif ($tool -eq "manutencao") { "manutencao" } else { "perfis" }
+        $localScriptDirs = @(
+            "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
+            "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
+            "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
+            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
+            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$subfolder",
+            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$subfolder"
+        )
 
-        Write-Host " [INFO] Baixando scripts auxiliares de $serverUrl..." -ForegroundColor Gray
-        foreach ($file in $scriptFiles) {
-            $url = "$serverUrl/static/scripts/$file"
-            $dest = Join-Path $tempFolder $file
+        $copiedFromLocal = $false
+        foreach ($sDir in $localScriptDirs) {
             try {
-                Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -TimeoutSec 15
-                Write-Host "   -> Baixado: $file" -ForegroundColor Gray
-            } catch {
-                Write-Host "   [!] Aviso ao baixar $file via $url : $($_.Exception.Message)" -ForegroundColor Yellow
+                if (Test-Path $sDir) {
+                    Write-Host " [INFO] Copiando scripts auxiliares de: $sDir" -ForegroundColor Cyan
+                    foreach ($file in $scriptFiles) {
+                        $srcPath = Join-Path $sDir $file
+                        if (-not (Test-Path $srcPath) -and $file -eq "cred_admin.xml") {
+                            $srcPath = Join-Path (Split-Path $sDir -Parent) "cred_admin.xml"
+                        }
+                        if (Test-Path $srcPath) {
+                            Copy-Item -Path $srcPath -Destination (Join-Path $tempFolder $file) -Force
+                            Write-Host "   -> Copiado: $file" -ForegroundColor Gray
+                        }
+                    }
+                    $copiedFromLocal = $true
+                    break
+                }
+            } catch {}
+        }
+
+        # Se não encontrou no WSL local, baixa via HTTP do servidor bancada
+        if (-not $copiedFromLocal) {
+            if (-not $serverUrl) {
+                $serverUrl = "http://localhost:8501"
+            }
+            if ($serverUrl -notmatch '^https?://') {
+                $serverUrl = "http://$serverUrl"
+            }
+            if ($serverUrl -notmatch ':\d+$') {
+                $serverUrl = "$serverUrl:8501"
+            }
+            $serverUrl = $serverUrl.TrimEnd('/')
+
+            Write-Host " [INFO] Baixando scripts auxiliares de $serverUrl..." -ForegroundColor Gray
+            foreach ($file in $scriptFiles) {
+                $url = "$serverUrl/static/scripts/$file"
+                $dest = Join-Path $tempFolder $file
+                try {
+                    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -TimeoutSec 15
+                    Write-Host "   -> Baixado: $file" -ForegroundColor Gray
+                } catch {
+                    Write-Host "   [!] Aviso ao baixar $file via $url : $($_.Exception.Message)" -ForegroundColor Yellow
+                }
             }
         }
 
@@ -270,7 +312,9 @@ try {
                 OutputFolder = $outDir
                 TimeoutSec   = $timeoutSec
             }
-            if ($skipMajor) { $splat['SkipMajorData'] = $true }
+            if ($skipMajor) {
+                $splat.SkipMajorData = $true
+            }
             & $mainScript @splat
         } elseif ($tool -eq "manutencao") {
             & $mainScript -ComputerName $targetHost -Verbose

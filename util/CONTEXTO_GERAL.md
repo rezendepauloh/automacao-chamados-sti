@@ -99,10 +99,15 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
      - Integrado ao utilitário [`util/limpar_localidades_nan.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/util/limpar_localidades_nan.py) para que todas as bases (inclusive em produção) possam preencher os títulos vazios de forma retroativa.
 
 ### 📋 Próximas Etapas e Melhorias Planejadas
-1. **Sincronização Periódica do Cache do SCCM:**
+1. **Portabilidade de Credenciais Criptografadas & Autenticação LDAP Entre Ambientes/Máquinas:**
+   - **Contexto do Problema:** Ao clonar o projeto ou transferir o banco `chamados.db` para outro computador (ex: máquina de desenvolvimento vs. `MPE-80703` vs. servidor Red Hat de produção), a chave mestra `.secret.key` gerada localmente diverge da chave que cifrou os segredos na máquina de origem.
+   - **Sintoma Atual:** O fallback de `decrypt_value()` em `crypto_utils.py` silencia a falha de decriptografia e retorna o ciphertext cru (`gAAAAAB...`), fazendo com que o teste de conexão e sincronização do Active Directory falhem com `invalidCredentials`.
+   - **Requisito de Solução:** O sistema precisa funcionar perfeitamente em qualquer máquina, independente de onde esteja rodando. Desenvolver mecanismo resiliente de detecção de chave inválida / cofre dessincronizado, aviso claro na UI com prompt imediato para reautenticar/redefinir credenciais em lote, além de suporte a chave compartilhada via secret/ambiente (`APP_SECRET_KEY`) ou cofre unificado que previna o envio de ciphertext corrompido para os serviços externos (LDAP, SCCM, OXE).
+2. **Sincronização Periódica do Cache do SCCM:**
    - Agendamento de rotina periódica no daemon cron interno (`cron_scheduler.py`) para atualizar automaticamente `sccm_cache_devices` com novas estações e logons.
-2. **Histórico de Máquinas do Usuário:**
+3. **Histórico de Máquinas do Usuário:**
    - Possibilidade de exibir no modal se o solicitante possui mais de uma estação mapeada (ex: notebook corporativo + desktop da mesa).
-3. **Métricas de Acurácia de Localização:**
+4. **Métricas de Acurácia de Localização:**
    - Painel analítico exibindo a taxa de correspondência de chamados direcionados por IP vs. NLP textual.
+
 
