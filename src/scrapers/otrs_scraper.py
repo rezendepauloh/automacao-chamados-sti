@@ -532,9 +532,11 @@ def brute_data(data):
         'ID do Cliente': 15,
         'Descrição': 100,
         'IP_Origem': 15,
+        'Hostname': 20,
         'Link': 40,
         'Comentários': 50
     }
+    df = df.fillna("")
     save_df_to_excel_formatted(
         df, file, sheet_name="Sheet1",
         widths=widths, wrap_cols=['Descrição', 'Comentários'], height_col='Descrição'
@@ -557,14 +559,18 @@ def scrape_otrs():
                 cid = str(row_old.get('Chamado#', '')).strip()
                 desc = row_old.get('Descrição', '')
                 ip = row_old.get('IP_Origem', '')
+                hostname = row_old.get('Hostname', '')
                 link = row_old.get('Link', '')
                 comments = row_old.get('Comentários', '[]')
                 if cid:
+                    clean_ip = str(ip).strip() if pd.notna(ip) and str(ip).strip().lower() not in ["nan", "none", "null"] else ''
+                    clean_host = str(hostname).strip() if pd.notna(hostname) and str(hostname).strip().lower() not in ["nan", "none", "null"] else ''
                     cache[cid] = {
-                        'Descrição': str(desc).strip() if pd.notna(desc) else '',
-                        'IP_Origem': str(ip).strip() if pd.notna(ip) else '',
-                        'Link': str(link).strip() if pd.notna(link) else '',
-                        'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
+                        'Descrição': str(desc).strip() if pd.notna(desc) and str(desc).strip().lower() not in ["nan", "none", "null"] else '',
+                        'IP_Origem': clean_ip,
+                        'Hostname': clean_host,
+                        'Link': str(link).strip() if pd.notna(link) and str(link).strip().lower() not in ["nan", "none", "null"] else '',
+                        'Comentários': str(comments).strip() if pd.notna(comments) and str(comments).strip().lower() not in ["nan", "none", "null"] else '[]'
                     }
             logger.info(f"⚡ Sucesso! {len(cache)} descrições, IPs e comentários carregados no cache de memória do OTRS.")
     except Exception as cache_err:

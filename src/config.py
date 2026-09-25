@@ -363,14 +363,17 @@ def setup_logging(log_file: Path, name: str = __name__) -> logging.Logger:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     
     # Handler para Arquivo (Log Puro em disco sem códigos ANSI)
-    file_handler = RotatingFileHandler(
-        filename=log_file,
-        maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
-        backupCount=3,             # Mantém apenas 3 arquivos de histórico
-        encoding='utf-8'
-    )
-    plain_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    file_handler.setFormatter(plain_formatter)
+    try:
+        file_handler = RotatingFileHandler(
+            filename=log_file,
+            maxBytes=5 * 1024 * 1024,  # 5 MB em bytes
+            backupCount=3,             # Mantém apenas 3 arquivos de histórico
+            encoding='utf-8'
+        )
+        plain_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        file_handler.setFormatter(plain_formatter)
+    except (PermissionError, OSError):
+        file_handler = logging.NullHandler()
     
     # Handler para Terminal (Console com Cores ANSI e proteção Unicode)
     safe_stdout = SafeStreamWrapper(sys.stdout)
@@ -596,6 +599,21 @@ def fetch_sccm_data(username: str) -> dict:
     site_server = _cfg("SCCM_SERVER", os.getenv("SCCM_SERVER", ""))
     site_code = _cfg("SCCM_SITE_CODE", os.getenv("SCCM_SITE_CODE", ""))
     
+    # 0. Tenta primeiro enriquecer a partir do cache relacional local (sccm_cache_devices)
+    try:
+        from src.database.sccm_db import get_device_by_user
+        dev_cached = get_device_by_user(username)
+        if dev_cached and (dev_cached.get("ip") or dev_cached.get("hostname")):
+            res_data = {
+                "ip": dev_cached.get("ip", ""),
+                "hostname": dev_cached.get("hostname", "")
+            }
+            logger.info(f"⚡ [SCCM CACHE LOCAL] Usuário '{username}' localizado no cache relacional: IP={res_data['ip']}, Host={res_data['hostname']}")
+            _sccm_cache[username_lower] = res_data
+            return res_data
+    except Exception as cache_err:
+        logger.debug(f"[SCCM] Erro ao consultar cache relacional para '{username}': {cache_err}")
+
     if not site_server or not site_code:
         logger.warning("⚠️ Variáveis 'SCCM_SERVER' ou 'SCCM_SITE_CODE' não configuradas. A consulta no SCCM será ignorada.")
         _sccm_cache[username_lower] = res_data

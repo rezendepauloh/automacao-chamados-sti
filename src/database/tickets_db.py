@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 import pandas as pd
 from datetime import datetime
 from .connection import DB_PATH, get_connection
@@ -98,6 +99,16 @@ def save_tickets_to_db(df: pd.DataFrame):
     
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    def _clean_str(val: Any) -> str:
+        if val is None or pd.isna(val):
+            return ""
+        s = str(val).strip()
+        if s.lower() in ["nan", "none", "null", "<na>"]:
+            return ""
+        return s
+
+    from .sccm_db import get_device_by_user
+
     for _, row in df.iterrows():
         cid = str(row.get('Chamado#', '')).strip()
         if cid.endswith('.0'):
@@ -106,14 +117,55 @@ def save_tickets_to_db(df: pd.DataFrame):
         if not cid:
             continue
             
-        cursor.execute("SELECT status, tag_manual, dados_manuais FROM chamados WHERE id = ?", (cid,))
+        titulo_val = _clean_str(row.get('Título', ''))
+        usuario_val = _clean_str(row.get('Nome do Usuário', ''))
+        id_cliente_val = _clean_str(row.get('ID do Cliente', ''))
+        desc_val = _clean_str(row.get('Descrição', ''))
+        ip_val = _clean_str(row.get('IP_Origem', ''))
+        hostname_val = _clean_str(row.get('Hostname', ''))
+        base_val = _clean_str(row.get('Base', ''))
+        link_val = _clean_str(row.get('Link', ''))
+        data_criacao_val = _clean_str(row.get('Data Criação', ''))
+        tag_val = _clean_str(row.get('TAG', ''))
+        cidade_predio_val = _clean_str(row.get('Cidade - Prédio', ''))
+        unidade_val = _clean_str(row.get('Unidade', ''))
+        localidade_val = _clean_str(row.get('Localidade física', ''))
+
+        if "não encontrad" in unidade_val.lower() or "nao encontrad" in unidade_val.lower():
+            unidade_val = ""
+        if localidade_val.lower() in ["nan", "none", "null", "não identificada", ""]:
+            localidade_val = "Não identificada"
+        elif "nan -" in localidade_val.lower() or "- nan" in localidade_val.lower():
+            localidade_val = "Não identificada"
+
+        # Enriquecimento com cache do SCCM caso IP ou Hostname estejam vazios
+        if (not ip_val or not hostname_val) and id_cliente_val:
+            dev = get_device_by_user(id_cliente_val)
+            if dev:
+                if not ip_val and dev.get("ip"):
+                    ip_val = dev["ip"]
+                if not hostname_val and dev.get("hostname"):
+                    hostname_val = dev["hostname"]
+
+        cursor.execute("SELECT status, tag_manual, dados_manuais, ip_origem, hostname, titulo FROM chamados WHERE id = ?", (cid,))
         result = cursor.fetchone()
         
         if result:
             current_status = result[0]
             tag_manual = result[1] if len(result) > 1 and result[1] is not None else 0
             dados_manuais = result[2] if len(result) > 2 and result[2] is not None else 0
+            curr_ip = _clean_str(result[3]) if len(result) > 3 else ""
+            curr_host = _clean_str(result[4]) if len(result) > 4 else ""
+            curr_title = _clean_str(result[5]) if len(result) > 5 else ""
             
+            # Preserva IP, Hostname e Título existentes no banco se o novo for vazio
+            if not ip_val and curr_ip:
+                ip_val = curr_ip
+            if not hostname_val and curr_host:
+                hostname_val = curr_host
+            if not titulo_val and curr_title:
+                titulo_val = curr_title
+
             if current_status == 'Fechado':
                 cursor.execute("UPDATE chamados SET status = 'Aberto' WHERE id = ?", (cid,))
                 
@@ -125,17 +177,17 @@ def save_tickets_to_db(df: pd.DataFrame):
                 "ip_origem = ?", "data_atualizacao = ?", "base = ?", "link = ?", "hostname = ?", "data_criacao = ?"
             ])
             update_params.extend([
-                row.get('Título', ''), row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''), row.get('Descrição', ''),
-                row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', ''), row.get('Hostname', ''), row.get('Data Criação', '')
+                titulo_val, usuario_val, id_cliente_val, desc_val,
+                ip_val, now, base_val, link_val, hostname_val, data_criacao_val
             ])
             
             if tag_manual != 1:
                 update_fields.append("tag = ?")
-                update_params.append(row.get('TAG', ''))
+                update_params.append(tag_val)
                 
             if dados_manuais != 1 and current_status != 'Fechado':
                 update_fields.extend(["cidade_predio = ?", "unidade = ?", "localidade_fisica = ?"])
-                update_params.extend([row.get('Cidade - Prédio', ''), row.get('Unidade', ''), row.get('Localidade física', '')])
+                update_params.extend([cidade_predio_val, unidade_val, localidade_val])
                 
             query = f"UPDATE chamados SET {', '.join(update_fields)} WHERE id = ?"
             update_params.append(cid)
@@ -148,11 +200,11 @@ def save_tickets_to_db(df: pd.DataFrame):
                 usuario, id_cliente, descricao, tag, ip_origem, status, data_atualizacao, base, link, hostname
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, ?, ?)
             """, (
-                cid, row.get('Data Criação', ''), row.get('Título', ''),
-                row.get('Cidade - Prédio', ''), row.get('Unidade', ''), row.get('Localidade física', ''),
-                row.get('Nome do Usuário', ''), row.get('ID do Cliente', ''), row.get('Descrição', ''),
-                row.get('TAG', ''), row.get('IP_Origem', ''), now, row.get('Base', ''), row.get('Link', ''),
-                row.get('Hostname', '')
+                cid, data_criacao_val, titulo_val,
+                cidade_predio_val, unidade_val, localidade_val,
+                usuario_val, id_cliente_val, desc_val,
+                tag_val, ip_val, now, base_val, link_val,
+                hostname_val
             ))
             
         comments_val = row.get('Comentários', '[]')
@@ -318,6 +370,26 @@ def update_ticket_title(cid: str, new_title: str):
     conn.commit()
     conn.close()
 
+def update_ticket_device_info(cid: str, ip_origem: str, hostname: str):
+    """Atualiza o IP de origem e Hostname de um chamado específico."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+    
+    clean_ip = str(ip_origem).strip() if ip_origem and str(ip_origem).lower() not in ["none", "nan", "null"] else ""
+    clean_host = str(hostname).strip() if hostname and str(hostname).lower() not in ["none", "nan", "null"] else ""
+    
+    cursor.execute("""
+    UPDATE chamados 
+    SET ip_origem = ?, hostname = ?, data_atualizacao = ?
+    WHERE id = ?
+    """, (clean_ip, clean_host, now, cid_clean))
+    
+    conn.commit()
+    conn.close()
+
 def save_comments_to_db(chamado_id: str, comments: list):
     """
     Salva a lista de comentários de um chamado no banco de dados.
@@ -422,4 +494,27 @@ def load_data():
         df['localidade_fisica'] = df['localidade_fisica'].apply(
             lambda x: re.sub(r'\s*-\s*Sede\b', '', str(x), flags=re.IGNORECASE).strip() if pd.notna(x) else x
         )
+
+    # Sanitização preventiva para evitar que 'nan', 'none' ou 'null' literais cheguem à interface
+    for col in ['ip_origem', 'hostname', 'titulo', 'id_cliente', 'andamento', 'cidade_predio', 'unidade']:
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype(str).replace(r'^(?i:nan|none|null|<na>)$', '', regex=True).str.strip()
+
+    if 'unidade' in df.columns:
+        df['unidade'] = df['unidade'].apply(
+            lambda x: "" if any(term in str(x).lower() for term in ["não encontrad", "nao encontrad"]) else str(x).strip()
+        )
+
+    if 'localidade_fisica' in df.columns:
+        def _clean_loc_series(val):
+            if pd.isna(val):
+                return "Não identificada"
+            s = str(val).strip()
+            if s.lower() in ["nan", "none", "null", "<na>", "", "não identificada"]:
+                return "Não identificada"
+            if "nan -" in s.lower() or "- nan" in s.lower():
+                return "Não identificada"
+            return s
+        df['localidade_fisica'] = df['localidade_fisica'].apply(_clean_loc_series)
+
     return df

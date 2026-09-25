@@ -582,13 +582,20 @@ def scrape_citsmart():
                 comments = row_old.get('Comentários', '[]')
                 hostname = row_old.get('Hostname', '')
                 if cid:
+                    clean_ip = str(ip).strip() if pd.notna(ip) and str(ip).strip().lower() not in ["nan", "none", "null"] else ''
+                    clean_host = str(hostname).strip() if pd.notna(hostname) and str(hostname).strip().lower() not in ["nan", "none", "null"] else ''
+                    clean_desc = str(desc).strip() if pd.notna(desc) and str(desc).strip().lower() not in ["nan", "none", "null"] else ''
+                    clean_unid = str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) and str(row_old.get('Unidade')).strip().lower() not in ["nan", "none", "null"] else ''
+                    clean_link = str(link).strip() if pd.notna(link) and str(link).strip().lower() not in ["nan", "none", "null"] else ''
+                    clean_comm = str(comments).strip() if pd.notna(comments) and str(comments).strip().lower() not in ["nan", "none", "null"] else '[]'
+                    
                     cache[cid] = {
-                        'Descrição': str(desc).strip() if pd.notna(desc) else '',
-                        'Unidade': str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) else '',
-                        'IP_Origem': str(ip).strip() if pd.notna(ip) else '',
-                        'Hostname': str(hostname).strip() if pd.notna(hostname) else '',
-                        'Link': str(link).strip() if pd.notna(link) else '',
-                        'Comentários': str(comments).strip() if pd.notna(comments) else '[]'
+                        'Descrição': clean_desc,
+                        'Unidade': clean_unid,
+                        'IP_Origem': clean_ip,
+                        'Hostname': clean_host,
+                        'Link': clean_link,
+                        'Comentários': clean_comm
                     }
             logger.info(f"⚡ Sucesso! {len(cache)} chamados carregados no cache do CitSmart.")
     except Exception as cache_err:
@@ -632,6 +639,7 @@ def scrape_citsmart():
             file = out_dir / f"Chamados_CitSmart_{ts}.xlsx"
 
             df = pd.DataFrame(todos_os_dados)
+            df = df.fillna("")
             widths = {
                 'Chamado#': 15,
                 'ID do Cliente': 20,

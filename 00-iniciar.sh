@@ -224,6 +224,23 @@ run_orquestrador() {
     read -p "Pressione ENTER para voltar ao menu..." dummy
 }
 
+run_tests() {
+    clear
+    echo -e "${C_CYAN}Executando Suíte Completa de Testes Automatizados...${C_RESET}"
+    echo ""
+    if command -v python3 >/dev/null 2>&1; then
+        python3 tests/run_all.py
+    elif command -v python >/dev/null 2>&1; then
+        python tests/run_all.py
+    else
+        docker compose run --rm -v "$(pwd)/tests:/app/tests" web python tests/run_all.py
+    fi
+    local exit_code=$?
+    echo ""
+    read -p "Pressione ENTER para voltar ao menu..." dummy
+    return $exit_code
+}
+
 rebuild_docker() {
     clear
     echo -e "${C_MAGENTA}Reconstruindo imagens Docker Compose (--no-cache)...${C_RESET}"
@@ -250,16 +267,18 @@ show_menu() {
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_GREEN}3${C_RESET} - Executar Orquestrador de Sincronização                  ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_GREEN}4${C_RESET} - Reconstruir Docker Compose (--no-cache)                 ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_GREEN}5${C_RESET} - Parar sistema (docker compose down)                     ${C_CYAN}${C_BOLD}║${C_RESET}"
+    echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_YELLOW}6${C_RESET} - Executar Testes Automatizados (run_all.py)              ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_RED}0${C_RESET} - Sair                                                    ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}╚══════════════════════════════════════════════════════════════╝${C_RESET}"
     echo ""
-    read -p "Opção [0-5]: " opcao
+    read -p "Opção [0-6]: " opcao
     case "$opcao" in
         1) start_system false ;;
         2) config_senhas; show_menu ;;
         3) run_orquestrador; show_menu ;;
         4) rebuild_docker; show_menu ;;
         5) stop_system ;;
+        6) run_tests; show_menu ;;
         0) exit 0 ;;
         *) echo -e "${C_RED}Opção inválida.${C_RESET}"; sleep 1; show_menu ;;
     esac
@@ -284,6 +303,9 @@ case "$1" in
     --down|--stop|-d)
         stop_system
         ;;
+    --tests|--test|-t)
+        run_tests
+        ;;
     --help|-h)
         echo "Uso: ./00-iniciar.sh [OPÇÃO]"
         echo ""
@@ -294,6 +316,7 @@ case "$1" in
         echo "  --orquestrador, -o       Executa a rotina do orquestrador"
         echo "  --rebuild, -r            Reconstrói a imagem Docker (--no-cache)"
         echo "  --down, -d               Para os containers do sistema"
+        echo "  --tests, -t              Executa a suíte de testes automatizados"
         echo "  --help, -h               Exibe esta ajuda"
         echo "  (sem argumentos)         Abre o menu interativo"
         ;;

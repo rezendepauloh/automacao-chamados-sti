@@ -242,6 +242,10 @@ def process_otrs(ts: str) -> pd.DataFrame:
         df['Hostname'] = ""
     if 'Link' not in df.columns:
         df['Link'] = ""
+        
+    for col in ['IP_Origem', 'Hostname', 'Link', 'Comentários', 'Título', 'ID do Cliente']:
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype(str).replace(r'^(?i:nan|none|null|<na>)$', '', regex=True).str.strip()
     
     cols = ["Chamado#","Nome do Usuário","ID do Cliente","Data Criação",
             "Cidade - Prédio","Unidade","Descrição","Base","Título","IP_Origem","Hostname","Link","Comentários"]
@@ -281,6 +285,10 @@ def process_citsmart(ts: str) -> pd.DataFrame:
         df['ID do Cliente'] = ""
     if 'Link' not in df.columns:
         df['Link'] = ""
+        
+    for col in ['IP_Origem', 'Hostname', 'Link', 'Comentários', 'Título', 'ID do Cliente']:
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype(str).replace(r'^(?i:nan|none|null|<na>)$', '', regex=True).str.strip()
     
     cols = ["Chamado#","Nome do Usuário","ID do Cliente","Data Criação",
             "Cidade - Prédio","Unidade","Descrição","Base","Título","IP_Origem","Hostname","Link","Comentários"]
@@ -337,6 +345,7 @@ def main():
     colunas_ordem = ['Chamado#', 'Nome do Usuário', 'ID do Cliente', 'Data Criação', 'Cidade - Prédio', 'Unidade', 'Ramal', 'Andamento', 'Descrição', 'Base', 'Título', 'IP_Origem', 'Hostname', 'Link', 'Comentários']
     colunas_existentes = [c for c in colunas_ordem if c in combined.columns]
     combined = combined[colunas_existentes]
+    combined = combined.fillna("")
     
     out = OUTPUT_DIR_TRATADOS / f"Chamados_Unificados_{ts}.xlsx"
 

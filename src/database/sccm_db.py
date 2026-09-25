@@ -1,9 +1,12 @@
 import os
 import json
+import logging
 from datetime import datetime
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from .connection import get_connection, DB_TYPE
+
+logger = logging.getLogger(__name__)
 
 def setup_sccm_tables():
     """
@@ -362,3 +365,84 @@ def get_sccm_collections_df(col_type: str = "") -> pd.DataFrame:
         return pd.DataFrame()
     finally:
         conn.close()
+
+
+def get_device_by_user(username: str) -> Optional[Dict[str, str]]:
+    """
+    Busca no cache relacional do SCCM (sccm_cache_devices) o dispositivo associado ao usuário.
+    Tenta correspondência exata e case-insensitive por last_logon_user.
+    Retorna um dicionário com {'ip': ip, 'hostname': name} ou None se não encontrado.
+    """
+    if not username:
+        return None
+        
+    u_clean = str(username).strip()
+    if not u_clean or u_clean.lower() in ["none", "nan", "null", ""]:
+        return None
+
+    # Normaliza se vier com domínio (ex: MPE\usuario ou usuario@mpms.mp.br)
+    if "\\" in u_clean:
+        u_clean = u_clean.split("\\")[-1].strip()
+    elif "@" in u_clean:
+        u_clean = u_clean.split("@")[0].strip()
+
+    setup_sccm_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    is_pg = DB_TYPE in ["postgres", "postgresql"]
+    placeholder = "%s" if is_pg else "?"
+    
+    # Prioriza dispositivos ativos primeiro, ordenados por updated_at / last_active_time desc
+    sql = f"""
+    SELECT name, ip_addresses 
+    FROM sccm_cache_devices 
+    WHERE LOWER(TRIM(last_logon_user)) = LOWER(TRIM({placeholder}))
+    ORDER BY client_active DESC, updated_at DESC
+    LIMIT 1
+    """
+    
+    device_info = None
+    try:
+        cursor.execute(sql, (u_clean,))
+        row = cursor.fetchone()
+        
+        # Se não encontrou por igualdade estrita, tenta match com LIKE
+        if not row:
+            sql_like = f"""
+            SELECT name, ip_addresses 
+            FROM sccm_cache_devices 
+            WHERE LOWER(last_logon_user) LIKE LOWER({placeholder})
+            ORDER BY client_active DESC, updated_at DESC
+            LIMIT 1
+            """
+            cursor.execute(sql_like, (f"%{u_clean}%",))
+            row = cursor.fetchone()
+            
+        if row:
+            name, ip_addresses = row[0], row[1]
+            chosen_ip = ""
+            if ip_addresses:
+                # O campo pode conter IPs separados por vírgula ou JSON
+                raw_ips = [ip.strip() for ip in str(ip_addresses).replace("[", "").replace("]", "").replace('"', '').replace("'", "").split(",") if ip.strip()]
+                # Prioriza IP da rede interna (10.x)
+                ip_10 = next((ip for ip in raw_ips if ip.startswith("10.")), None)
+                if ip_10:
+                    chosen_ip = ip_10
+                elif raw_ips:
+                    chosen_ip = raw_ips[0]
+                    
+            device_info = {
+                "ip": chosen_ip or "",
+                "hostname": str(name).strip() if name else ""
+            }
+    except Exception as e:
+        logger = logging.getLogger(__name__) if "logging" in globals() else None
+        if logger:
+            logger.warning(f"Erro ao buscar dispositivo por usuário '{username}' no cache SCCM: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    return device_info
+

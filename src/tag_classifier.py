@@ -321,23 +321,99 @@ def detect_and_update_remote_locations(df: pd.DataFrame) -> pd.DataFrame:
             df_result.at[idx, "Localidade física"] = matched_predio
             updated_count += 1
         else:
-            # Fallback: Concatena Cidade - Prédio e Unidade (removendo " - Sede" desnecessário)
-            cidade_predio = str(row.get("Cidade - Prédio", "")).strip()
-            cidade_predio = re.sub(r'\s*-\s*Sede\b', '', cidade_predio, flags=re.IGNORECASE).strip()
+            # Fallback: Define a localidade física com base na Cidade - Prédio (sem concatenar unidades internas)
+            def _clean_loc(val):
+                if val is None or pd.isna(val):
+                    return ""
+                s = str(val).strip()
+                s = re.sub(r'\s*-\s*Sede\b', '', s, flags=re.IGNORECASE).strip()
+                low = s.lower()
+                if low in ["nan", "none", "null", "<na>", "n/d", ""]:
+                    return ""
+                if "não encontrad" in low or "nao encontrad" in low:
+                    return ""
+                return s
+
+            cidade_predio = _clean_loc(row.get("Cidade - Prédio", ""))
+            unidade = _clean_loc(row.get("Unidade", ""))
             
-            unidade = str(row.get("Unidade", "")).strip()
-            unidade = re.sub(r'\s*-\s*Sede\b', '', unidade, flags=re.IGNORECASE).strip()
-            
-            if unidade and unidade not in ["N/D", "Não encontrada no AD", "Não encontrada"]:
-                if cidade_predio and cidade_predio != unidade:
-                    df_result.at[idx, "Localidade física"] = f"{cidade_predio} - {unidade}"
+            # Para cidades do interior e prédios, a localidade física deve ser a Cidade / Prédio (ex: 'Cassilândia', 'Terenos', 'Campo Grande - PGJ')
+            # sem embutir a unidade interna (ex: '1ª PJ de Terenos' fica apenas na coluna Unidade)
+            if cidade_predio:
+                df_result.at[idx, "Localidade física"] = cidade_predio
+            elif unidade:
+                # Se não tem prédio cadastrado mas tem unidade, extrai o nome da cidade se for padrão "Xª PJ de Cidade"
+                m_pj = re.search(r'\bde\s+([A-Za-zÀ-ÿ\s]+)$', unidade, flags=re.IGNORECASE)
+                if m_pj:
+                    df_result.at[idx, "Localidade física"] = m_pj.group(1).strip()
                 else:
                     df_result.at[idx, "Localidade física"] = unidade
             else:
-                df_result.at[idx, "Localidade física"] = cidade_predio or "Não identificada"
+                df_result.at[idx, "Localidade física"] = "Não identificada"
 
                 
     logger.info(f"Análise de localidades concluída. {updated_count} chamados direcionados por IP/NLP.")
+    return df_result
+
+def generate_synthetic_title(tag: str, description: str) -> str:
+    """Gera um título descritivo inteligente para chamados que não possuem título nativo (ex: CitSmart)."""
+    tag_clean = str(tag).strip() if tag and str(tag).lower() not in ['nan', 'none', 'null'] else ''
+    if not description or str(description).lower() in ['nan', 'none', 'null', '']:
+        return f'[{tag_clean}] Chamado CitSmart' if tag_clean else 'Chamado CitSmart'
+
+    t = str(description)
+    t = re.sub(r'<[^>]+>', ' ', t)
+    t = re.sub(r'&\w+;', ' ', t)
+
+    # Remove saudações iniciais repetidas (ex: "Bom dia Prezados!", "Olá, bom dia")
+    greeting_pattern = re.compile(
+        r'^\s*(?:prezados?|prezadas?|caros?|caras?|olá|ola|bom\s+dia|boa\s+tarde|boa\s+noite|prezada\s+equipe|prezada\s+sti|tudo\s+bem\??|espero\s+que\s+esteja\s+tudo\s+bem\??|espero\s+que\s+sim\??)\b[,\.\-!\s]*',
+        flags=re.IGNORECASE
+    )
+    for _ in range(3):
+        t = greeting_pattern.sub('', t).strip()
+    # Remove fórmulas burocráticas e de solicitação
+    t = re.sub(r'\bpor\s+determina[çc][ãa]o\s+d[eao]\s+[^,]+,\s*', '', t, flags=re.IGNORECASE)
+    t = re.sub(r'\bpor\s+meio\s+deste\b[,\s]*', '', t, flags=re.IGNORECASE)
+    t = re.sub(
+        r'\b(?:solicito\s+provid[êe]ncias\s+para\s+|gostaria\s+de\s+solicitar\s+(?:a|o|que|os|as)?\s*|solicito\s+(?:a|o|que|os|as)?\s*|solicitamos\s+(?:a|o|que|os|as)?\s*|gostaria\s+que\s+verificasse\s+|venho\s+(?:a\s+)?solicitar\s+|preciso\s+(?:de\s+|que\s+)?)\b',
+        '', t, flags=re.IGNORECASE
+    )
+    t = re.sub(r'\b(?:informo\s+que\s+|venho\s+informar\s+que\s+|comunico\s+que\s+)\b', '', t, flags=re.IGNORECASE)
+    t = re.sub(r'\s+', ' ', t).strip()
+
+    # Divide na primeira quebra ou oração explicativa
+    first_clause = re.split(r'[\.\n\r;]|,\s*(?:pois|a\s+fim|para|conforme|atenciosamente|grata|grato|att|desde\s+já)\b', t, flags=re.IGNORECASE)[0].strip()
+
+    if len(first_clause) < 10:
+        first_clause = t[:80].strip()
+
+    first_clause = re.sub(r'^[,\.\-\:\/]+\s*', '', first_clause).strip()
+    first_clause = first_clause[0].upper() + first_clause[1:] if first_clause else 'Atendimento técnico'
+
+    if len(first_clause) > 85:
+        first_clause = first_clause[:82].rstrip() + '...'
+
+    return f'[{tag_clean}] {first_clause}' if tag_clean else first_clause
+
+def generate_missing_titles(df: pd.DataFrame) -> pd.DataFrame:
+    """Preenche a coluna 'Título' para chamados sem título (ex: CitSmart) a partir da TAG e descrição."""
+    df_result = df.copy()
+    if 'Título' not in df_result.columns:
+        df_result['Título'] = ""
+
+    count = 0
+    for idx, row in df_result.iterrows():
+        curr_title = str(row.get('Título', '')).strip()
+        if not curr_title or curr_title.lower() in ['nan', 'none', 'null', 'sem título', '<na>']:
+            tag = row.get('TAG', '')
+            desc = row.get('Descrição', '')
+            syn_title = generate_synthetic_title(tag, desc)
+            df_result.at[idx, 'Título'] = syn_title
+            count += 1
+
+    if count > 0:
+        logger.info(f"✨ [TÍTULOS INTELIGENTES] {count} chamados sem título receberam título gerado via NLP.")
     return df_result
 
 def needs_retrain(treino_path: Path, model_path: Path) -> bool:
@@ -399,6 +475,7 @@ def main():
     df_tagged.drop(columns=['Descrição_Limpa'], inplace=True, errors='ignore')
 
     df_tagged = detect_and_update_remote_locations(df_tagged)
+    df_tagged = generate_missing_titles(df_tagged)
 
     try:
         from database import save_tickets_to_db, close_missing_tickets_by_base, sync_closed_tickets_to_train_dataset
@@ -431,8 +508,7 @@ def main():
 
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out = OUTPUT_DIR_PRONTO / f"Chamados_Tagged_{ts}.xlsx"
-    df_export = df_tagged.drop(columns=['Título'], errors='ignore')
-    df_export.to_excel(out, index=False)
+    df_tagged.to_excel(out, index=False)
 
     cleanup_old_files(OUTPUT_DIR_PRONTO, "Chamados_Tagged_*.xlsx", keep_count=10)
     

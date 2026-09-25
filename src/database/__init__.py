@@ -19,6 +19,7 @@ from .tickets_db import (
     update_ticket_tag,
     update_ticket_location_details,
     update_ticket_title,
+    update_ticket_device_info,
     save_comments_to_db,
     get_comments_by_ticket,
     sync_closed_tickets_to_train_dataset,
@@ -149,7 +150,8 @@ from .sccm_db import (
     save_sccm_collections,
     get_sccm_devices_df,
     get_sccm_users_df,
-    get_sccm_collections_df
+    get_sccm_collections_df,
+    get_device_by_user
 )
 
 __all__ = [

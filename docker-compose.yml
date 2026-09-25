@@ -41,6 +41,9 @@ services:
       - ./dashboard.py:/app/dashboard.py
       - ./orquestrador.py:/app/orquestrador.py
       - ./init.py:/app/init.py
+      - ./.env.example:/app/.env.example
+      - ./tests:/app/tests
+      - ./util:/app/util
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${STREAMLIT_PORT:-8501}/_stcore/health"]
       interval: 10s

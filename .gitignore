@@ -18,7 +18,10 @@ ENV/
 02 - Dados tratados/
 03 - Dados prontos/
 debug_logs/
-chamados.db
+chamados.db*
+*.db
+*.db-wal
+*.db-shm
 .secret.key
 
 # Logs

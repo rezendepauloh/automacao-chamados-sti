@@ -422,6 +422,14 @@ O sistema opera de forma totalmente containerizada através do **Docker Compose*
      ```
      > 🔑 **O que faz:** Abre o assistente interativo `salvar_senha.py` dentro do container Docker. Ele verifica se já existem senhas salvas para OTRS, CitSmart, SCCM Admin, PaperCut ou OXE, permitindo atualizar ou manter as credenciais no cofre persistente (`~/.local/share/python_keyring`). As senhas são digitadas com caracteres ocultos por segurança.
 
+   - **Executar Suíte de Testes Automatizados:**
+     ```bash
+     ./00-iniciar.sh --tests
+     # ou abreviado:
+     ./00-iniciar.sh -t
+     ```
+     > 🧪 **O que faz:** Executa a suíte unificada de testes de banco de dados, criptografia, regras de negócio, serviços do SCCM, componentes e scripts PowerShell com output formatado e colorido no terminal.
+
    - **Forçar Reconstrução da Imagem Docker:**
      ```bash
      ./00-iniciar.sh --build
@@ -466,13 +474,48 @@ O projeto conta com arquitetura pronta para execução universal em containers o
 
 ---
 
-## 🧪 Executando Testes Unitários
+## 🧪 Suíte de Testes Automatizados (run_all.py)
 
-Para rodar todos os testes unitários integrados da aplicação dentro do container Docker:
+O Sistema Bancada STI possui um sistema completo e modular de validação automatizada, espelhando a arquitetura de testes com relatório colorido e métricas em milissegundos.
 
-```bash
-docker compose exec web python -m unittest discover -s tests
-```
+### 📁 Estrutura de Suítes de Teste (`tests/`)
+
+- **`tests/run_all.py`**: Executor unificado da suíte completa de testes com relatório ANSI formatado (`✔ PASS`, `✖ FAIL`, `⚡ SKIP`).
+- **`tests/test_helpers.py`**: Camada universal de mocks isolados (Pandas, Streamlit, Keyring, Scikit-Learn, spaCy), permitindo execução tanto no host quanto no container Docker sem falhas de dependência.
+- **`tests/unit/`**:
+  - `test_database.py`: Criação de tabelas, inserção, consulta e CRUD das tabelas de cache do SCCM (`sccm_cache_devices`, `sccm_cache_users`, `sccm_cache_collections`) e Plantões.
+  - `test_crypto.py`: Validação de criptografia simétrica Fernet (AES-128-CBC + HMAC-SHA256) das credenciais do cofre, reversibilidade, fallback para texto plano e máscaras de segredos.
+  - `test_tag_classifier.py`: Limpeza de saudações/assinaturas OTRS, normalização para regex e rotinas de detecção física.
+- **`tests/services/`**:
+  - `test_services.py`: Sincronização do SCCM, importação e validação de `sccm_inventory.json` e reconciliação dos técnicos da bancada (`member_matcher`).
+- **`tests/components/`**:
+  - `test_components.py`: Validação do banner de status do orquestrador, cálculo de rotas Dijkstra dos mapas de rede, formatação de portarias e integrantes autorizados.
+- **`tests/scripts/`**:
+  - `test_scripts.py`: Validação estática de integridade dos scripts PowerShell (`bancada-launcher.ps1`, `sccm_sync.ps1`, `Manutencao.ps1`, etc.), ferramentas suportadas e chaves do arquivo `.reg`.
+- **`tests/integration/`**:
+  - `test_integration.py`: Geração de calendários RFC 5545 `.ics` unificados e paridade das chaves de ambiente do `.env.example`.
+
+### 🚀 Como Executar os Testes
+
+1. **Via Menu Interativo (`00-iniciar.sh`):**
+   Execute `./00-iniciar.sh` e escolha a opção **`6`**.
+
+2. **Via Linha de Comando Direta:**
+   ```bash
+   ./00-iniciar.sh --tests
+   # ou abreviado:
+   ./00-iniciar.sh -t
+   ```
+
+3. **Direto via Python:**
+   ```bash
+   python3 tests/run_all.py
+   ```
+
+4. **Dentro do Contêiner Docker:**
+   ```bash
+   docker compose run --rm -v "$(pwd)/tests:/app/tests" web python tests/run_all.py
+   ```
 
 
 

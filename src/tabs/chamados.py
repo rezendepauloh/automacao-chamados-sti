@@ -14,7 +14,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.components.status_banner import check_orquestrador_running, read_last_log_lines, render_log_expander
-from src.database import load_data, get_comments_by_ticket, update_ticket_location_details, update_ticket_tag, update_ticket_andamento, update_ticket_title
+from src.database import (
+    load_data,
+    get_comments_by_ticket,
+    update_ticket_location_details,
+    update_ticket_tag,
+    update_ticket_andamento,
+    update_ticket_title,
+    update_ticket_device_info
+)
+from src.database.sccm_db import get_device_by_user
 from src.components.pagination import (
     render_items_per_page_selector,
     paginate_items,
@@ -704,12 +713,61 @@ def render_chamados_page():
                     client_id = str(row.get('id_cliente', '')).strip()
                     if client_id and client_id.lower() not in ["none", "nan", "null", ""]:
                         user_display += f" ({client_id})"
-                        
+                    # Helper para sanitizar strings e evitar 'nan', 'none', 'null'
+                    def _sanitize_val(v):
+                        if v is None or pd.isna(v):
+                            return ""
+                        s = str(v).strip()
+                        if s.lower() in ["nan", "none", "null", "<na>"]:
+                            return ""
+                        return s
+
+                    clean_loc = _sanitize_val(row.get('localidade_fisica'))
+                    if not clean_loc or clean_loc.lower() in ["nan", "none", "null", "não identificada"]:
+                        clean_loc = "Não identificada"
+                    elif "nan -" in clean_loc.lower() or "- nan" in clean_loc.lower():
+                        clean_loc = "Não identificada"
+
                     st.markdown(f"**Usuário:** {user_display}")
-                    st.markdown(f"**Localidade:** {row['localidade_fisica']}")
+                    st.markdown(f"**Localidade:** {clean_loc}")
                     st.markdown(f"**Base de Origem:** `{row['base']}`")
-                    st.markdown(f"**IP de Origem:** `{row.get('ip_origem') or 'N/A'}`")
-                    st.markdown(f"**Hostname:** `{row.get('hostname') or 'N/A'}`")
+
+                    curr_ip = _sanitize_val(row.get('ip_origem'))
+                    curr_host = _sanitize_val(row.get('hostname'))
+                    cid_str = str(row['id']).strip()
+
+                    # Fallback / Enriquecimento dinâmico via cache do SCCM (sccm_cache_devices)
+                    if (not curr_ip or not curr_host) and client_id and client_id.lower() not in ["none", "nan", "null", ""]:
+                        dev_info = get_device_by_user(client_id)
+                        if dev_info:
+                            updated_needed = False
+                            if not curr_ip and dev_info.get("ip"):
+                                curr_ip = dev_info["ip"]
+                                updated_needed = True
+                            if not curr_host and dev_info.get("hostname"):
+                                curr_host = dev_info["hostname"]
+                                updated_needed = True
+                            
+                            # Atualiza silenciosamente no banco para persistir o enriquecimento
+                            if updated_needed:
+                                try:
+                                    update_ticket_device_info(cid_str, curr_ip, curr_host)
+                                except Exception:
+                                    pass
+
+                    st.markdown(f"**IP de Origem:** `{curr_ip or 'N/A'}`")
+                    st.markdown(f"**Hostname:** `{curr_host or 'N/A'}`")
+
+                    # Ações rápidas de conexão remota se o hostname ou IP estiverem disponíveis
+                    target_host = curr_host or curr_ip
+                    if target_host and target_host != "N/A":
+                        col_act1, col_act2 = st.columns(2)
+                        with col_act1:
+                            cmrc_url = f"bancada://run?tool=cmrc&host={target_host}"
+                            st.link_button("🎮 CmRcViewer", url=cmrc_url, width="stretch", help="Abre o Controle Remoto do SCCM.")
+                        with col_act2:
+                            rdp_url = f"bancada://run?tool=rdp&host={target_host}"
+                            st.link_button("🖥️ MSTSC (RDP)", url=rdp_url, width="stretch", help="Conecta via Área de Trabalho Remota.")
                     
                     with st.expander("✏️ Editar Título do Chamado", expanded=False):
                         curr_title = str(row.get('titulo', '')).strip()
@@ -722,9 +780,16 @@ def render_chamados_page():
                             st.cache_data.clear()
 
                     with st.expander("📍 Editar Localização Manual", expanded=False):
-                        new_cidade = st.text_input("Cidade - Prédio", value=str(row.get('cidade_predio', '')), key=f"edit_cidade_{row['id']}")
-                        new_unidade = st.text_input("Unidade", value=str(row.get('unidade', '')), key=f"edit_unidade_{row['id']}")
-                        new_localidade = st.text_input("Localidade Física", value=str(row.get('localidade_fisica', '')), key=f"edit_localidade_{row['id']}")
+                        curr_cp = _sanitize_val(row.get('cidade_predio'))
+                        curr_un = _sanitize_val(row.get('unidade'))
+                        if "não encontrad" in curr_un.lower() or "nao encontrad" in curr_un.lower():
+                            curr_un = ""
+                        curr_loc = _sanitize_val(row.get('localidade_fisica'))
+                        if "nan" in curr_loc.lower() or "não encontrad" in curr_loc.lower():
+                            curr_loc = ""
+                        new_cidade = st.text_input("Cidade - Prédio", value=curr_cp, key=f"edit_cidade_{row['id']}")
+                        new_unidade = st.text_input("Unidade", value=curr_un, key=f"edit_unidade_{row['id']}")
+                        new_localidade = st.text_input("Localidade Física", value=curr_loc, key=f"edit_localidade_{row['id']}")
                         if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row['id']}"):
                             update_ticket_location_details(row['id'], new_localidade, new_cidade, new_unidade)
                             st.success("Localização salva! (Fechar para atualizar a tabela)")
@@ -815,6 +880,7 @@ def render_chamados_page():
         
         cols_for_dataframe = list(cols_to_show)
         if 'ip_origem' in df_display.columns:
+            df_display['ip_origem'] = df_display['ip_origem'].fillna("").astype(str).replace(r'^(?i:nan|none|null|<na>)$', '', regex=True).str.strip()
             cols_for_dataframe.append('ip_origem')
             
         df_final_display = df_display[cols_for_dataframe]
