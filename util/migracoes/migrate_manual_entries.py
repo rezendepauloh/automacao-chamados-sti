@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 # Adiciona a raiz do projeto e a pasta src ao sys.path
-root_dir = Path(__file__).parent.parent
+root_dir = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(root_dir))
 sys.path.insert(0, str(root_dir / "src"))
 

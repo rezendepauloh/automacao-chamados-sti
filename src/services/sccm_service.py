@@ -138,28 +138,27 @@ def sync_sccm_collections() -> int:
 
 def import_sccm_inventory_json(file_path: Optional[str] = None) -> Dict[str, int]:
     """Importa o arquivo JSON de inventário gerado pelo bancada-launcher.ps1."""
-    candidates = []
     if file_path:
-        candidates.append(file_path)
+        chosen_file = file_path if os.path.exists(file_path) else None
+    else:
+        # Locais padrão onde o script do Windows salva ou copia o arquivo
+        root_brutos = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "01 - Dados Brutos", "sccm_inventory.json"))
+        cwd_brutos = os.path.abspath(os.path.join(os.getcwd(), "01 - Dados Brutos", "sccm_inventory.json"))
+        candidates = [
+            root_brutos,
+            cwd_brutos,
+            "/app/01 - Dados Brutos/sccm_inventory.json",
+            "/home/paulo/PythonProjects/automacao-chamados-sti/01 - Dados Brutos/sccm_inventory.json",
+            os.path.expanduser("~/PythonProjects/automated-OTRS-and-CitSmart/01 - Dados Brutos/sccm_inventory.json"),
+            "/mnt/c/Users/paulogoncalves/sccm_inventory.json",
+            os.path.expanduser("~/sccm_inventory.json")
+        ]
 
-    # Locais padrão onde o script do Windows salva ou copia o arquivo
-    root_brutos = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "01 - Dados Brutos", "sccm_inventory.json"))
-    cwd_brutos = os.path.abspath(os.path.join(os.getcwd(), "01 - Dados Brutos", "sccm_inventory.json"))
-    candidates.extend([
-        root_brutos,
-        cwd_brutos,
-        "/app/01 - Dados Brutos/sccm_inventory.json",
-        "/home/paulo/PythonProjects/automacao-chamados-sti/01 - Dados Brutos/sccm_inventory.json",
-        os.path.expanduser("~/PythonProjects/automated-OTRS-and-CitSmart/01 - Dados Brutos/sccm_inventory.json"),
-        "/mnt/c/Users/paulogoncalves/sccm_inventory.json",
-        os.path.expanduser("~/sccm_inventory.json")
-    ])
-
-    chosen_file = None
-    for c in candidates:
-        if c and os.path.exists(c):
-            chosen_file = c
-            break
+        chosen_file = None
+        for c in candidates:
+            if c and os.path.exists(c):
+                chosen_file = c
+                break
 
     if not chosen_file:
         logger.warning("⚠️ Nenhum arquivo de inventário SCCM encontrado.")

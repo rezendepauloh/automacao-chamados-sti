@@ -119,6 +119,9 @@ def save_tickets_to_db(df: pd.DataFrame):
             
         titulo_val = _clean_str(row.get('Título', ''))
         usuario_val = _clean_str(row.get('Nome do Usuário', ''))
+        # Ignora chamados automáticos indesejados (ex: SAJ/Monitoramento e Adm Ticket)
+        if usuario_val.lower() in ["monitoramento adm mpms", "adm ticket por email"]:
+            continue
         id_cliente_val = _clean_str(row.get('ID do Cliente', ''))
         desc_val = _clean_str(row.get('Descrição', ''))
         ip_val = _clean_str(row.get('IP_Origem', ''))

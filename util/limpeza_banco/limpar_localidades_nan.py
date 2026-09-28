@@ -1,8 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-# Localiza o arquivo chamados.db na raiz do projeto ou diretório atual
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "chamados.db"
 if not DB_PATH.exists():
     DB_PATH = Path("chamados.db")

@@ -77,26 +77,26 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
   3. **Interface dos Modais e Edição Manual ([`src/tabs/chamados.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tabs/chamados.py)):**
      - Sanitização em `show_ticket_details()` para exibição limpa de `Localidade: Não identificada` quando ausente.
      - Os inputs do expander "Editar Localização Manual" agora usam `_sanitize_val()`, impedindo que os campos de texto abram preenchidos com o texto literal `"nan"`.
-  4. **Scripts de Limpeza e Migração para Produção ([`util/limpar_localidades_nan.sql`](file:///home/paulo/PythonProjects/automacao-chamados-sti/util/limpar_localidades_nan.sql) e [`util/limpar_localidades_nan.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/util/limpar_localidades_nan.py)):**
+  4. **Scripts de Limpeza e Migração para Produção ([`util/limpeza_banco/limpar_localidades_nan.sql`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_localidades_nan.sql) e [`util/limpeza_banco/limpar_localidades_nan.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_localidades_nan.py)):**
      - Criados scripts SQL e Python prontos para execução em ambientes de homologação e produção, higienizando chamados existentes no banco `chamados.db`.
-  6. **Padronização de Prédios de Campo Grande sem Sub-setores ([`src/manual_entries.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/manual_entries.py)):**
+  6. **Padronização de Prédios de Campo Grande sem Sub-setores ([`src/manual_entries.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/manual_entries.py)):**
      - Faixas de IP da PGJ (ex: `10.111.144.0/24` e `10.111.145.0/24`) foram padronizadas para `"Campo Grande - PGJ"` em vez de acrescentar sufixos de setores (`" - CI"` ou `" - STI"`), mantendo a localidade física limpa e coerente com a lista de prédios.
      - Atualizados os scripts de limpeza (`limpar_localidades_nan.sql` e `limpar_localidades_nan.py`) para normalizar chamados legados com sufixos duplicados.
-  7. **Padronização de Comarcas do Interior ([`src/tag_classifier.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tag_classifier.py)):**
+  7. **Padronização de Comarcas do Interior ([`src/tag_classifier.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tag_classifier.py)):**
      - A lógica de fallback agora atribui diretamente a comarca/cidade limpa à `Localidade física` (ex: `Terenos`, `Paranaíba`, `Cassilândia`, `Ivinhema`) sem concatenar o nome da promotoria interna (ex: `1ª PJ de Terenos`), deixando a especificação da PJ exclusivamente no campo e filtro `Unidade`.
 
 ### ✅ Concluído: Geração Inteligente de Títulos para Chamados sem Título (CitSmart)
 - **Status:** **Resolvido e Validado (100% dos 33 testes aprovados)**.
 - **Entregas Realizadas:**
-  1. **Análise de Descrição e Síntese de Título ([`src/tag_classifier.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tag_classifier.py)):**
-     - Implementada a função [`generate_synthetic_title(tag, description)`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tag_classifier.py), que combina a `TAG` prevista pelo modelo Scikit-Learn (SVM / ComplementNB) com processamento de linguagem natural (NLP).
+  1. **Análise de Descrição e Síntese de Título ([`src/tag_classifier.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tag_classifier.py)):**
+     - Implementada a função [`generate_synthetic_title(tag, description)`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tag_classifier.py), que combina a `TAG` prevista pelo modelo Scikit-Learn (SVM / ComplementNB) com processamento de linguagem natural (NLP).
      - Remove tags HTML, entidades, saudações compostas ("Bom dia Prezados", "Olá tudo bem"), e preâmbulos burocráticos ("Por determinação do Promotor...", "solicito a...", "venho por meio deste solicitar...").
      - Isola a oração substantiva do problema ou pedido, compondo títulos objetivos como `[IMPRESSORA] Instalação da impressora PRT-5394 no setor` ou `[INSTALAÇÃO HARDWARE] Instalação do Microcomputador Pat. 80700`.
   2. **Preservação de Títulos Nativos e Edições Manuais:**
-     - [`generate_missing_titles(df)`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tag_classifier.py) atua exclusivamente em registros onde a coluna `Título` está vazia ou nula, garantindo que títulos nativos do OTRS permaneçam intactos.
-     - [`save_tickets_to_db()`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/database/tickets_db.py) verifica se o chamado já possui título (ou edição manual salva via UI modal) para nunca sobrescrevê-lo com dados em branco.
+     - [`generate_missing_titles(df)`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tag_classifier.py) atua exclusivamente em registros onde a coluna `Título` está vazia ou nula, garantindo que títulos nativos do OTRS permaneçam intactos.
+     - [`save_tickets_to_db()`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/tickets_db.py) verifica se o chamado já possui título (ou edição manual salva via UI modal) para nunca sobrescrevê-lo com dados em branco.
   3. **Migração e Atualização da Base:**
-     - Integrado ao utilitário [`util/limpar_localidades_nan.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/util/limpar_localidades_nan.py) para que todas as bases (inclusive em produção) possam preencher os títulos vazios de forma retroativa.
+     - Integrado ao utilitário [`util/limpeza_banco/limpar_localidades_nan.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_localidades_nan.py) para que todas as bases (inclusive em produção) possam preencher os títulos vazios de forma retroativa.
 
 ### 📋 Próximas Etapas e Melhorias Planejadas
 1. **Portabilidade de Credenciais Criptografadas & Autenticação LDAP Entre Ambientes/Máquinas:**

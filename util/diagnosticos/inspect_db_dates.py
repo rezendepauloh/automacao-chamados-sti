@@ -2,8 +2,10 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT_DIR / "chamados.db"
+if not DB_PATH.exists():
+    DB_PATH = Path("chamados.db")
 
 def inspect_dates():
     if not DB_PATH.exists():

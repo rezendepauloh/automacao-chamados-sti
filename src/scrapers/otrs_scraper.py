@@ -448,11 +448,19 @@ def navigation_queue(driver):
     queue_link.click()    
 
 def all_chamados(driver):
-    logger.info("Passo 6: Acessando todos os chamados...")
-    all_tickets_link = WebDriverWait(driver, EXPLICIT_WAIT).until(
-        EC.element_to_be_clickable(
-            (By.XPATH, "//a[contains(@href, 'QueueID=0') and contains(@href, 'Filter=All')]"))
-    )
+    logger.info("Passo 6: Acessando chamados da Manutenção (QueueID=11)...")
+    try:
+        # Tenta acessar diretamente a fila específica da Manutenção (QueueID=11)
+        all_tickets_link = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//a[contains(@href, 'QueueID=11') and contains(@href, 'Filter=All')] | //a[contains(@href, 'QueueID=11')]"))
+        )
+    except Exception:
+        logger.info("Fila QueueID=11 não encontrada diretamente pelo menu, usando Todos os Chamados (QueueID=0)...")
+        all_tickets_link = WebDriverWait(driver, EXPLICIT_WAIT).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//a[contains(@href, 'QueueID=0') and contains(@href, 'Filter=All')]"))
+        )
     
     driver.execute_script("arguments[0].scrollIntoView(true);", all_tickets_link)
     driver.execute_script("arguments[0].click();", all_tickets_link)
@@ -460,7 +468,7 @@ def all_chamados(driver):
     logger.info("Passo 7: Validando carregamento...")
     WebDriverWait(driver, EXPLICIT_WAIT).until(
         EC.presence_of_element_located(
-            (By.XPATH, "//li[@class='Active ']//a[contains(., 'Todos os Chamados')]")
+            (By.XPATH, "//li[contains(@class, 'Active')]//a | //table[contains(@class, 'TableSmall')]")
         )
     )    
 

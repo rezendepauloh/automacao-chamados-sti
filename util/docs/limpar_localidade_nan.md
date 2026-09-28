@@ -62,14 +62,14 @@ Na máquina de produção, você pode executar a limpeza de duas formas:
 #### Opção A: Via Python (Recomendado)
 Execute a partir da raiz do projeto:
 ```bash
-python3 util/limpar_localidades_nan.py
+python3 util/limpeza_banco/limpar_localidades_nan.py
 ```
 > O script se conecta automaticamente ao `chamados.db`, higieniza os campos `cidade_predio`, `unidade`, reconstrói `localidade_fisica` e remove registros nulos/espúrios, exibindo um resumo detalhado das linhas corrigidas.
 
 #### Opção B: Via SQL direto no SQLite
 Se preferir rodar direto no CLI do SQLite:
 ```bash
-sqlite3 chamados.db < util/limpar_localidades_nan.sql
+sqlite3 chamados.db < util/limpeza_banco/limpar_localidades_nan.sql
 ```
 
 Ou rodando as queries manualmente:

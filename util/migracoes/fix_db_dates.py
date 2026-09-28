@@ -4,8 +4,10 @@ import sqlite3
 import re
 from datetime import datetime
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT_DIR / "chamados.db"
+if not DB_PATH.exists():
+    DB_PATH = Path("chamados.db")
 TODAY = datetime.now()
 
 def fix_future_and_invalid_dates():

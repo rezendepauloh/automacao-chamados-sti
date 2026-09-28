@@ -34,8 +34,14 @@ from config import (
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 # ---------------------------
-# Utilitários e Log
+# Filtros e Constantes
 # ---------------------------
+GRUPO_MANUTENCAO = "[N1] Manutenção"
+USUARIOS_AUTOMATICOS_IGNORAR = {
+    "monitoramento adm mpms",
+    "adm ticket por email"
+}
+
 logger = setup_logging(DEBUG_DIR_CITSMART / "citsmart_scraper.log", __name__)
 
 
@@ -280,10 +286,32 @@ def _list_rows(driver):
         return []
 
 def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
+    # Obtém os IDs realmente exibidos na tabela da tela para evitar chamados de outras filas/páginas
+    dom_cids = set()
+    try:
+        table_rows = _list_rows(driver)
+        for r in table_rows:
+            try:
+                el = r.find_element(By.XPATH, ".//div[@ng-switch-when='1']")
+                match = re.search(r'\d+', el.get_attribute("textContent") or "")
+                if match:
+                    dom_cids.add(match.group(0))
+            except Exception:
+                pass
+        if dom_cids:
+            logger.info(f"🎯 IDs legítimos detectados na tabela DOM da tela ({len(dom_cids)}): {sorted(list(dom_cids))}")
+    except Exception as dom_err:
+        logger.debug(f"Aviso ao ler IDs do DOM: {dom_err}")
+
     try:
         captured = driver.execute_script("return window.__captured_tickets__;")
         if captured and isinstance(captured, list) and len(captured) > 0:
-            logger.info(f"⚡ [PROCESSO ULTRA-RÁPIDO] Processando {len(captured)} chamados capturados diretamente via JSON de rede!")
+            # Se identificamos os IDs reais renderizados na tela, filtramos estritamente por eles!
+            if dom_cids:
+                captured = [t for t in captured if str(t.get("ticket_id", "") or t.get("id", "")) in dom_cids]
+                logger.info(f"⚡ [PROCESSO ULTRA-RÁPIDO] Filtrado para {len(captured)} chamados que correspondem exatamente à tabela da fila!")
+            else:
+                logger.info(f"⚡ [PROCESSO ULTRA-RÁPIDO] Processando {len(captured)} chamados capturados diretamente via JSON de rede!")
             collected = []
             for idx, ticket in enumerate(captured):
                 try:
@@ -291,7 +319,25 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                     if not cid:
                         continue
                         
+                    # 1. Filtro de Grupo Atual: aceita apenas chamados do grupo da Manutenção
+                    grupo_atual = str(
+                        ticket.get("grupo_atual") or 
+                        ticket.get("current_group") or 
+                        ticket.get("ticket_group") or 
+                        ticket.get("nome_grupo") or 
+                        ticket.get("group_name") or 
+                        ticket.get("sigla_grupo") or ""
+                    ).strip()
+                    if grupo_atual and "[n1] manutenção" not in grupo_atual.lower() and "manutenção" not in grupo_atual.lower():
+                        logger.info(f"⏭️ [IGNORADO GRUPO] Chamado {cid} pertence a outro grupo: '{grupo_atual}'")
+                        continue
+
                     solicitante_nome = ticket.get("ticket_requester", "")
+                    
+                    # 2. Filtro de Usuários Automáticos (ex: Monitoramento Adm MPMS, Adm Ticket Por Email)
+                    if solicitante_nome and solicitante_nome.strip().lower() in USUARIOS_AUTOMATICOS_IGNORAR:
+                        logger.info(f"⏭️ [IGNORADO AUTOMÁTICO] Chamado {cid} criado pelo usuário automático '{solicitante_nome}'")
+                        continue
                     
                     id_cliente = ""
                     email_solicitante = ticket.get("email_solicitante", "")
@@ -443,8 +489,6 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
             num_match = re.search(r'\d+', num_bruto)
             cid = num_match.group(0) if num_match else ""
 
-            if not cid: continue
-
             solicitante_full = get_val("6")
             data_criacao = get_val("9")
 
@@ -458,6 +502,35 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
                     id_cliente = partes[1].replace(")", "").strip()
                 except:
                     pass
+
+            # 1. Filtro de Grupo Atual no DOM
+            grupo_atual = ""
+            for switch_key in ["11", "12", "13", "14", "15", "16", "17", "18"]:
+                val_td = get_val(switch_key)
+                if val_td and ("[n1]" in val_td.lower() or "manutenção" in val_td.lower() or "suporte" in val_td.lower() or "desenvolvimento" in val_td.lower()):
+                    grupo_atual = val_td
+                    break
+            
+            # Se não achou por chave numérica, faz varredura nas células da linha
+            if not grupo_atual:
+                try:
+                    tds = row.find_elements(By.TAG_NAME, "td")
+                    for td in tds:
+                        txt_td = td.text.strip()
+                        if "[n1]" in txt_td.lower() or "manutenção" in txt_td.lower():
+                            grupo_atual = txt_td
+                            break
+                except Exception:
+                    pass
+
+            if grupo_atual and "[n1] manutenção" not in grupo_atual.lower() and "manutenção" not in grupo_atual.lower():
+                logger.info(f"⏭️ [DOM IGNORADO GRUPO] Chamado {cid} pertence a outro grupo: '{grupo_atual}'")
+                continue
+
+            # 2. Filtro de Usuários Automáticos no DOM
+            if solicitante_nome and solicitante_nome.strip().lower() in USUARIOS_AUTOMATICOS_IGNORAR:
+                logger.info(f"⏭️ [DOM IGNORADO AUTOMÁTICO] Chamado {cid} de usuário automático '{solicitante_nome}'")
+                continue
 
             comments_json = cache[cid].get('Comentários', '[]') if (cache and cid in cache) else '[]'
 
