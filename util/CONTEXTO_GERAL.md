@@ -98,16 +98,57 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
   3. **Migração e Atualização da Base:**
      - Integrado ao utilitário [`util/limpeza_banco/limpar_localidades_nan.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_localidades_nan.py) para que todas as bases (inclusive em produção) possam preencher os títulos vazios de forma retroativa.
 
-### 📋 Próximas Etapas e Melhorias Planejadas
+### ✅ Concluído: Blindagem Estrita das Filas de Manutenção (OTRS & CitSmart)
+- **Status:** **Resolvido e Validado (100% dos 33 testes aprovados)**.
+- **Entregas Realizadas:**
+  1. **Navegação Direta OTRS ([`src/scrapers/otrs_scraper.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/scrapers/otrs_scraper.py)):**
+     - O scraper navega diretamente para `QueueID=11` (Manutenção da STI) com fallback seguro para `QueueID=0`, garantindo a exclusividade dos chamados da fila.
+  2. **Validação Estrita via DOM e Filtro de Grupo no CitSmart ([`src/scrapers/citsmart_scraper.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/scrapers/citsmart_scraper.py)):**
+     - Identificado que o backend do CitSmart disparava respostas XHR com 100 itens sem a chave de grupo preenchida no JSON.
+     - Implementado cruzamento bidirecional: o scraper lê os IDs renderizados na tabela DOM (`#table tbody tr`) da fila selecionada (`copilot_novo` / `[N1] Manutenção`) e filtra estritamente os tickets capturados, descartando qualquer chamado excedente de outras equipes.
+     - Descarte imediato de tickets automáticos (`Monitoramento Adm MPMS` e `Adm Ticket Por Email`) tanto no scraper quanto em [`save_tickets_to_db()`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/tickets_db.py).
+  3. **Higienização e Reorganização de Utilitários ([`util/`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/)):**
+     - Scripts organizados em subpastas (`limpeza_banco/`, `migracoes/`, `diagnosticos/`, `arquivos/`, `docs/`) com documentações em Markdown padronizadas para execução via Bash (Linux / WSL / Red Hat).
+     - Banco SQLite expurgado, cravando com precisão a volumetria da equipe (52/53 OTRS + 19 CitSmart).
+
+---
+
+### ✅ Concluído: Otimização da Aba SCCM & Normalização Inteligente do Windows 11
+- **Status:** **Resolvido e Validado (100% dos 34 testes aprovados)**.
+- **Entregas Realizadas:**
+  1. **Migração dos Filtros, Pesquisas e Paginação para a Barra Lateral ([`src/tabs/sccm.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/sccm.py)):**
+     - Inputs de pesquisa, seleção e o seletor universal de itens por página (`render_items_per_page_selector`) contextualizados dinamicamente no `st.sidebar` para todas as sub-abas (`💻 Dispositivos`, `👤 Usuários`, `📁 Coleções de Dispositivos`, `👥 Coleções de Usuários` e `🛡️ Configurações & Conformidade`).
+     - Integração de paginação completa via [`src/components/pagination.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/components/pagination.py) com régua de navegação (`render_pagination_controls`), suporte a `10, 25, 50, 100, "Todos"` registros e persistência de seleção no modal de ações rápidas.
+     - A área principal agora destaca com máxima visibilidade os cards de métricas (KPIs), as tabelas de dados completas e as ações remotas instantâneas (`bancada://run?tool=cmrc`, `rdp`, `explorer`, `ping`).
+  2. **Detecção e Normalização Técnica do Windows 11 por Build ([`src/database/sccm_db.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/sccm_db.py)):**
+     - Criadas as funções `extract_windows_build(os_version)` e `normalize_os_name(os_name, os_version)`.
+     - Tratamento da limitação da classe `SMS_R_System` do SCCM (que reporta "Microsoft Windows NT Workstation 10.0" por compartilhamento do kernel NT 10.0):
+       * `Build >= 22000` (ex: 26100, 26200, 22631, 22621) normalizado para `"Windows 11"`.
+       * `Build < 22000` (ex: 19045) normalizado para `"Windows 10"`.
+       * Servidores normalizados para `"Windows Server 2022"`, `"Windows Server 2019"`, `"Windows Server 2016"`, `"Windows Server 2025"` etc.
+     - Implementada a rotina de migração idempotente `migrate_sccm_os_normalization()` executada no startup das tabelas, higienizando as mais de 2.450 estações no cache relacional local.
+     - `save_sccm_devices()` e `get_sccm_devices_df()` blindados com a normalização automática.
+  3. **Expansão do Modal de Ficha Técnica & Hardware do Computador ([`src/tabs/sccm.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/sccm.py)):**
+     - Modal reconfigurado para `@st.dialog(..., width="large")`, proporcionando uma visualização executiva ampla e limpa.
+     - Painel dividido em 3 colunas de especificações:
+       * **Hardware & Componentes:** Fabricante, Modelo da Máquina, Processador (CPU), Memória RAM e Discos/Armazenamento (com capacidade e espaço livre).
+       * **Sistema & Agente:** Sistema Operacional normalizado, Versão de Build, Versão do Cliente SCCM, Último Check-in e Resource ID.
+       * **Rede & Domínio:** IP(s), MAC Address, Site AD e Domínio corporativo.
+     - Inclusão do botão de **Diagnóstico Remoto da Bancada** (`bancada://run?tool=analisador&host={name}`) somado ao CmRcViewer, RDP, Explorer C$ e Teste Ping.
+     - Enriquecimento do script de sincronização [`src/scripts_powershell/sccm_sync.ps1`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/scripts_powershell/sccm_sync.ps1) para consultar `SMS_G_System_COMPUTER_SYSTEM`, `SMS_G_System_PROCESSOR` e `SMS_G_System_LOGICAL_DISK`, persistindo nas novas colunas de hardware em [`src/database/sccm_db.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/sccm_db.py).
+  4. **Validação e Testes Automatizados ([`tests/unit/test_database.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/unit/test_database.py)):**
+     - Adicionado o teste `test_sccm_os_normalization_and_build_detection`, validando extração de builds, mapeamento de sistemas operacionais e persistência em banco.
+     - Suíte unificada de testes (`tests/run_all.py`) operando em 100% verde (34 testes aprovados).
+
+---
+
+## 📋 5. Próximas Etapas e Melhorias Planejadas
 1. **Portabilidade de Credenciais Criptografadas & Autenticação LDAP Entre Ambientes/Máquinas:**
-   - **Contexto do Problema:** Ao clonar o projeto ou transferir o banco `chamados.db` para outro computador (ex: máquina de desenvolvimento vs. `MPE-80703` vs. servidor Red Hat de produção), a chave mestra `.secret.key` gerada localmente diverge da chave que cifrou os segredos na máquina de origem.
-   - **Sintoma Atual:** O fallback de `decrypt_value()` em `crypto_utils.py` silencia a falha de decriptografia e retorna o ciphertext cru (`gAAAAAB...`), fazendo com que o teste de conexão e sincronização do Active Directory falhem com `invalidCredentials`.
-   - **Requisito de Solução:** O sistema precisa funcionar perfeitamente em qualquer máquina, independente de onde esteja rodando. Desenvolver mecanismo resiliente de detecção de chave inválida / cofre dessincronizado, aviso claro na UI com prompt imediato para reautenticar/redefinir credenciais em lote, além de suporte a chave compartilhada via secret/ambiente (`APP_SECRET_KEY`) ou cofre unificado que previna o envio de ciphertext corrompido para os serviços externos (LDAP, SCCM, OXE).
-2. **Sincronização Periódica do Cache do SCCM:**
-   - Agendamento de rotina periódica no daemon cron interno (`cron_scheduler.py`) para atualizar automaticamente `sccm_cache_devices` com novas estações e logons.
-3. **Histórico de Máquinas do Usuário:**
-   - Possibilidade de exibir no modal se o solicitante possui mais de uma estação mapeada (ex: notebook corporativo + desktop da mesa).
-4. **Métricas de Acurácia de Localização:**
-   - Painel analítico exibindo a taxa de correspondência de chamados direcionados por IP vs. NLP textual.
+   - Detecção resiliente de chave Fernet inválida ao migrar `chamados.db` para outro host/servidor Red Hat corporativo, com prompt direto na interface.
+2. **Sincronização Periódica Automática do Cache do SCCM:**
+   - Agendamento da rotina via daemon interno de cron (`cron_scheduler.py`).
+3. **Métricas de Acurácia de Localização:**
+   - Painel de taxa de correspondência de chamados direcionados por IP vs. NLP textual.
+
 
 

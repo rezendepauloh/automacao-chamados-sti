@@ -19,8 +19,22 @@ from src.tabs.chamados import summarize_ticket_locally
 from src.tabs.fiscalizacao import _formatar_texto_portaria
 from src.tabs.mapas import calculate_dijkstra_route, get_image_base64
 from src.tabs.plantoes import is_bancada_member
+from src.tabs.sccm import format_sccm_datetime
 
 class TestComponentsAndTabs(unittest.TestCase):
+    def test_format_sccm_datetime(self):
+        """Valida conversão de datas WMI e ISO do SCCM para formato brasileiro DD/MM/AAAA HH:MM:SS."""
+        # WMI CIM DateTime (YYYYMMDDHHmmss.microsec+tz)
+        wmi_val = "20260929080059.657000+***"
+        self.assertEqual(format_sccm_datetime(wmi_val), "29/09/2026 08:00:59")
+
+        # ISO 8601
+        iso_val = "2026-09-29T16:30:00"
+        self.assertEqual(format_sccm_datetime(iso_val), "29/09/2026 16:30:00")
+
+        # Valores vazios ou nulos
+        self.assertEqual(format_sccm_datetime(None), "-")
+        self.assertEqual(format_sccm_datetime(""), "-")
     def test_status_banner_functions(self):
         """Valida leitura de logs e verificação do status do orquestrador."""
         is_running = check_orquestrador_running()

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from datetime import datetime
@@ -7,6 +8,242 @@ from typing import List, Dict, Any, Optional
 from .connection import get_connection, DB_TYPE
 
 logger = logging.getLogger(__name__)
+
+# ==============================================================================
+# DICIONÁRIO DE ALIASES DE MODELOS DE HARDWARE
+# ==============================================================================
+# Mapeia códigos de fábrica (Machine Types / MTM da Lenovo, Dell, HP, etc.)
+# para os nomes comerciais legíveis aos analistas.
+# Se surgirem novos modelos, basta adicionar novas entradas nesta lista.
+HARDWARE_MODEL_ALIASES: Dict[str, str] = {
+    # Lenovo ThinkCentre
+    "11DUSD3R00": "Lenovo ThinkCentre M70q Gen 2",
+    "11DU": "Lenovo ThinkCentre M70q Gen 2",
+    "M11DU": "Lenovo ThinkCentre M70q Gen 2",
+    "12TES8R800": "Lenovo ThinkCentre M70q Gen 5",
+    "12TE": "Lenovo ThinkCentre M70q Gen 5",
+    "M12TES8R80": "Lenovo ThinkCentre M70q Gen 5",
+    "M12TE": "Lenovo ThinkCentre M70q Gen 5",
+    "10MUS09A00": "Lenovo ThinkCentre M710q",
+    "10T7": "Lenovo ThinkCentre M720q",
+    "11DT": "Lenovo ThinkCentre M70q Gen 1",
+    "11T3": "Lenovo ThinkCentre M70q Gen 3",
+    "12E3": "Lenovo ThinkCentre M70q Gen 4",
+    "13E0S00400": "ThinkCentre M75q Gen 2 Tiny",
+    # Lenovo ThinkPad
+    "2349K9P": "Lenovo ThinkPad T430",
+    "20AWA213BR": "Lenovo ThinkPad T440p",
+    "20U9": "Lenovo ThinkPad X13 Gen 1",
+    "20W0": "Lenovo ThinkPad T14 Gen 2",
+    "21AH": "Lenovo ThinkPad T14 Gen 3",
+    "20W1S6CB00": "Lenovo ThinkPad T14 Gen 1",
+    "20W1S76U00": "Lenovo ThinkPad T14 Gen 1",
+    "21M4000MBO": "Lenovo ThinkPad E14 Gen 1",
+    "21JSS3FB00": "Lenovo ThinkPad E14 Gen 1",
+    # Dell OptiPlex & Latitude (exemplos comuns)
+    "0P6G5X": "Dell OptiPlex 7090",
+}
+
+
+def normalize_hardware_model(raw_model: str) -> str:
+    """
+    Retorna o nome comercial amigável correspondente ao modelo/código MTM de hardware.
+    Caso não haja alias cadastrado, retorna a string original limpa.
+    """
+    if not raw_model:
+        return ""
+    cleaned = str(raw_model).strip()
+    if not cleaned or cleaned.lower() in ["unknown", "none", "nan", "null"]:
+        return ""
+
+    # 1. Match exato
+    if cleaned in HARDWARE_MODEL_ALIASES:
+        return HARDWARE_MODEL_ALIASES[cleaned]
+
+    # 2. Match por prefixo (ex: MTM de 4 caracteres iniciais da Lenovo como 11DU, 12TE)
+    cleaned_upper = cleaned.upper()
+    for code, alias in HARDWARE_MODEL_ALIASES.items():
+        if cleaned_upper.startswith(code.upper()):
+            return alias
+
+    return cleaned
+
+
+def extract_windows_build(os_version: str) -> Optional[int]:
+    """
+    Extrai o número inteiro da Build do Windows a partir de formatos como:
+    '10.0.26100', '10.0.22631.3880', '22631', '19045', etc.
+    """
+    if not os_version:
+        return None
+    raw = str(os_version).strip()
+    if not raw or raw.lower() in ["none", "nan", "null"]:
+        return None
+
+    # Tenta padrão semântico padrão Windows (Major.Minor.Build[.Revision])
+    parts = raw.split(".")
+    if len(parts) >= 3:
+        try:
+            return int(parts[2])
+        except ValueError:
+            pass
+
+    # Tenta parte a parte do final para o início
+    for p in reversed(parts):
+        try:
+            val = int(p)
+            if val >= 1000:
+                return val
+        except ValueError:
+            pass
+
+    # Regex para capturar sequências de 4 a 5 dígitos
+    matches = re.findall(r"\b(\d{4,5})\b", raw)
+    if matches:
+        try:
+            return int(matches[0])
+        except ValueError:
+            pass
+
+    return None
+
+
+def normalize_os_name(os_name: str, os_version: str = "") -> str:
+    """
+    Normaliza o nome do Sistema Operacional reportado pelo SCCM (SMS_R_System).
+    No SCCM, Windows 10 e Windows 11 frequentemente reportam 'Microsoft Windows NT Workstation 10.0'
+    devido ao kernel compartilhado NT 10.0.
+    
+    Diferenciação técnica por número de Build (os_version):
+      - Build >= 22000 (ex: 22000, 22621, 22631, 26100, 26200) -> 'Windows 11'
+      - Build < 22000 (ex: 19045, 19044, 18363) e > 0 -> 'Windows 10'
+      - Servidores ('Server' no nome) -> 'Windows Server 2022', 'Windows Server 2019', etc.
+    """
+    raw_name = str(os_name or "").strip()
+    raw_ver = str(os_version or "").strip()
+
+    if not raw_name and not raw_ver:
+        return "Não Identificado"
+
+    build = extract_windows_build(raw_ver)
+    lower_name = raw_name.lower()
+
+    # 1. Servidores
+    if "server" in lower_name:
+        if build:
+            if build >= 26100:
+                return "Windows Server 2025"
+            elif build >= 20348:
+                return "Windows Server 2022"
+            elif build >= 17763:
+                return "Windows Server 2019"
+            elif build >= 14393:
+                return "Windows Server 2016"
+        return "Windows Server"
+
+    # 2. Se já vier explicitamente como Windows 11
+    if "windows 11" in lower_name:
+        return raw_name.replace("Microsoft ", "").strip()
+
+    # 3. Workstation NT 10.0 ou genérico Windows 10
+    if "windows nt" in lower_name or "windows 10" in lower_name or "workstation" in lower_name:
+        if build is not None:
+            if build >= 22000:
+                return "Windows 11"
+            elif build > 0:
+                return "Windows 10"
+        # Sem build conhecida
+        if "10.0" in raw_name or "windows 10" in lower_name:
+            return "Windows 10"
+        return "Windows"
+
+    # 4. Caso tenha vindo sem nome mas com versão de build
+    if not raw_name and build:
+        if build >= 22000:
+            return "Windows 11"
+        elif build > 0:
+            return "Windows 10"
+
+    if lower_name in ["unknown unknown", "unknown", "nan", "null"]:
+        return "Não Identificado"
+
+    return raw_name
+
+
+def migrate_sccm_os_normalization() -> int:
+    """
+    Migra e normaliza os registros existentes em sccm_cache_devices para refletir
+    corretamente Windows 11, Windows 10 e Windows Server a partir da Build.
+    Executa de forma rápida e idempotente.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_pg = DB_TYPE in ["postgres", "postgresql"]
+
+    updated_count = 0
+    try:
+        # Checagem ultrarrápida: se não há registros com 'Windows NT' ou 'unknown', não precisa migrar
+        cursor.execute("SELECT 1 FROM sccm_cache_devices WHERE operating_system LIKE '%Windows NT%' OR operating_system LIKE '%unknown%' LIMIT 1")
+        if not cursor.fetchone():
+            return 0
+
+        cursor.execute("SELECT resource_id, operating_system, os_version FROM sccm_cache_devices")
+        rows = cursor.fetchall()
+        updates = []
+        for res_id, raw_os, raw_ver in rows:
+            norm_os = normalize_os_name(raw_os, raw_ver)
+            if norm_os != (raw_os or ""):
+                updates.append((norm_os, res_id))
+
+        if updates:
+            sql_up = "UPDATE sccm_cache_devices SET operating_system = %s WHERE resource_id = %s" if is_pg else "UPDATE sccm_cache_devices SET operating_system = ? WHERE resource_id = ?"
+            cursor.executemany(sql_up, updates)
+            conn.commit()
+            updated_count = len(updates)
+            logger.info(f"✨ [SCCM NORMALIZAÇÃO] {updated_count} dispositivos atualizados no cache relacional.")
+    except Exception as e:
+        logger.warning(f"Aviso na rotina de migração de SO do SCCM: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+    return updated_count
+
+
+def migrate_sccm_model_aliases() -> int:
+    """
+    Normaliza modelos que possuem código de fábrica (MTM/Product ID) para seus aliases
+    comerciais conhecidos (ex: 11DUSD3R00 -> Lenovo ThinkCentre M70q Gen 2).
+    Executa de forma rápida e idempotente.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_pg = DB_TYPE in ["postgres", "postgresql"]
+
+    updated_count = 0
+    try:
+        cursor.execute("SELECT resource_id, model FROM sccm_cache_devices WHERE model IS NOT NULL AND model != ''")
+        rows = cursor.fetchall()
+        updates = []
+        for res_id, raw_model in rows:
+            norm_mod = normalize_hardware_model(raw_model)
+            if norm_mod and norm_mod != raw_model:
+                updates.append((norm_mod, res_id))
+
+        if updates:
+            sql_up = "UPDATE sccm_cache_devices SET model = %s WHERE resource_id = %s" if is_pg else "UPDATE sccm_cache_devices SET model = ? WHERE resource_id = ?"
+            cursor.executemany(sql_up, updates)
+            conn.commit()
+            updated_count = len(updates)
+            logger.info(f"✨ [SCCM ALIASES] {updated_count} modelos de computadores atualizados para nomes comerciais amigáveis.")
+    except Exception as e:
+        logger.warning(f"Aviso na rotina de migração de modelos do SCCM: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+    return updated_count
+
 
 def setup_sccm_tables():
     """
@@ -19,7 +256,7 @@ def setup_sccm_tables():
     is_pg = DB_TYPE in ["postgres", "postgresql"]
     id_pk = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
-    # 1. Tabela de Dispositivos (SMS_R_System)
+    # 1. Tabela de Dispositivos (SMS_R_System + Hardware)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS sccm_cache_devices (
         resource_id TEXT PRIMARY KEY,
@@ -36,10 +273,30 @@ def setup_sccm_tables():
         last_active_time TEXT,
         ad_site_name TEXT,
         distinguished_name TEXT,
+        processor TEXT,
+        memory_ram TEXT,
+        disk_drives TEXT,
         raw_json TEXT,
         updated_at TEXT
     )
     """)
+
+    # Garante a existência das novas colunas de hardware em bancos preexistentes
+    if is_pg:
+        for col in ["processor", "memory_ram", "disk_drives"]:
+            try:
+                cursor.execute(f"ALTER TABLE sccm_cache_devices ADD COLUMN IF NOT EXISTS {col} TEXT;")
+            except Exception:
+                pass
+    else:
+        try:
+            cursor.execute("PRAGMA table_info(sccm_cache_devices)")
+            existing_cols = [c[1] for c in cursor.fetchall()]
+            for col in ["processor", "memory_ram", "disk_drives"]:
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE sccm_cache_devices ADD COLUMN {col} TEXT;")
+        except Exception:
+            pass
 
     # 2. Tabela de Usuários (SMS_R_User)
     cursor.execute("""
@@ -71,6 +328,10 @@ def setup_sccm_tables():
     conn.commit()
     cursor.close()
     conn.close()
+
+    # Normaliza dispositivos já persistidos se necessário
+    migrate_sccm_os_normalization()
+    migrate_sccm_model_aliases()
 
 
 def save_sccm_devices(devices_list: List[Dict[str, Any]]) -> int:
@@ -108,11 +369,29 @@ def save_sccm_devices(devices_list: List[Dict[str, Any]]) -> int:
             mac_str = str(macs)
 
         manufacturer = str(dev.get("Manufacturer") or dev.get("manufacturer") or "").strip()
-        model = str(dev.get("Model") or dev.get("model") or "").strip()
-        os_name = str(dev.get("OperatingSystemNameandVersion") or dev.get("operating_system") or "").strip()
+        raw_model = str(dev.get("Model") or dev.get("model") or "").strip()
+        model = normalize_hardware_model(raw_model)
+        raw_os_name = str(dev.get("OperatingSystemNameandVersion") or dev.get("operating_system") or "").strip()
         os_ver = str(dev.get("Build") or dev.get("os_version") or "").strip()
+        os_name = normalize_os_name(raw_os_name, os_ver)
         client_ver = str(dev.get("ClientVersion") or dev.get("client_version") or "").strip()
         
+        # Propriedades de Hardware adicionais
+        processor = str(dev.get("Processor") or dev.get("processor") or dev.get("CPU") or "").strip()
+        
+        raw_mem = dev.get("MemoryRAM") or dev.get("memory_ram") or dev.get("TotalPhysicalMemory") or ""
+        if isinstance(raw_mem, (int, float)) and raw_mem > 0:
+            if raw_mem > 1024 * 1024 * 1024:
+                memory_ram = f"{round(raw_mem / (1024**3))} GB"
+            elif raw_mem > 1024 * 1024:
+                memory_ram = f"{round(raw_mem / (1024**2))} GB"
+            else:
+                memory_ram = f"{raw_mem} MB"
+        else:
+            memory_ram = str(raw_mem).strip()
+
+        disk_drives = str(dev.get("DiskDrives") or dev.get("disk_drives") or dev.get("Disks") or "").strip()
+
         raw_act = dev.get("ClientActiveStatus")
         if raw_act is None:
             raw_act = dev.get("Active", 1)
@@ -128,8 +407,8 @@ def save_sccm_devices(devices_list: List[Dict[str, Any]]) -> int:
                 resource_id, name, last_logon_user, ip_addresses, mac_addresses,
                 manufacturer, model, operating_system, os_version, client_version,
                 client_active, last_active_time, ad_site_name, distinguished_name,
-                raw_json, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                processor, memory_ram, disk_drives, raw_json, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (resource_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 last_logon_user = EXCLUDED.last_logon_user,
@@ -144,6 +423,9 @@ def save_sccm_devices(devices_list: List[Dict[str, Any]]) -> int:
                 last_active_time = EXCLUDED.last_active_time,
                 ad_site_name = EXCLUDED.ad_site_name,
                 distinguished_name = EXCLUDED.distinguished_name,
+                processor = EXCLUDED.processor,
+                memory_ram = EXCLUDED.memory_ram,
+                disk_drives = EXCLUDED.disk_drives,
                 raw_json = EXCLUDED.raw_json,
                 updated_at = EXCLUDED.updated_at;
             """
@@ -153,14 +435,15 @@ def save_sccm_devices(devices_list: List[Dict[str, Any]]) -> int:
                 resource_id, name, last_logon_user, ip_addresses, mac_addresses,
                 manufacturer, model, operating_system, os_version, client_version,
                 client_active, last_active_time, ad_site_name, distinguished_name,
-                raw_json, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                processor, memory_ram, disk_drives, raw_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
 
         params = (
             res_id, name, user, ip_str, mac_str,
             manufacturer, model, os_name, os_ver, client_ver,
             client_active, last_active, ad_site, dn,
+            processor, memory_ram, disk_drives,
             raw_json_str, now_iso
         )
         cursor.execute(sql, params)
@@ -284,7 +567,12 @@ def save_sccm_collections(collections_list: List[Dict[str, Any]]) -> int:
     return count
 
 
-def get_sccm_devices_df(search_text: str = "", active_only: bool = False) -> pd.DataFrame:
+def get_sccm_devices_df(
+    search_text: str = "",
+    active_only: bool = False,
+    os_filter: str = "",
+    model_filter: str = ""
+) -> pd.DataFrame:
     """Recupera os computadores/dispositivos do SCCM cacheados localmente."""
     setup_sccm_tables()
     conn = get_connection()
@@ -296,8 +584,16 @@ def get_sccm_devices_df(search_text: str = "", active_only: bool = False) -> pd.
 
     if search_text:
         s = f"%{search_text.strip()}%"
-        sql += " AND (name LIKE ? OR last_logon_user LIKE ? OR ip_addresses LIKE ? OR model LIKE ?)"
-        params.extend([s, s, s, s])
+        sql += " AND (name LIKE ? OR last_logon_user LIKE ? OR ip_addresses LIKE ? OR model LIKE ? OR manufacturer LIKE ? OR raw_json LIKE ?)"
+        params.extend([s, s, s, s, s, s])
+
+    if os_filter and os_filter != "Todos":
+        sql += " AND operating_system LIKE ?"
+        params.append(f"%{os_filter.strip()}%")
+
+    if model_filter and model_filter != "Todos":
+        sql += " AND model LIKE ?"
+        params.append(f"%{model_filter.strip()}%")
 
     sql += " ORDER BY name ASC"
 
@@ -307,6 +603,7 @@ def get_sccm_devices_df(search_text: str = "", active_only: bool = False) -> pd.
             df = pd.read_sql_query(sql, conn, params=params)
         else:
             df = pd.read_sql_query(sql, conn, params=params)
+
         return df
     except Exception:
         return pd.DataFrame()

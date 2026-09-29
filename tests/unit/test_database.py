@@ -26,7 +26,11 @@ from src.database.sccm_db import (
     get_sccm_devices_df,
     get_sccm_collections_df,
     get_sccm_users_df,
-    get_device_by_user
+    get_device_by_user,
+    extract_windows_build,
+    normalize_os_name,
+    normalize_hardware_model,
+    HARDWARE_MODEL_ALIASES
 )
 from src.database.tickets_db import (
     setup_database,
@@ -93,6 +97,46 @@ class TestDatabaseModule(unittest.TestCase):
         df_dev = get_sccm_devices_df(search_text="DESKTOP-BANCADA01")
         self.assertFalse(df_dev.empty)
         self.assertEqual(df_dev['name'].values[0], "DESKTOP-BANCADA01")
+
+    def test_sccm_hardware_model_aliases_and_filter(self):
+        """Valida normalização de códigos MTM técnicos para nomes amigáveis e filtro por modelo."""
+        setup_sccm_tables()
+
+        # Testa normalização direta
+        self.assertEqual(normalize_hardware_model("11DUSD3R00"), "Lenovo ThinkCentre M70q Gen 2")
+        self.assertEqual(normalize_hardware_model("12TES8R800"), "Lenovo ThinkCentre M70q Gen 5")
+        self.assertEqual(normalize_hardware_model("11DU9999"), "Lenovo ThinkCentre M70q Gen 2")
+        self.assertEqual(normalize_hardware_model("Modelo Desconhecido XYZ"), "Modelo Desconhecido XYZ")
+
+        # Salva dispositivo com código técnico
+        mock_devices = [
+            {
+                "ResourceID": "16777999",
+                "Name": "MPE-70048",
+                "LastLogonUserName": "paulo",
+                "IPAddresses": ["10.111.64.120"],
+                "Manufacturer": "LENOVO",
+                "Model": "11DUSD3R00",
+                "OperatingSystemNameandVersion": "Microsoft Windows NT Workstation 10.0",
+                "Build": "26100"
+            }
+        ]
+        save_sccm_devices(mock_devices)
+
+        # O modelo deve ter sido gravado normalizado com alias comercial
+        df = get_sccm_devices_df(search_text="MPE-70048")
+        self.assertFalse(df.empty)
+        self.assertEqual(df["model"].values[0], "Lenovo ThinkCentre M70q Gen 2")
+
+        # Filtro de modelo exato
+        df_filtered = get_sccm_devices_df(model_filter="Lenovo ThinkCentre M70q Gen 2")
+        self.assertFalse(df_filtered.empty)
+        self.assertIn("MPE-70048", df_filtered["name"].values)
+
+        # Busca pelo código técnico no campo de busca geral também encontra
+        df_search_code = get_sccm_devices_df(search_text="11DUSD3R00")
+        self.assertFalse(df_search_code.empty)
+        self.assertEqual(df_search_code["name"].values[0], "MPE-70048")
 
     def test_sccm_collections_and_users(self):
         """Valida inserção e listagem de coleções e usuários do SCCM."""
@@ -252,6 +296,65 @@ class TestDatabaseModule(unittest.TestCase):
         conn.close()
         self.assertEqual(row_up[0], "10.111.64.100")
         self.assertEqual(row_up[1], "MPE-70002")
+
+    def test_sccm_os_normalization_and_build_detection(self):
+        """Valida detecção técnica de Windows 11 por Build e normalização de SOs do SCCM."""
+        # 1. Extração de Build
+        self.assertEqual(extract_windows_build("10.0.26100"), 26100)
+        self.assertEqual(extract_windows_build("10.0.22631.3880"), 22631)
+        self.assertEqual(extract_windows_build("22621"), 22621)
+        self.assertEqual(extract_windows_build("10.0.19045"), 19045)
+        self.assertIsNone(extract_windows_build(""))
+        self.assertIsNone(extract_windows_build("nan"))
+
+        # 2. Normalização de SO
+        # Windows 11 (Build >= 22000)
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Workstation 10.0", "10.0.26100"), "Windows 11")
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Workstation 10.0", "10.0.22631"), "Windows 11")
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Workstation 10.0 (Tablet Edition)", "10.0.26100"), "Windows 11")
+        # Windows 10 (Build < 22000)
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Workstation 10.0", "10.0.19045"), "Windows 10")
+        # Servidores
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Server 10.0", "10.0.20348"), "Windows Server 2022")
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Server 10.0", "10.0.17763"), "Windows Server 2019")
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Server 10.0", "10.0.14393"), "Windows Server 2016")
+        self.assertEqual(normalize_os_name("Microsoft Windows NT Server 10.0", "10.0.26100"), "Windows Server 2025")
+        # Desconhecidos e preservação de explícito
+        self.assertEqual(normalize_os_name("Microsoft Windows 11 Enterprise", "22631"), "Windows 11 Enterprise")
+        self.assertEqual(normalize_os_name("unknown unknown", ""), "Não Identificado")
+
+        # 3. Persistência de Workstation NT 10.0 como Windows 11 no banco
+        setup_sccm_tables()
+        save_sccm_devices([
+            {
+                "ResourceID": "999901",
+                "Name": "PGJ-NT-W11",
+                "LastLogonUserName": "paulo",
+                "IPAddresses": ["10.111.10.50"],
+                "OperatingSystemNameandVersion": "Microsoft Windows NT Workstation 10.0",
+                "Build": "10.0.26100",
+                "Active": 1
+            },
+            {
+                "ResourceID": "999902",
+                "Name": "PGJ-NT-W10",
+                "LastLogonUserName": "marcos",
+                "IPAddresses": ["10.111.10.51"],
+                "OperatingSystemNameandVersion": "Microsoft Windows NT Workstation 10.0",
+                "Build": "10.0.19045",
+                "Active": 1
+            }
+        ])
+
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT name, operating_system FROM sccm_cache_devices WHERE resource_id IN ('999901', '999902') ORDER BY name DESC")
+        rows = c.fetchall()
+        conn.close()
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0], ("PGJ-NT-W11", "Windows 11"))
+        self.assertEqual(rows[1], ("PGJ-NT-W10", "Windows 10"))
 
 if __name__ == "__main__":
     unittest.main()
