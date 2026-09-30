@@ -353,6 +353,7 @@ def fetch_all_unified_calendar_events(bancada_only: bool = True, ano: int = None
                             "localidade": localidade,
                             "quem_foi": quem_foi,
                             "chamado": str(row.get("chamado", "")),
+                            "chamado_diaria": str(row.get("chamado_diaria", "")),
                             "saida_br": str(row.get("saida_br", "")),
                             "retorno_br": str(row.get("retorno_br", ""))
                         }

@@ -316,7 +316,8 @@ def render_central_telefonica_page():
 
         # 6. Todos os Dados Brutos da API
         with st.expander("🔍 Dicionário Completo de Dados Brutos (API OXE)", expanded=False):
-            clean_dict = {k: v for k, v in row.to_dict().items() if str(v).strip() and str(v).strip().lower() not in ["none", "nan", "null"]}
+            raw_items = row.to_dict() if hasattr(row, "to_dict") else dict(row)
+            clean_dict = {k: v for k, v in raw_items.items() if str(v).strip() and str(v).strip().lower() not in ["none", "nan", "null"]}
             st.json(clean_dict)
 
         if st.button("Fechar", key=f"close_ramal_modal_{ramal_num}"):

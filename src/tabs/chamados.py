@@ -10,8 +10,11 @@ import re
 from datetime import datetime
 import pandas as pd
 import sqlite3
+import logging
 import streamlit as st
 import streamlit.components.v1 as components
+
+logger = logging.getLogger(__name__)
 
 from src.components.status_banner import check_orquestrador_running, read_last_log_lines, render_log_expander
 from src.database import (
@@ -748,12 +751,12 @@ def render_chamados_page():
                                 curr_host = dev_info["hostname"]
                                 updated_needed = True
                             
-                            # Atualiza silenciosamente no banco para persistir o enriquecimento
+                            # Atualiza no banco para persistir o enriquecimento
                             if updated_needed:
                                 try:
                                     update_ticket_device_info(cid_str, curr_ip, curr_host)
-                                except Exception:
-                                    pass
+                                except Exception as dev_err:
+                                    logger.debug(f"Não foi possível atualizar device info do chamado {cid_str}: {dev_err}")
 
                     st.markdown(f"**IP de Origem:** `{curr_ip or 'N/A'}`")
                     st.markdown(f"**Hostname:** `{curr_host or 'N/A'}`")
@@ -926,11 +929,55 @@ def render_chamados_page():
                     return;
                 }
 
+                // O st.dataframe usa a biblioteca glide-data-grid baseada em HTML5 Canvas.
+                // A glide-data-grid renderiza no fundo uma árvore de nós DOM invisíveis para leitores de tela / acessibilidade.
+                // O html2canvas interpreta esses nós e os desenha como texto sobreposto ("alt"), poluindo a imagem.
+                // Usamos ignoreElements e onclone para ocultar/eliminar esses nós de acessibilidade.
                 html2canvas(tableEl, {
                     scale: 2.5,
                     useCORS: true,
                     backgroundColor: "#0e1117",
-                    logging: false
+                    logging: false,
+                    ignoreElements: function(element) {
+                        if (!element) return false;
+                        // Não ignora os elementos principais nem canvas
+                        const tag = (element.tagName || "").toLowerCase();
+                        if (tag === "canvas" || tag === "div") {
+                            // Se for container explícito de acessibilidade do glide-data-grid
+                            const cls = (element.className || "").toString().toLowerCase();
+                            const role = (element.getAttribute("role") || "").toLowerCase();
+                            if (role === "presentation" || role === "row" || role === "gridcell" || role === "rowgroup") {
+                                return true;
+                            }
+                            if (cls.includes("clip") || cls.includes("sr-only") || cls.includes("accessibility") || cls.includes("hidden")) {
+                                return true;
+                            }
+                        }
+                        // Ignora tabelas ou textos ocultos criados para acessibilidade dentro do glide-data-grid
+                        if (tag === "table" || tag === "tr" || tag === "td" || tag === "th" || tag === "tbody" || tag === "thead") {
+                            return true;
+                        }
+                        // Ignora elementos com aria-hidden falso/texto invisível
+                        const style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+                        if (style && (style.opacity === "0" || style.visibility === "hidden")) {
+                            return true;
+                        }
+                        return false;
+                    },
+                    onclone: function(clonedDoc) {
+                        // Varre o clone e esconde qualquer texto solto ou elemento de acessibilidade que não seja o próprio canvas
+                        const clonedTable = clonedDoc.querySelector('div[data-testid="stDataFrame"]') || clonedDoc.querySelector('.stDataFrame');
+                        if (clonedTable) {
+                            // Remove nós de texto que não estejam dentro de elementos visuais legítimos
+                            const elements = clonedTable.querySelectorAll('*');
+                            elements.forEach(el => {
+                                if (el.tagName.toLowerCase() !== 'canvas' && !el.querySelector('canvas')) {
+                                    el.style.color = 'transparent';
+                                    el.style.textShadow = 'none';
+                                }
+                            });
+                        }
+                    }
                 }).then(canvas => {
                     const link = document.createElement("a");
                     const d = new Date();

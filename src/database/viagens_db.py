@@ -14,6 +14,7 @@ def setup_viagens_table():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         quem_foi TEXT,
         chamado TEXT,
+        chamado_diaria TEXT,
         saida_iso TEXT,
         retorno_iso TEXT,
         saida_br TEXT,
@@ -22,6 +23,11 @@ def setup_viagens_table():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    # Migração defensiva caso a tabela já exista sem chamado_diaria
+    cursor.execute("PRAGMA table_info(viagens)")
+    existing_cols = [row[1] for row in cursor.fetchall()]
+    if "chamado_diaria" not in existing_cols:
+        cursor.execute("ALTER TABLE viagens ADD COLUMN chamado_diaria TEXT")
     conn.commit()
     conn.close()
 
@@ -109,6 +115,19 @@ def sync_viagens_from_excel(file_path_or_buffer):
     for _, row in df.iterrows():
         quem_foi = str(row.get("Quem foi", "")).strip()
         chamado = str(row.get("Chamado", "")).strip().replace(".0", "")
+        # Suporta variações do cabeçalho da planilha: "Chamado Diária", "Chamado Diaria", "Chamado diária", "Diária"
+        chamado_diaria = str(
+            row.get("Chamado Diária") or 
+            row.get("Chamado Diaria") or 
+            row.get("Chamado diária") or 
+            row.get("Chamado diaria") or 
+            row.get("Diária") or 
+            row.get("Diaria") or 
+            ""
+        ).strip().replace(".0", "")
+        if chamado_diaria.lower() in ["nan", "nat", "none", "null"]:
+            chamado_diaria = ""
+
         localidade = str(row.get("Localidade", "")).strip()
 
         saida_val = row.get("Saída", "")
@@ -123,10 +142,10 @@ def sync_viagens_from_excel(file_path_or_buffer):
 
         cursor.execute("""
         INSERT INTO viagens (
-            quem_foi, chamado, saida_iso, retorno_iso, saida_br, retorno_br, localidade
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            quem_foi, chamado, chamado_diaria, saida_iso, retorno_iso, saida_br, retorno_br, localidade
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            quem_foi, chamado, saida_iso, retorno_iso, saida_br, retorno_br, localidade
+            quem_foi, chamado, chamado_diaria, saida_iso, retorno_iso, saida_br, retorno_br, localidade
         ))
         added_count += 1
 

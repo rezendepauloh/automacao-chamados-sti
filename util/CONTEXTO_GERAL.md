@@ -114,7 +114,7 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
 ---
 
 ### ✅ Concluído: Otimização da Aba SCCM & Normalização Inteligente do Windows 11
-- **Status:** **Resolvido e Validado (100% dos 34 testes aprovados)**.
+- **Status:** **Resolvido e Validado (100% dos 36 testes aprovados)**.
 - **Entregas Realizadas:**
   1. **Migração dos Filtros, Pesquisas e Paginação para a Barra Lateral ([`src/tabs/sccm.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/sccm.py)):**
      - Inputs de pesquisa, seleção e o seletor universal de itens por página (`render_items_per_page_selector`) contextualizados dinamicamente no `st.sidebar` para todas as sub-abas (`💻 Dispositivos`, `👤 Usuários`, `📁 Coleções de Dispositivos`, `👥 Coleções de Usuários` e `🛡️ Configurações & Conformidade`).
@@ -136,19 +136,85 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
        * **Rede & Domínio:** IP(s), MAC Address, Site AD e Domínio corporativo.
      - Inclusão do botão de **Diagnóstico Remoto da Bancada** (`bancada://run?tool=analisador&host={name}`) somado ao CmRcViewer, RDP, Explorer C$ e Teste Ping.
      - Enriquecimento do script de sincronização [`src/scripts_powershell/sccm_sync.ps1`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/scripts_powershell/sccm_sync.ps1) para consultar `SMS_G_System_COMPUTER_SYSTEM`, `SMS_G_System_PROCESSOR` e `SMS_G_System_LOGICAL_DISK`, persistindo nas novas colunas de hardware em [`src/database/sccm_db.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/sccm_db.py).
-  4. **Validação e Testes Automatizados ([`tests/unit/test_database.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/unit/test_database.py)):**
-     - Adicionado o teste `test_sccm_os_normalization_and_build_detection`, validando extração de builds, mapeamento de sistemas operacionais e persistência em banco.
-     - Suíte unificada de testes (`tests/run_all.py`) operando em 100% verde (34 testes aprovados).
+   4. **Aliases de Modelos de Hardware e Filtro Dinâmico por Modelo ([`src/database/sccm_db.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/sccm_db.py) & [`src/tabs/sccm.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/sccm.py)):**
+      - Centralização do dicionário documentado `HARDWARE_MODEL_ALIASES` para conversão de Machine Types / MTM da Lenovo/Dell (ex: `11DUSD3R00` -> `"Lenovo ThinkCentre M70q Gen 2"`, `12TES8R800` -> `"Lenovo ThinkCentre M70q Gen 5"`, `20W1S6CB00` -> `"Lenovo ThinkPad T14 Gen 1"`, etc.).
+      - Função `normalize_hardware_model()` com matching exato e por prefixo de MTM, associada à rotina de migração em startup `migrate_sccm_model_aliases()`.
+      - Novo filtro `<select>` dinâmico na barra lateral (`st.sidebar.selectbox` "⚙️ Modelo de Hardware") alimentado automaticamente com os modelos existentes no banco.
+      - Busca inteligente no sidebar e SQL (`get_sccm_devices_df()`): pesquisa simultânea por Hostname, Usuário, IP, Modelo comercial, Fabricante e código MTM original (inclusive dentro do `raw_json`).
+      - No modal amplo, modelos mapeados mostram o nome comercial amigável acompanhado do código de fábrica discreto (ex: *Lenovo ThinkCentre M70q Gen 2 (11DUSD3R00)*).
+   5. **Padronização de Datas e Horas no Padrão Brasileiro (DD/MM/AAAA HH:MM:SS) ([`src/tabs/sccm.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/sccm.py)):**
+      - Criação da função auxiliar `format_sccm_datetime()`, que realiza o parse resiliente de timestamps WMI/CIM do SCCM (ex: `20260929080059.657000+***`) e ISO-8601 para a máscara brasileira `DD/MM/AAAA HH:MM:SS`.
+      - Aplicada nas tabelas de **Coleções de Dispositivos e Usuários** (coluna *Última Atualização*), na sub-aba **Conformidade** (coluna *Última Atividade*) e no modal de **Ficha Técnica** (*Último Check-in*).
+   6. **Validação e Testes Automatizados ([`tests/unit/test_database.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/unit/test_database.py) & [`tests/components/test_components.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/components/test_components.py)):**
+      - Adicionados os testes `test_sccm_os_normalization_and_build_detection`, `test_sccm_hardware_model_aliases_and_filter` e `test_format_sccm_datetime`.
+      - Suíte unificada de testes (`tests/run_all.py`) operando em 100% verde (**36 testes aprovados**).
+
+### ✅ Concluído: Estabilização Operacional, Housekeeping e Resiliência de Credenciais
+- **Status:** **Resolvido e Validado (100% dos 39 testes aprovados)**.
+- **Entregas Realizadas:**
+  1. **Resolução da Exceção no Cron Daemon (`'dict' object has no attribute 'to_dict'`) ([`src/services/cron_scheduler.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/services/cron_scheduler.py)):**
+     - O erro ocorria durante o loop contínuo do daemon devido à incompatibilidade do método `.to_dict()` ao iterar sobre DataFrames em ambientes com mocks de testes ou estruturas nativas.
+     - Implementada conversão polimórfica defensiva (`hasattr(row, "to_dict")` com fallback para `dict(row)`).
+     - Atualizado o mock universal [`tests/test_helpers.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/test_helpers.py) com a classe `MockSeries(dict)` implementando `.to_dict()` e compatibilidade total com o pandas real.
+     - Protegidos também os pontos de conversão de linhas em [`src/tabs/central_telefonica.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/central_telefonica.py), [`src/tabs/sccm.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/sccm.py), [`src/tabs/unidades.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/unidades.py) e [`src/scrapers/papercut_scraper.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/scrapers/papercut_scraper.py).
+  2. **Tratamento Resiliente de Credenciais e Portabilidade entre Ambientes ([`src/crypto_utils.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/crypto_utils.py)):**
+     - Adicionada validação estrita de integridade para chaves Fernet (`_is_valid_fernet_key()`), gerando automaticamente nova chave mestra caso o arquivo `.secret.key` esteja corrompido ou `APP_SECRET_KEY` seja inválida, prevenindo travamentos fatais (`ValueError`).
+     - Implementada detecção de tokens Fernet incompatíveis (`is_fernet_token()`), gerando logs orientativos (`logger.warning`) ao invés de repassar strings cifradas inválidas para tentativas de autenticação no AD/OTRS/CitSmart ao migrar a base para outra máquina sem a chave original.
+     - Expandida a suíte em [`tests/unit/test_crypto.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/unit/test_crypto.py) com testes de chaves corrompidas e tokens legados.
+  3. **Housekeeping de Exceções Silenciosas e Logs Estruturados:**
+     - Higienizados blocos `except: pass` e `except Exception: pass` em [`src/tabs/active_directory.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/active_directory.py) (exportação de usuários e máquinas para Excel via openpyxl), [`src/tabs/chamados.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/chamados.py) (persistência de dados de rede de máquinas em chamados) e [`src/database/cron_db.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/cron_db.py) (fallback de tarefas padrão).
+  4. **Expansão de Testes Automatizados:**
+     - Testes adicionados para `BancadaCronDaemon` em [`tests/services/test_services.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/services/test_services.py).
+     - Suíte unificada de testes (`python3 tests/run_all.py`) rodando em **100% de aprovação (39 testes)** em ~196ms.
+  5. **Restauração dos Controles de Edição e Malha no Mapa ([`src/tabs/mapas.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/mapas.py)):**
+     - Identificado que na migração para abas modulares, os botões Leaflet no canto superior direito (`topright`), abaixo do botão de fullscreen, não estavam sendo instanciados.
+     - Restaurados os botões:
+       - `MeshToggleControl` (`👁️`): Alterna a visibilidade da malha de caminhos e nós de pathfinding (`debugLayer`).
+       - `DevModeControl` (`🛠️`): Alterna o modo de edição do mapa, ativando cursor `crosshair`, elementos arrastáveis (`draggable`), popups de edição e criação de nós e pins ao clicar.
+       - `SaveControl` (`💾`): Botão de salvar alterações que aparece dinamicamente no modo dev e sincroniza via POST HTTP (`http://localhost:8099/save_config`) com o SQLite e o JSON físico.
+     - Restauradas as funções globais de interação (`saveConfigToDb`, `saveDevElement`, `connectToLastNode`, `removeNode`, `removePin`, `removeEdge`, `updateNode`, `updatePin`, `setLastNode`).
+  6. **Suporte à Coluna "Chamado Diária" em Viagens ([`src/tabs/viagens.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/viagens.py)):**
+     - Adicionada a coluna `chamado_diaria TEXT` na tabela `viagens` em [`src/database/viagens_db.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/viagens_db.py) com rotina de migração defensiva (`PRAGMA table_info` + `ALTER TABLE`).
+     - Leitura e normalização resiliente da coluna a partir da planilha Excel oficial (`Chamado Diária`, `Chamado Diaria`, `Diária`).
+     - Inclusão da coluna na tabela interativa da aba Viagens com `st.column_config.TextColumn("💵 Chamado Diária")`, no filtro de busca textual, na exportação Excel, nos `extendedProps` do calendário master ([`src/components/calendar.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/components/calendar.py) e [`src/tabs/calendario_geral.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/calendario_geral.py)), na exportação `.ics` ([`src/services/ics_export.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/services/ics_export.py)) e nas mensagens do WhatsApp ([`src/syncs/sync_whatsapp_scheduler.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/syncs/sync_whatsapp_scheduler.py)).
+     - Ajustado o modal de configuração de viagens para `width="large"`.
+     - Suíte de testes expandida para 40 testes (100% de aprovação).
+  7. **Ordenação Cronológica das Datas de Viagens ([`src/tabs/viagens.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/viagens.py)):**
+     - Corrigido o comportamento de clique nos títulos "Saída" e "Retorno" na tabela de viagens, que antes ordenavam alfabeticamente por serem strings em formato brasileiro (`DD/MM/YYYY`).
+     - Convertidas as colunas para objetos `datetime` nativos (`data_saida` e `data_retorno`) a partir de `saida_iso`/`retorno_iso` com fallback resiliente para parsing de `saida_br`/`retorno_br`.
+     - Configurado no `st.dataframe` o componente oficial `st.column_config.DateColumn("📅 Saída", format="DD/MM/YYYY")` e `st.column_config.DateColumn("🏁 Retorno", format="DD/MM/YYYY")`, garantindo ordenação estritamente cronológica crescente/decrescente com visual amigável brasileiro e exportação Excel padronizada.
+  8. **Ordenação Cronológica das Tabelas do SCCM ([`src/tabs/sccm.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/sccm.py)):**
+     - Corrigido o comportamento de ordenação por clique nos cabeçalhos "Última Atualização" (sub-abas de Coleções de Dispositivos e Usuários) e "Última Atividade" (sub-aba de Configurações & Conformidade).
+     - Criada a função helper `parse_sccm_datetime(val)` que interpreta datas CIM/WMI (ex: `YYYYMMDDHHmmss.microsec+tz`), ISO-8601 e variações comuns para objetos `datetime`/`Timestamp` nativos.
+     - As tabelas passaram a utilizar a coluna formatada via `st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm:ss")`, permitindo ordenar estritamente por ordem cronológica (ano, mês, dia, hora) ao invés da ordenação léxica de string.
+     - Atualizados os testes unitários em [`tests/components/test_components.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/components/test_components.py) cobrindo tanto `format_sccm_datetime` quanto `parse_sccm_datetime`.
+
+   9. **Estabilização do Leitor de FAQs, Mídia Autenticada e Suíte de Testes ([`src/tabs/links_faqs.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/links_faqs.py)):**
+      - **Diagnóstico da Quebra de Imagens (HTTP 401 Unauthorized):** As capturas de tela dos tutoriais do SharePoint Online exigem cookies de sessão corporativa (`rtFa`, `FedAuth`, etc.). Ao carregar a página no Streamlit em `localhost:8501`, o navegador aplica restrições estritas de SameSite/CORS para requisições cross-origin `<img>`, bloqueando o envio dos cookies e gerando erro 401.
+      - **Extração Automática de Cookies & Organização em Pastas por Tutorial:**
+        * Criado mecanismo que extrai diretamente do perfil de usuário do Firefox (`/mnt/c/Users/paulogoncalves/.../cookies.sqlite`) os cookies autenticados de `ministeriopublicoms.sharepoint.com` e os armazena com segurança em `uploads/faq/sharepoint_cookies.json`.
+        * **Estrutura de Pastas Padronizada por Tutorial:** Em vez de salvar arquivos soltos na raiz, tanto imagens quanto vídeos possuem suas subpastas dedicadas (`uploads/faq/imagens/<slug_tutorial>/` e `uploads/faq/videos/<slug_tutorial>/`), garantindo uma organização uniforme e espelhada.
+        * Implementada migração automática e defensiva: arquivos previamente baixados na raiz foram realocados para as respectivas pastas de tutoriais.
+        * A **Galeria de Imagens** e a **Aba de Vídeos** agrupam e exibem mídias por pasta de tutorial com contadores dinâmicos, carrossel integrado e atalhos para abertura na intranet.
+        * Implementadas as funções [`ensure_sharepoint_image_cached()`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/links_faqs.py), [`ensure_sharepoint_video_cached()`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/links_faqs.py), [`get_image_as_base64()`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/links_faqs.py) e [`get_video_as_base64()`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/links_faqs.py), que injetam Data URIs base64 diretamente no HTML do leitor de FAQs, eliminando 401s e garantindo leitura e reprodução de vídeos 100% offline.
+        * **Eliminação do Espaço em Branco nos Vídeos do SharePoint:** Resolvido o problema de placeholders vazios (`aria-busy="true"` com `min-height: 694px` do `DocumentEmbedWebPart`) através do mapeamento das chamadas da API REST do SharePoint (`CanvasContent1`), enriquecendo o conteúdo HTML no banco relacional local e substituindo os placeholders por players nativos `<video controls>` estilizados e responsivos (`.sp-video-card`).
+        * Atualizado o botão na barra lateral da aba FAQ: **`🔄 Sincronizar Mídias dos FAQs`**, permitindo baixar e sincronizar em lote imagens e vídeos de todos os tutoriais em suas respectivas subpastas.
+      - **Renderização e Fallback Gracioso:**
+        * Atualizada a função [`parse_sharepoint_content()`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/tabs/links_faqs.py) para receber o slug do tutorial e renderizar tanto as imagens com legendas originais quanto os vídeos com player nativo a partir de suas subpastas locais.
+        * Caso alguma mídia ainda não tenha sido baixada localmente, exibe-se um card responsivo com botão de direcionamento para abertura no SharePoint Online / Microsoft Stream.
+        * Limpeza de blocos de autoria, tags `<i>` órfãs e placeholders de baixa resolução.
+      - **Construção de Testes Automatizados:**
+        * Implementados testes unitários em [`tests/components/test_components.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/tests/components/test_components.py) cobrindo: formatação de tamanho de arquivos (`format_file_size`), conversão de imagens do SharePoint com legendas e fallback, conversão de vídeos em `sp-video-embed` e `controldata` para cards com players `<video>`, remoção de blocos de autoria e tags de ícones quebrados (`<i>`), e resiliência dos scanners de diretório (`scan_video_faqs` e `scan_image_faqs`).
+        * Suíte completa de 46 testes automatizados rodando 100% verde (`python3 tests/run_all.py`).
 
 ---
 
 ## 📋 5. Próximas Etapas e Melhorias Planejadas
-1. **Portabilidade de Credenciais Criptografadas & Autenticação LDAP Entre Ambientes/Máquinas:**
-   - Detecção resiliente de chave Fernet inválida ao migrar `chamados.db` para outro host/servidor Red Hat corporativo, com prompt direto na interface.
-2. **Sincronização Periódica Automática do Cache do SCCM:**
+1. **Sincronização Periódica Automática do Cache do SCCM:**
    - Agendamento da rotina via daemon interno de cron (`cron_scheduler.py`).
-3. **Métricas de Acurácia de Localização:**
+2. **Métricas de Acurácia de Localização:**
    - Painel de taxa de correspondência de chamados direcionados por IP vs. NLP textual.
+
 
 
 

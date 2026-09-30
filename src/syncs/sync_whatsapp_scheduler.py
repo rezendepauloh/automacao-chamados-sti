@@ -235,6 +235,7 @@ def run_whatsapp_scheduler(dry_run: bool = False, force: bool = False) -> dict:
 
                 localidade = str(row.get("localidade", "")).strip() or "Destino a definir"
                 chamado = str(row.get("chamado", "")).strip()
+                chamado_diaria = str(row.get("chamado_diaria", "")).strip()
                 retorno_br = str(row.get("retorno_br", "")).strip()
                 saida_br = str(row.get("saida_br", "")).strip() or saida_iso
 
@@ -262,6 +263,8 @@ def run_whatsapp_scheduler(dry_run: bool = False, force: bool = False) -> dict:
                     )
                     if chamado and chamado.lower() not in ["none", "nan", ""]:
                         texto += f"🎫 *Chamado Relacionado:* {chamado}\n"
+                    if chamado_diaria and chamado_diaria.lower() not in ["none", "nan", ""]:
+                        texto += f"💵 *Chamado Diária:* {chamado_diaria}\n"
                     texto += f"👥 *Integrantes:* {quem_foi}\n\n_Boa viagem e bom trabalho!_\n_Sistema Bancada STI_"
 
                     if dry_run:

@@ -476,6 +476,7 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
               <p><strong>📍 Destino / Localidade:</strong> <span id="vLocalidade" style="font-weight:600; color:#06b6d4;"></span></p>
               <p><strong>👤 Quem foi:</strong> <span id="vQuemFoi"></span></p>
               <p><strong>🎫 Chamado(s):</strong> <span id="vChamado"></span></p>
+              <p id="vChamadoDiariaContainer"><strong>💵 Chamado Diária:</strong> <span id="vChamadoDiaria"></span></p>
               <p><strong>📅 Data de Saída:</strong> <span id="vSaida"></span></p>
               <p><strong>🏁 Data de Retorno:</strong> <span id="vRetorno"></span></p>
             </div>
@@ -816,6 +817,16 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
                   document.getElementById('vLocalidade').innerText = props.localidade || 'Não informada';
                   document.getElementById('vQuemFoi').innerText = props.quem_foi || 'Não informado';
                   document.getElementById('vChamado').innerText = props.chamado || 'Sem chamado informado';
+                  
+                  var diariaEl = document.getElementById('vChamadoDiaria');
+                  var diariaContainer = document.getElementById('vChamadoDiariaContainer');
+                  if (props.chamado_diaria && props.chamado_diaria.trim() !== '') {
+                    diariaEl.innerText = props.chamado_diaria;
+                    diariaContainer.style.display = 'block';
+                  } else {
+                    diariaContainer.style.display = 'none';
+                  }
+
                   document.getElementById('vSaida').innerText = props.saida_br || formatBrDateTime(info.event.start, props.raw_data_inicio);
                   document.getElementById('vRetorno').innerText = props.retorno_br || formatBrDateTime(info.event.end, props.raw_data_fim);
                   break;

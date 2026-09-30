@@ -284,7 +284,12 @@ class BancadaCronDaemon:
                 df = get_cron_schedules()
                 if not df.empty:
                     for _, row in df.iterrows():
-                        task_dict = row.to_dict()
+                        if hasattr(row, "to_dict"):
+                            task_dict = row.to_dict()
+                        elif isinstance(row, dict):
+                            task_dict = dict(row)
+                        else:
+                            task_dict = dict(row)
                         task_id = str(task_dict.get("task_id", ""))
                         if self._should_run(task_dict, now):
                             logger.info(f"⏰ Disparando tarefa agendada: {task_id} ({task_dict.get('nome')})")

@@ -4,9 +4,12 @@ import re
 import json
 from pathlib import Path
 import pandas as pd
+import logging
 import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from src.database.ad_db import (
     get_ad_ous,
@@ -1754,8 +1757,9 @@ def render_ad_page():
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
-                    except Exception:
-                        pass
+                    except Exception as e_xls:
+                        logger.warning(f"Não foi possível gerar planilha Excel de usuários AD: {e_xls}")
+                        st.caption("⚠️ Exportação Excel indisponível")
 
             st.caption(f"Mostrando **{len(df_users)}** usuário(s) encontrado(s).")
 
@@ -1950,8 +1954,9 @@ def render_ad_page():
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
-                    except Exception:
-                        pass
+                    except Exception as e_xls:
+                        logger.warning(f"Não foi possível gerar planilha Excel de computadores AD: {e_xls}")
+                        st.caption("⚠️ Exportação Excel indisponível")
 
             st.caption(f"Mostrando **{len(df_comps)}** máquina(s) localizada(s). Marque a caixa ao lado de uma linha para abrir a ficha completa.")
 

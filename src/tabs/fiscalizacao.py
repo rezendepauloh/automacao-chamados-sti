@@ -159,7 +159,7 @@ def _consultar_portaria_mpms(nome_portaria: str, fiscal_titular: str = "", fisca
             st.markdown("---")
 
 
-@st.dialog("⚙️ Configurar / Enviar Planilha de Fiscalização")
+@st.dialog("⚙️ Configurar / Enviar Planilha de Fiscalização", width="large")
 def modal_config_fiscalizacao():
     """Modal nativo (@st.dialog) para gerenciar link do SharePoint e envio direto da planilha de fiscalização."""
     st.markdown("### 📜 Gestão da Planilha de Fiscais de Contrato")

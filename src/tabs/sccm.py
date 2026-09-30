@@ -35,27 +35,30 @@ SCCM_SUBTABS = {
 }
 
 
-def format_sccm_datetime(val: Any) -> str:
+def parse_sccm_datetime(val: Any) -> Optional[datetime]:
     """
-    Formata timestamps e strings de data do SCCM/WMI para o formato brasileiro DD/MM/AAAA HH:MM:SS.
+    Interpreta timestamps e strings de data do SCCM/WMI para datetime/Timestamp nativo.
     Suporta:
       - WMI CIM DateTime: '20260929080059.657000+***' ou '20260929080059'
       - ISO-8601: '2026-09-29T08:00:59' ou '2026-09-29 08:00:59'
-      - Objetos datetime do Python ou timestamps
+      - Objetos datetime / Timestamp do Python
+    Retorna None se nulo ou inválido.
     """
     if val is None or pd.isna(val):
-        return "-"
+        return None
+    if isinstance(val, datetime) or (hasattr(pd, "Timestamp") and isinstance(val, getattr(pd, "Timestamp"))):
+        return val
+
     raw = str(val).strip()
     if not raw or raw.lower() in ["none", "nan", "null", "nat", "-"]:
-        return "-"
+        return None
 
     # 1. Padrão WMI / CIM DateTime do SCCM (ex: 20260929080059.657000+***)
     # Primeiros 14 dígitos representam YYYYMMDDHHmmss
     clean_digits = raw.split(".")[0].strip()
     if len(clean_digits) == 14 and clean_digits.isdigit():
         try:
-            dt = datetime.strptime(clean_digits, "%Y%m%d%H%M%S")
-            return dt.strftime("%d/%m/%Y %H:%M:%S")
+            return datetime.strptime(clean_digits, "%Y%m%d%H%M%S")
         except Exception:
             pass
 
@@ -71,8 +74,7 @@ def format_sccm_datetime(val: Any) -> str:
         "%d/%m/%Y"
     ]:
         try:
-            dt = datetime.strptime(raw[:19], fmt)
-            return dt.strftime("%d/%m/%Y %H:%M:%S")
+            return datetime.strptime(raw[:19], fmt)
         except Exception:
             continue
 
@@ -80,11 +82,27 @@ def format_sccm_datetime(val: Any) -> str:
     try:
         dt = pd.to_datetime(raw, errors="coerce")
         if pd.notna(dt):
-            return dt.strftime("%d/%m/%Y %H:%M:%S")
+            return dt.to_pydatetime() if hasattr(dt, "to_pydatetime") else dt
     except Exception:
         pass
 
-    return raw
+    return None
+
+
+def format_sccm_datetime(val: Any) -> str:
+    """
+    Formata timestamps e strings de data do SCCM/WMI para o formato brasileiro DD/MM/AAAA HH:MM:SS.
+    Suporta:
+      - WMI CIM DateTime: '20260929080059.657000+***' ou '20260929080059'
+      - ISO-8601: '2026-09-29T08:00:59' ou '2026-09-29 08:00:59'
+      - Objetos datetime do Python ou timestamps
+    """
+    dt = parse_sccm_datetime(val)
+    if dt is not None and pd.notna(dt):
+        return dt.strftime("%d/%m/%Y %H:%M:%S")
+
+    raw = str(val).strip() if val is not None and not pd.isna(val) else ""
+    return "-" if not raw or raw.lower() in ["none", "nan", "null", "nat", "-"] else raw
 
 @st.dialog("🔍 Ficha Técnica & Ações Rápidas do Computador", width="large")
 def modal_device_details(device_row: dict):
@@ -308,7 +326,8 @@ def render_subtab_dispositivos(
 
     if event and event.selection and event.selection.rows:
         sel_idx = event.selection.rows[0]
-        device_data = page_df.iloc[sel_idx].to_dict()
+        sel_row = page_df.iloc[sel_idx]
+        device_data = sel_row.to_dict() if hasattr(sel_row, "to_dict") else dict(sel_row)
         modal_device_details(device_data)
 
     render_pagination_controls(
@@ -407,9 +426,22 @@ def render_subtab_colecoes(
     cols = ["name", "member_count", "collection_id", "comment", "last_refresh_time"]
     tbl = page_df[cols].copy()
     if "last_refresh_time" in tbl.columns:
-        tbl["last_refresh_time"] = tbl["last_refresh_time"].apply(format_sccm_datetime)
+        tbl["last_refresh_time"] = tbl["last_refresh_time"].apply(parse_sccm_datetime)
+        tbl["last_refresh_time"] = pd.to_datetime(tbl["last_refresh_time"])
     tbl.columns = ["Nome da Coleção", "Qtd. Membros", "ID da Coleção", "Comentário", "Última Atualização"]
-    st.dataframe(tbl, hide_index=True, width="stretch", key=f"sccm_col_{col_type.lower()}_table_p{current_page}")
+    st.dataframe(
+        tbl,
+        column_config={
+            "Nome da Coleção": st.column_config.TextColumn("Nome da Coleção"),
+            "Qtd. Membros": st.column_config.NumberColumn("Qtd. Membros"),
+            "ID da Coleção": st.column_config.TextColumn("ID da Coleção"),
+            "Comentário": st.column_config.TextColumn("Comentário"),
+            "Última Atualização": st.column_config.DatetimeColumn("Última Atualização", format="DD/MM/YYYY HH:mm:ss")
+        },
+        hide_index=True,
+        width="stretch",
+        key=f"sccm_col_{col_type.lower()}_table_p{current_page}"
+    )
 
     render_pagination_controls(
         page_key=pkey,
@@ -457,10 +489,24 @@ def render_subtab_conformidade(filtro_status: str = "Todos", items_per_page: int
     cols = ["name", "last_logon_user", "ip_addresses", "model", "operating_system", "last_active_time"]
     t_disp = page_df[cols].copy()
     if "last_active_time" in t_disp.columns:
-        t_disp["last_active_time"] = t_disp["last_active_time"].apply(format_sccm_datetime)
+        t_disp["last_active_time"] = t_disp["last_active_time"].apply(parse_sccm_datetime)
+        t_disp["last_active_time"] = pd.to_datetime(t_disp["last_active_time"])
     t_disp.columns = ["Computador", "Último Usuário", "IP", "Modelo", "Sistema Operacional", "Última Atividade"]
 
-    st.dataframe(t_disp, hide_index=True, width="stretch", key=f"sccm_conf_table_p{current_page}")
+    st.dataframe(
+        t_disp,
+        column_config={
+            "Computador": st.column_config.TextColumn("Computador"),
+            "Último Usuário": st.column_config.TextColumn("Último Usuário"),
+            "IP": st.column_config.TextColumn("IP"),
+            "Modelo": st.column_config.TextColumn("Modelo"),
+            "Sistema Operacional": st.column_config.TextColumn("Sistema Operacional"),
+            "Última Atividade": st.column_config.DatetimeColumn("Última Atividade", format="DD/MM/YYYY HH:mm:ss")
+        },
+        hide_index=True,
+        width="stretch",
+        key=f"sccm_conf_table_p{current_page}"
+    )
 
     render_pagination_controls(
         page_key="sccm_conf",

@@ -98,5 +98,34 @@ class TestServices(unittest.TestCase):
         m3 = resolve_bancada_member("Carlos Eduardo Desconhecido")
         self.assertIsNone(m3)
 
+    def test_cron_daemon_should_run_and_resilient_loop(self):
+        """Valida que o BancadaCronDaemon avalia agendamentos corretamente e não quebra com dicts nativos."""
+        from src.services.cron_scheduler import BancadaCronDaemon
+        from datetime import datetime
+
+        daemon = BancadaCronDaemon()
+        now = datetime(2026, 9, 30, 12, 0, 0) # Quarta-feira
+
+        # Tarefa ativa de horário fixo no horário atual
+        task_active = {
+            "task_id": "test_task_1",
+            "nome": "Tarefa Teste",
+            "ativo": 1,
+            "tipo_agendamento": "horario_fixo",
+            "horario_fixo": "12:00",
+            "apenas_dias_uteis": 1,
+            "ultima_execucao": None
+        }
+        self.assertTrue(daemon._should_run(task_active, now))
+
+        # Tarefa inativa
+        task_inactive = dict(task_active, ativo=0)
+        self.assertFalse(daemon._should_run(task_inactive, now))
+
+        # Tarefa de fim de semana agendada apenas para dias úteis
+        sunday = datetime(2026, 10, 4, 12, 0, 0) # Domingo
+        self.assertFalse(daemon._should_run(task_active, sunday))
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -816,6 +816,33 @@ def render_mapa_page():
                               "<button class='dev-btn' style='background-color:#3498db; color:#fff; font-size:10px; padding:4px 8px; margin:0;' onclick='window.setRouteOrigin(\\\"" + pin.id + "\\\")'>Definir Origem</button>" +
                               "<button class='dev-btn' style='background-color:#2ecc71; color:#fff; font-size:10px; padding:4px 8px; margin:0;' onclick='window.setRouteDestination(\\\"" + pin.id + "\\\")'>Definir Destino</button>" +
                               "</div>";
+            }} else {{
+              popupContent = `
+                <div class="dev-form">
+                  <div style="font-weight: bold; color: #4b9cff; margin-bottom: 5px;">🛠️ Editar Pin (Sala)</div>
+                  <label>ID do Pin</label>
+                  <input type="text" value="${{pin.id}}" disabled style="background:#1e1f25; color:#888; border:1px solid #464855;">
+                  
+                  <label>Nome da Sala / Local</label>
+                  <input type="text" id="edit_pin_sala" value="${{pin.sala || ''}}">
+                  
+                  <label>Descrição</label>
+                  <input type="text" id="edit_pin_desc" value="${{pin.descricao || ''}}">
+                  
+                  <div class="dev-form-row">
+                    <label style="margin:0;">X:</label>
+                    <input type="text" id="edit_pin_x" value="${{pin.x}}" style="width:55px;">
+                    <label style="margin:0;">Y:</label>
+                    <input type="text" id="edit_pin_y" value="${{pin.y}}" style="width:55px;">
+                  </div>
+                  
+                  <div class="dev-btn-group">
+                    <button class="dev-btn dev-btn-cancel" onclick="window.removePin('${{pin.id}}')" style="background-color:#e74c3c;">Excluir</button>
+                    <button class="dev-btn dev-btn-cancel" onclick="map.closePopup();">Fechar</button>
+                    <button class="dev-btn dev-btn-save" onclick="window.updatePin('${{pin.id}}')">Salvar</button>
+                  </div>
+                </div>
+              `;
             }}
 
             marker.bindPopup(popupContent);
@@ -833,7 +860,432 @@ def render_mapa_page():
           }});
         }};
 
+        // Inicializa o desenho do mapa
         window.redrawAllLayers();
+
+        // Callbacks de manipulação do estado em tempo de execução
+        window.setLastNode = function(id) {{
+          devState.lastNodeId = id;
+          sessionStorage.setItem('dev_lastNodeId', id);
+          console.log("📌 Nó de partida definido como: " + id);
+          map.closePopup();
+        }};
+
+        window.connectToLastNode = function(id) {{
+          if (!devState.lastNodeId || devState.lastNodeId === id) return;
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio) {{
+            if (!predio.caminhos) predio.caminhos = {{ "nós": [], "arestas": [] }};
+            if (!predio.caminhos.arestas) predio.caminhos.arestas = [];
+            
+            // Verifica se a aresta já existe
+            var exists = predio.caminhos.arestas.some(function(edge) {{
+              return (edge.de === devState.lastNodeId && edge.para === id) || 
+                     (edge.de === id && edge.para === devState.lastNodeId);
+            }});
+            
+            if (!exists) {{
+              predio.caminhos.arestas.push({{
+                de: devState.lastNodeId,
+                para: id
+              }});
+              console.log("🔗 Aresta criada: " + devState.lastNodeId + " -> " + id);
+            }}
+            
+            // Define o nó recém conectado como o novo nó de partida para permitir encadeamento fácil
+            devState.lastNodeId = id;
+            sessionStorage.setItem('dev_lastNodeId', id);
+            window.redrawAllLayers();
+          }}
+          map.closePopup();
+        }};
+
+        window.removeNode = function(id) {{
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.caminhos && predio.caminhos.nós) {{
+            predio.caminhos.nós = predio.caminhos.nós.filter(function(n) {{ return n.id !== id; }});
+            if (predio.caminhos.arestas) {{
+              predio.caminhos.arestas = predio.caminhos.arestas.filter(function(a) {{ return a.de !== id && a.para !== id; }});
+            }}
+            if (devState.lastNodeId === id) {{
+              devState.lastNodeId = null;
+              sessionStorage.removeItem('dev_lastNodeId');
+            }}
+            window.redrawAllLayers();
+            console.log("❌ Nó removido: " + id);
+          }}
+          map.closePopup();
+        }};
+
+        window.removePin = function(id) {{
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.pins) {{
+            predio.pins = predio.pins.filter(function(p) {{ return p.id !== id; }});
+            window.redrawAllLayers();
+            console.log("❌ Pin removido: " + id);
+          }}
+          map.closePopup();
+        }};
+
+        window.removeEdge = function(de, para) {{
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.caminhos && predio.caminhos.arestas) {{
+            predio.caminhos.arestas = predio.caminhos.arestas.filter(function(a) {{
+              return !(a.de === de && a.para === para);
+            }});
+            window.redrawAllLayers();
+            console.log("❌ Aresta removida: " + de + " -> " + para);
+          }}
+          map.closePopup();
+        }};
+
+        window.updateNode = function(id) {{
+          var nome = document.getElementById("edit_node_nome").value.trim();
+          var x = parseInt(document.getElementById("edit_node_x").value.trim());
+          var y = parseInt(document.getElementById("edit_node_y").value.trim());
+          
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.caminhos && predio.caminhos.nós) {{
+            var node = predio.caminhos.nós.find(function(n) {{ return n.id === id; }});
+            if (node) {{
+              node.nome = nome;
+              if (!isNaN(x)) node.x = x;
+              if (!isNaN(y)) node.y = y;
+              window.redrawAllLayers();
+              console.log("✔️ Nó atualizado:", node);
+            }}
+          }}
+          map.closePopup();
+        }};
+
+        window.updatePin = function(id) {{
+          var sala = document.getElementById("edit_pin_sala").value.trim();
+          var desc = document.getElementById("edit_pin_desc").value.trim();
+          var x = parseInt(document.getElementById("edit_pin_x").value.trim());
+          var y = parseInt(document.getElementById("edit_pin_y").value.trim());
+          
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === activeBuildingId; }});
+          if (predio && predio.pins) {{
+            var pin = predio.pins.find(function(p) {{ return p.id === id; }});
+            if (pin) {{
+              pin.sala = sala;
+              pin.descricao = desc;
+              if (!isNaN(x)) pin.x = x;
+              if (!isNaN(y)) pin.y = y;
+              window.redrawAllLayers();
+              console.log("✔️ Pin atualizado:", pin);
+            }}
+          }}
+          map.closePopup();
+        }};
+
+        // Botão customizado de controle de visibilidade da malha (Caminhos e Nós)
+        var MeshToggleControl = L.Control.extend({{
+          options: {{
+            position: 'topright'
+          }},
+          onAdd: function (map) {{
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-custom-control');
+            container.style.backgroundColor = '#1e1f25';
+            container.style.width = '34px';
+            container.style.height = '34px';
+            container.style.cursor = 'pointer';
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.borderRadius = '4px';
+            container.style.border = '1px solid #464855';
+            container.style.transition = 'all 0.2s';
+            container.style.opacity = '0.5';
+            container.title = "Exibir Malha de Caminhos";
+
+            container.innerHTML = '<span style="font-size: 16px; line-height: 1; filter: grayscale(100%);">👁️</span>';
+
+            var isVisible = false;
+            container.onclick = function(e) {{
+              L.DomEvent.stopPropagation(e);
+              if (isVisible) {{
+                map.removeLayer(debugLayer);
+                container.style.opacity = '0.5';
+              }} else {{
+                map.addLayer(debugLayer);
+                container.style.opacity = '1.0';
+              }}
+              isVisible = !isVisible;
+            }};
+            
+            container.onmouseover = function() {{
+              container.style.backgroundColor = '#2a2b36';
+            }};
+            container.onmouseout = function() {{
+              container.style.backgroundColor = '#1e1f25';
+            }};
+
+            return container;
+          }}
+        }});
+
+        map.addControl(new MeshToggleControl());
+
+        // Botão do Modo Desenvolvedor (Editar Mapa)
+        var exportCtrlInstance = null;
+        var DevModeControl = L.Control.extend({{
+          options: {{
+            position: 'topright'
+          }},
+          onAdd: function (map) {{
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-custom-control');
+            container.style.backgroundColor = '#1e1f25';
+            container.style.width = '34px';
+            container.style.height = '34px';
+            container.style.cursor = 'pointer';
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.borderRadius = '4px';
+            container.style.border = '1px solid #464855';
+            container.style.transition = 'all 0.2s';
+            container.style.opacity = '0.5';
+            container.title = "Modo Desenvolvedor (Editar Mapa)";
+
+            container.innerHTML = '<span style="font-size: 16px; line-height: 1;">🛠️</span>';
+
+            container.onclick = function(e) {{
+              L.DomEvent.stopPropagation(e);
+              devMode = !devMode;
+              if (devMode) {{
+                container.style.opacity = '1.0';
+                container.style.borderColor = '#2ecc71';
+                container.style.boxShadow = '0 0 8px rgba(46, 204, 113, 0.6)';
+                map.getContainer().style.cursor = 'crosshair';
+                map.addLayer(debugLayer);
+                window.redrawAllLayers();
+                if (exportCtrlInstance) {{
+                  exportCtrlInstance.show();
+                }}
+              }} else {{
+                container.style.opacity = '0.5';
+                container.style.borderColor = '#464855';
+                container.style.boxShadow = 'none';
+                map.getContainer().style.cursor = '';
+                window.redrawAllLayers();
+                if (exportCtrlInstance) {{
+                  exportCtrlInstance.hide();
+                }}
+              }}
+            }};
+
+            container.onmouseover = function() {{
+              container.style.backgroundColor = '#2a2b36';
+            }};
+            container.onmouseout = function() {{
+              container.style.backgroundColor = '#1e1f25';
+            }};
+
+            return container;
+          }}
+        }});
+
+        // Botão para salvar as alterações no Banco de Dados
+        var SaveControl = L.Control.extend({{
+          options: {{
+            position: 'topright'
+          }},
+          onAdd: function (map) {{
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-custom-control');
+            container.style.backgroundColor = '#1e1f25';
+            container.style.width = '34px';
+            container.style.height = '34px';
+            container.style.cursor = 'pointer';
+            container.style.display = 'none';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.borderRadius = '4px';
+            container.style.border = '1px solid #464855';
+            container.style.transition = 'all 0.2s';
+            container.title = "Salvar alterações no Banco de Dados";
+
+            container.innerHTML = '<span style="font-size: 16px; line-height: 1;">💾</span>';
+
+            container.onclick = function(e) {{
+              L.DomEvent.stopPropagation(e);
+              window.saveConfigToDb();
+            }};
+
+            container.onmouseover = function() {{
+              container.style.backgroundColor = '#2a2b36';
+            }};
+            container.onmouseout = function() {{
+              container.style.backgroundColor = '#1e1f25';
+            }};
+
+            this._container = container;
+            return container;
+          }},
+          show: function() {{
+            if (this._container) this._container.style.display = 'flex';
+          }},
+          hide: function() {{
+            if (this._container) this._container.style.display = 'none';
+          }}
+        }});
+
+        var devModeCtrl = new DevModeControl();
+        var exportCtrl = new SaveControl();
+        map.addControl(devModeCtrl);
+        map.addControl(exportCtrl);
+        exportCtrlInstance = exportCtrl;
+
+        // Callback para salvar elementos criados ao clicar no mapa no Modo Dev
+        window.saveDevElement = function(x, y) {{
+          var elemType = document.querySelector('input[name="elem_type"]:checked').value;
+          var floor = floorId;
+          var predioId = activeBuildingId;
+          
+          var predio = fullConfig.predios.find(function(p) {{ return p.id === predioId; }});
+          if (!predio) return;
+
+          if (!predio.caminhos) predio.caminhos = {{ "nós": [], "arestas": [] }};
+          if (!predio.caminhos.nós) predio.caminhos.nós = [];
+          if (!predio.caminhos.arestas) predio.caminhos.arestas = [];
+          if (!predio.pins) predio.pins = [];
+
+          if (elemType === "node") {{
+            var id = document.getElementById("dev_node_id").value.trim() || ("no_" + Date.now());
+            var nome = document.getElementById("dev_node_nome").value.trim();
+            var connect = document.getElementById("dev_node_connect") ? document.getElementById("dev_node_connect").checked : false;
+
+            var newNode = {{
+              id: id,
+              pavimento_id: floor,
+              x: x,
+              y: y,
+              nome: nome
+            }};
+
+            predio.caminhos.nós.push(newNode);
+
+            if (connect && devState.lastNodeId) {{
+              var newEdge = {{
+                de: devState.lastNodeId,
+                para: id
+              }};
+              predio.caminhos.arestas.push(newEdge);
+            }}
+
+            devState.lastNodeId = id;
+            sessionStorage.setItem('dev_lastNodeId', id);
+            console.log("✔️ Novo Nó adicionado diretamente ao fullConfig:", newNode);
+          }} else {{
+            var id = document.getElementById("dev_pin_id").value.trim() || ("pin_" + Date.now());
+            var sala = document.getElementById("dev_pin_sala").value.trim() || "Nova Sala";
+            var desc = document.getElementById("dev_pin_desc").value.trim();
+
+            var newPin = {{
+              id: id,
+              predio_id: predioId,
+              pavimento_id: floor,
+              sala: sala,
+              x: x,
+              y: y,
+              descricao: desc
+            }};
+
+            predio.pins.push(newPin);
+            console.log("✔️ Novo Pin adicionado diretamente ao fullConfig:", newPin);
+          }}
+
+          window.redrawAllLayers();
+          map.closePopup();
+        }};
+
+        // Salva as configurações atualizadas no banco e no JSON físico do projeto
+        window.saveConfigToDb = function() {{
+          fetch('http://localhost:8099/save_config', {{
+            method: 'POST',
+            headers: {{
+              'Content-Type': 'application/json'
+            }},
+            body: JSON.stringify(fullConfig)
+          }})
+          .then(function(response) {{
+            if (response.ok) {{
+              alert("💾 Configurações salvas com sucesso no Banco de Dados SQLite e no arquivo JSON!");
+            }} else {{
+              alert("❌ Erro ao salvar configurações no servidor.");
+            }}
+          }})
+          .catch(function(error) {{
+            console.error(error);
+            alert("❌ Erro de rede ao tentar salvar no servidor backend.");
+          }});
+        }};
+
+        // Clique no mapa: no modo dev, abre popup para criar Nó ou Pin
+        map.on('click', function(e) {{
+          var coord = e.latlng;
+          var x = Math.round(coord.lng);
+          var y = Math.round(coord.lat);
+          
+          if (x >= 0 && x <= w && y >= 0 && y <= h) {{
+            if (devMode) {{
+              var tempIdNode = "no_" + Date.now();
+              var tempIdPin = "pin_" + Date.now();
+              
+              var popupContent = `
+                <div class="dev-form">
+                  <div style="font-weight: bold; margin-bottom: 5px; color: #4b9cff;">🛠️ Criar Elemento</div>
+                  
+                  <div class="dev-form-row" style="margin-bottom: 6px;">
+                    <input type="radio" id="type_node" name="elem_type" value="node" checked onchange="document.getElementById('node_fields').style.display='flex'; document.getElementById('pin_fields').style.display='none';">
+                    <label for="type_node" style="margin:0; cursor:pointer; color:#fff;">Nó</label>
+                    
+                    <input type="radio" id="type_pin" name="elem_type" value="pin" onchange="document.getElementById('node_fields').style.display='none'; document.getElementById('pin_fields').style.display='flex';">
+                    <label for="type_pin" style="margin:0; cursor:pointer; color:#fff;">Pin (Sala)</label>
+                  </div>
+                  
+                  <!-- Campos do Nó -->
+                  <div id="node_fields" style="display: flex; flex-direction: column; gap: 8px;">
+                    <label>ID do Nó</label>
+                    <input type="text" id="dev_node_id" value="${{tempIdNode}}">
+                    
+                    <label>Nome do Nó</label>
+                    <input type="text" id="dev_node_nome" placeholder="Ex: Corredor Ala A" value="">
+                    
+                    <div class="dev-form-row" style="margin-top: 4px;">
+                      <input type="checkbox" id="dev_node_connect" ${{devState.lastNodeId ? 'checked' : 'disabled'}}>
+                      <label for="dev_node_connect" style="margin:0; cursor:pointer; font-size:11px;">Conectar ao nó anterior (${{devState.lastNodeId || 'Nenhum'}})</label>
+                    </div>
+                  </div>
+                  
+                  <!-- Campos do Pin -->
+                  <div id="pin_fields" style="display: none; flex-direction: column; gap: 8px;">
+                    <label>ID do Pin</label>
+                    <input type="text" id="dev_pin_id" value="${{tempIdPin}}">
+                    
+                    <label>Nome da Sala / Local</label>
+                    <input type="text" id="dev_pin_sala" placeholder="Ex: Sala 102" value="">
+                    
+                    <label>Descrição</label>
+                    <input type="text" id="dev_pin_desc" placeholder="Ex: Suporte Técnico" value="">
+                  </div>
+                  
+                  <div class="dev-btn-group">
+                    <button class="dev-btn dev-btn-cancel" onclick="map.closePopup();">Cancelar</button>
+                    <button class="dev-btn dev-btn-save" onclick="window.saveDevElement(${{x}}, ${{y}})">Adicionar</button>
+                  </div>
+                </div>
+              `;
+              
+              L.popup()
+                .setLatLng(coord)
+                .setContent(popupContent)
+                .openOn(map);
+            }} else {{
+              console.log("📍 Coordenada Clicada -> x: " + x + ", y: " + y);
+            }}
+          }}
+        }});
 
         var routeCoords = {route_coords_json_str};
         if (routeCoords && routeCoords.length > 1) {{

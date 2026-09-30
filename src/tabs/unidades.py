@@ -31,7 +31,7 @@ from src.components.pagination import (
 UNIDADES_EXCEL_PATH = OUTPUT_DIR_PRONTO / "Unidades_MPMS.xlsx"
 
 
-@st.dialog("📋 Detalhes e Gestão da Unidade")
+@st.dialog("📋 Detalhes e Gestão da Unidade", width="large")
 def modal_detalhes_unidade(row_data: dict):
     """Exibe um modal interativo com detalhes da unidade. Se for manual, permite editar ou excluir."""
     manual_id = row_data.get("manual_id")
@@ -99,7 +99,7 @@ def modal_detalhes_unidade(row_data: dict):
         st.info("ℹ️ Unidades do Portal são mantidas automaticamente pelo robô de sincronização.")
 
 
-@st.dialog("➕ Novo Setor Interno (Unidade Manual)")
+@st.dialog("➕ Novo Setor Interno (Unidade Manual)", width="large")
 def modal_novo_setor_manual():
     """Modal nativo do Streamlit (@st.dialog) para cadastro de novos setores manuais."""
     st.write("Preencha as informações do setor interno para salvar no banco de dados:")
@@ -132,7 +132,7 @@ def modal_novo_setor_manual():
         st.rerun()
 
 
-@st.dialog("📞 Detalhes do Ramal Telefônico")
+@st.dialog("📞 Detalhes do Ramal Telefônico", width="large")
 def modal_detalhes_ramal(row_data: dict):
     st.markdown(f"### 👤/🏢 {row_data.get('setor_nome', 'N/A')}")
     st.caption("Informação de ramal extraída da Intranet do MPMS.")
@@ -159,7 +159,7 @@ def modal_detalhes_ramal(row_data: dict):
         st.rerun()
 
 
-@st.dialog("⚙️ Configurar / Enviar PDFs de Ramais")
+@st.dialog("⚙️ Configurar / Enviar PDFs de Ramais", width="large")
 def modal_config_ramais():
     """Modal nativo (@st.dialog) para gerenciar links dos PDFs e permitir envio direto de arquivos."""
     st.markdown("### 📞 Gestão de Fontes dos Ramais")
@@ -442,7 +442,8 @@ def render_unidades_page():
             if selection and selection.get("selection") and selection["selection"].get("rows"):
                 selected_row_idx = selection["selection"]["rows"][0]
                 if selected_row_idx < len(df_page):
-                    row_selected = df_page.iloc[selected_row_idx].to_dict()
+                    sel_r = df_page.iloc[selected_row_idx]
+                    row_selected = sel_r.to_dict() if hasattr(sel_r, "to_dict") else dict(sel_r)
                     modal_detalhes_unidade(row_selected)
 
             render_pagination_controls(
@@ -513,7 +514,8 @@ def render_unidades_page():
             if selection_r and selection_r.get("selection") and selection_r["selection"].get("rows"):
                 selected_row_idx_r = selection_r["selection"]["rows"][0]
                 if selected_row_idx_r < len(df_page_r):
-                    row_selected_r = df_page_r.iloc[selected_row_idx_r].to_dict()
+                    sel_ramal_row = df_page_r.iloc[selected_row_idx_r]
+                    row_selected_r = sel_ramal_row.to_dict() if hasattr(sel_ramal_row, "to_dict") else dict(sel_ramal_row)
                     modal_detalhes_ramal(row_selected_r)
 
             render_pagination_controls(

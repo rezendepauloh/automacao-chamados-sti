@@ -33,7 +33,7 @@ def parse_date_to_iso_and_br(date_val):
 
 import os
 
-@st.dialog("⚙️ Configurar / Enviar Planilha de Garantia")
+@st.dialog("⚙️ Configurar / Enviar Planilha de Garantia", width="large")
 def modal_config_garantia():
     """Modal nativo (@st.dialog) para gerenciar link do SharePoint e envio direto da planilha de garantia."""
     st.markdown("### 🛡️ Gestão da Planilha de Controle de Garantia")

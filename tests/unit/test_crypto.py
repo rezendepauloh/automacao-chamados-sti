@@ -41,6 +41,33 @@ class TestCryptoUtils(unittest.TestCase):
         result = decrypt_value(raw_text)
         self.assertEqual(result, raw_text)
 
+    def test_decrypt_incompatible_or_corrupted_token_fallback(self):
+        """Valida que tokens cifrados com outra chave não geram exceção fatal e caem no fallback gracioso com log de aviso."""
+        from cryptography.fernet import Fernet
+        outra_chave = Fernet.generate_key()
+        f_outro = Fernet(outra_chave)
+        token_estranho = f_outro.encrypt(b"senha_ambiente_antigo").decode("utf-8")
+        
+        # Não deve lançar exceção, deve devolver o token para fallback e registrar warning
+        resultado = decrypt_value(token_estranho)
+        self.assertEqual(resultado, token_estranho)
+
+    def test_is_valid_fernet_key_and_token(self):
+        """Valida detecção de integridade de chave Fernet e identificação heurística de tokens."""
+        from src.crypto_utils import _is_valid_fernet_key, is_fernet_token
+        from cryptography.fernet import Fernet
+        
+        valid_key = Fernet.generate_key()
+        self.assertTrue(_is_valid_fernet_key(valid_key))
+        self.assertFalse(_is_valid_fernet_key(b"chave_curta_invalida"))
+        self.assertFalse(_is_valid_fernet_key(None))
+        self.assertFalse(_is_valid_fernet_key(b""))
+
+        token = Fernet(valid_key).encrypt(b"teste").decode("utf-8")
+        self.assertTrue(is_fernet_token(token))
+        self.assertFalse(is_fernet_token("senha_plana_123"))
+        self.assertFalse(is_fernet_token(None))
+
     def test_mask_secret(self):
         """Valida mascaramento visual seguro para exibição em interfaces/logs."""
         self.assertEqual(mask_secret(""), "")
@@ -54,3 +81,4 @@ class TestCryptoUtils(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

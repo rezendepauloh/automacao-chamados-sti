@@ -1,7 +1,10 @@
 import os
+import logging
 import pandas as pd
 from datetime import datetime
 from src.database.connection import get_connection, DB_TYPE
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TASKS = [
     {
@@ -343,8 +346,8 @@ def seed_cron_tasks_if_empty():
                         task["tipo_agendamento"], task["intervalo_valor"], task["intervalo_unidade"],
                         task["horario_fixo"], task["apenas_dias_uteis"], task["descricao"]
                     ))
-            except Exception:
-                pass
+            except Exception as e_fallback:
+                logger.warning(f"Aviso ao inicializar tarefa padrão {task.get('task_id')}: {e_fallback}")
 
     conn.commit()
     cursor.close()

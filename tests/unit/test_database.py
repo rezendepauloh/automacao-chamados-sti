@@ -45,6 +45,10 @@ from src.database.plantoes_db import (
     get_plantoes_matutino,
     get_plantoes_semanal
 )
+from src.database.viagens_db import (
+    setup_viagens_table,
+    get_viagens_df
+)
 
 class TestDatabaseModule(unittest.TestCase):
     def setUp(self):
@@ -58,6 +62,7 @@ class TestDatabaseModule(unittest.TestCase):
             patch("src.database.sccm_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.tickets_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.plantoes_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
+            patch("src.database.viagens_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
         ]
         for p in self.patchers:
             p.start()
@@ -355,6 +360,25 @@ class TestDatabaseModule(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0], ("PGJ-NT-W11", "Windows 11"))
         self.assertEqual(rows[1], ("PGJ-NT-W10", "Windows 10"))
+
+    def test_viagens_crud_and_chamado_diaria(self):
+        """Valida criação da tabela de viagens, migração e persistência de chamado_diaria."""
+        setup_viagens_table()
+
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO viagens (quem_foi, chamado, chamado_diaria, saida_iso, retorno_iso, saida_br, retorno_br, localidade)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("Paulo Henrique", "84990", "123456", "2026-10-01", "2026-10-02", "01/10/2026", "02/10/2026", "Dourados"))
+        conn.commit()
+        conn.close()
+
+        df = get_viagens_df()
+        self.assertFalse(df.empty)
+        self.assertIn("chamado_diaria", df.columns)
+        self.assertEqual(df.iloc[0]["chamado_diaria"], "123456")
+        self.assertEqual(df.iloc[0]["localidade"], "Dourados")
 
 if __name__ == "__main__":
     unittest.main()

@@ -429,6 +429,7 @@ def render_calendario_geral_page():
                         "localidade": localidade,
                         "quem_foi": quem_foi,
                         "chamado": chamado,
+                        "chamado_diaria": row.get("chamado_diaria", ""),
                         "saida_br": saida_br,
                         "retorno_br": retorno_br,
                         "raw_data_inicio": saida_br,

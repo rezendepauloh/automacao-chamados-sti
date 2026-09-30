@@ -20,7 +20,7 @@ from src.database import get_viagens_df, sync_viagens_from_excel
 from src.syncs.sync_viagens import check_viagens_sync_running, read_viagens_last_log_lines
 from src.config import _cfg
 
-@st.dialog("⚙️ Configurar / Enviar Planilha de Viagens")
+@st.dialog("⚙️ Configurar / Enviar Planilha de Viagens", width="large")
 def modal_config_viagens():
     """Modal (@st.dialog) para gerenciar o link do SharePoint ou envio manual da planilha de viagens."""
     st.markdown("### ✈️ Gestão da Planilha de Viagens da Bancada")
@@ -181,6 +181,7 @@ def render_viagens_page():
                     "localidade": localidade,
                     "quem_foi": quem_foi,
                     "chamado": chamado,
+                    "chamado_diaria": row.get("chamado_diaria", ""),
                     "saida_br": saida_br,
                     "retorno_br": retorno_br,
                     "raw_data_inicio": saida_br,
@@ -203,7 +204,7 @@ def render_viagens_page():
             tecnicos_unicos.update(partes)
 
         filtro_tecnico_tab = st.sidebar.selectbox("👤 Técnico / Membro", ["Todos"] + sorted(list(tecnicos_unicos)), key="f_viagem_tecnico_tab")
-        search_viagem = st.sidebar.text_input("🔎 Buscar (Localidade, Chamado, Técnico)", "", key="f_viagem_search").strip().lower()
+        search_viagem = st.sidebar.text_input("🔎 Buscar (Localidade, Chamado, Diária, Técnico)", "", key="f_viagem_search").strip().lower()
 
         items_per_page = render_items_per_page_selector(
             key_prefix="viagens_tab",
@@ -221,6 +222,7 @@ def render_viagens_page():
                 df_filtered["localidade"].str.lower().str.contains(search_viagem, na=False) |
                 df_filtered["quem_foi"].str.lower().str.contains(search_viagem, na=False) |
                 df_filtered["chamado"].str.lower().str.contains(search_viagem, na=False) |
+                (df_filtered["chamado_diaria"].str.lower().str.contains(search_viagem, na=False) if "chamado_diaria" in df_filtered.columns else False) |
                 df_filtered["saida_br"].str.lower().str.contains(search_viagem, na=False) |
                 df_filtered["retorno_br"].str.lower().str.contains(search_viagem, na=False)
             )
@@ -252,13 +254,39 @@ def render_viagens_page():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
+        # Preparação de datas nativas para ordenação cronológica correta (asc/desc) na tabela
+        df_filtered["data_saida"] = pd.to_datetime(df_filtered["saida_iso"], errors="coerce")
+        # Fallback caso saida_iso esteja vazia mas saida_br exista
+        mask_saida_na = df_filtered["data_saida"].isna() & df_filtered["saida_br"].str.strip().ne("")
+        if mask_saida_na.any():
+            df_filtered.loc[mask_saida_na, "data_saida"] = pd.to_datetime(df_filtered.loc[mask_saida_na, "saida_br"], format="%d/%m/%Y", errors="coerce")
+
+        df_filtered["data_retorno"] = pd.to_datetime(df_filtered["retorno_iso"], errors="coerce")
+        mask_retorno_na = df_filtered["data_retorno"].isna() & df_filtered["retorno_br"].str.strip().ne("")
+        if mask_retorno_na.any():
+            df_filtered.loc[mask_retorno_na, "data_retorno"] = pd.to_datetime(df_filtered.loc[mask_retorno_na, "retorno_br"], format="%d/%m/%Y", errors="coerce")
+
         h_col1, h_col2 = st.columns([3, 1])
         with h_col1:
             st.subheader(f"📋 Registros de Viagens ({len(df_filtered)} encontrados)")
         with h_col2:
             buffer = io.BytesIO()
+            df_export = df_filtered.copy()
+            # Formata datas para o Excel em formato DD/MM/YYYY
+            df_export["data_saida"] = df_export["data_saida"].dt.strftime("%d/%m/%Y").fillna(df_export["saida_br"])
+            df_export["data_retorno"] = df_export["data_retorno"].dt.strftime("%d/%m/%Y").fillna(df_export["retorno_br"])
+            cols_export = ["localidade", "quem_foi", "chamado", "chamado_diaria", "data_saida", "data_retorno"]
+            cols_export = [c for c in cols_export if c in df_export.columns]
+            df_export_renamed = df_export[cols_export].rename(columns={
+                "localidade": "Destino / Localidade",
+                "quem_foi": "Quem foi",
+                "chamado": "Chamado(s)",
+                "chamado_diaria": "Chamado Diária",
+                "data_saida": "Saída",
+                "data_retorno": "Retorno"
+            })
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df_filtered.to_excel(writer, index=False, sheet_name='Viagens')
+                df_export_renamed.to_excel(writer, index=False, sheet_name='Viagens')
             buffer.seek(0)
             st.download_button(
                 label="📥 Exportar Excel",
@@ -274,7 +302,7 @@ def render_viagens_page():
             page_key="viagens_table_page"
         )
 
-        cols_display = ["localidade", "quem_foi", "chamado", "saida_br", "retorno_br"]
+        cols_display = ["localidade", "quem_foi", "chamado", "chamado_diaria", "data_saida", "data_retorno"]
         cols_display = [c for c in cols_display if c in paginated_df.columns]
 
         st.dataframe(
@@ -283,8 +311,9 @@ def render_viagens_page():
                 "localidade": st.column_config.TextColumn("📍 Destino / Localidade"),
                 "quem_foi": st.column_config.TextColumn("👤 Quem foi"),
                 "chamado": st.column_config.TextColumn("🎫 Chamado(s)"),
-                "saida_br": st.column_config.TextColumn("📅 Saída"),
-                "retorno_br": st.column_config.TextColumn("🏁 Retorno"),
+                "chamado_diaria": st.column_config.TextColumn("💵 Chamado Diária"),
+                "data_saida": st.column_config.DateColumn("📅 Saída", format="DD/MM/YYYY"),
+                "data_retorno": st.column_config.DateColumn("🏁 Retorno", format="DD/MM/YYYY"),
             },
             hide_index=True,
             width='stretch'

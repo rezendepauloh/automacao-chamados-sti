@@ -11,7 +11,7 @@ from src.syncs.sync_donations import check_donations_sync_running, read_donation
 
 import os
 
-@st.dialog("⚙️ Configurar / Enviar Planilha de Doações & Baixa")
+@st.dialog("⚙️ Configurar / Enviar Planilha de Doações & Baixa", width="large")
 def modal_config_donations():
     """Modal nativo (@st.dialog) para gerenciar link do SharePoint e envio direto da planilha de doações."""
     st.markdown("### 🖥️ Gestão da Planilha de Doação e Baixa de Máquinas")

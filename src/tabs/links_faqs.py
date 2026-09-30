@@ -7,10 +7,16 @@ import subprocess
 import shutil
 import time
 import requests
+import base64
+import hashlib
 from pathlib import Path
 import pandas as pd
 import streamlit as st
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
 from src.config import (
     setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR, IMAGE_FAQ_DIR,
     VIDEO_FAQ_URL, IMAGE_FAQ_URL, CITSMART_EMAIL, PASSWORD,
@@ -27,15 +33,245 @@ from src.components.pagination import (
 logger = setup_logging(DEBUG_DIR_FAQ / "faq.log", "faq")
 
 
-def parse_sharepoint_content(html_str: str) -> str:
+from urllib.parse import unquote
+
+SHAREPOINT_COOKIES_FILE = Path(__file__).resolve().parent.parent.parent / "uploads" / "faq" / "sharepoint_cookies.json"
+
+
+def get_sharepoint_cookies() -> dict:
     """
-    Traduz elementos de imagens e vídeos do SharePoint, remove bloco de autoria e ícones quebrados.
+    Obtém cookies autenticados do SharePoint.
+    Tenta ler do cache em uploads/faq/sharepoint_cookies.json ou extrair do Firefox no host WSL.
+    """
+    cookies = {}
+    if SHAREPOINT_COOKIES_FILE.exists():
+        try:
+            with open(SHAREPOINT_COOKIES_FILE, "r", encoding="utf-8") as f:
+                cookies = json.load(f)
+                if cookies and isinstance(cookies, dict):
+                    return cookies
+        except Exception as e:
+            logger.warning(f"Erro ao ler cache de cookies: {e}")
+
+    # Tenta extrair diretamente do perfil do Firefox do usuário (Windows via WSL)
+    ff_profiles_dir = Path("/mnt/c/Users/paulogoncalves/AppData/Roaming/Mozilla/Firefox/Profiles")
+    if ff_profiles_dir.exists():
+        for p in ff_profiles_dir.glob("*.default-release"):
+            cookie_db = p / "cookies.sqlite"
+            if cookie_db.exists():
+                try:
+                    tmp_db = Path("/tmp/ff_faq_cookies.sqlite")
+                    shutil.copy2(cookie_db, tmp_db)
+                    conn = sqlite3.connect(tmp_db)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT name, value FROM moz_cookies WHERE host LIKE '%sharepoint.com'")
+                    for name, value in cursor.fetchall():
+                        cookies[name] = value
+                    conn.close()
+                    try:
+                        tmp_db.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    if cookies:
+                        SHAREPOINT_COOKIES_FILE.parent.mkdir(parents=True, exist_ok=True)
+                        with open(SHAREPOINT_COOKIES_FILE, "w", encoding="utf-8") as f:
+                            json.dump(cookies, f, indent=2)
+                        return cookies
+                except Exception as err:
+                    logger.warning(f"Falha ao extrair cookies do Firefox: {err}")
+    return cookies
+
+
+def get_image_as_base64(file_path: Path) -> str:
+    """Codifica a imagem local para formato Data URI base64 seguro."""
+    try:
+        if not file_path.exists():
+            return ""
+        with open(file_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+        ext = file_path.suffix.lower()
+        mime = "image/png"
+        if ext in [".jpg", ".jpeg"]:
+            mime = "image/jpeg"
+        elif ext == ".gif":
+            mime = "image/gif"
+        elif ext == ".webp":
+            mime = "image/webp"
+        elif ext == ".svg":
+            mime = "image/svg+xml"
+        return f"data:{mime};base64,{encoded}"
+    except Exception as e:
+        logger.error(f"Erro ao converter imagem em base64: {e}")
+        return ""
+
+
+def slugify_faq_title(title: str) -> str:
+    """Gera um slug de diretório seguro e legível a partir do título do FAQ."""
+    import unicodedata
+    if not title:
+        return "Geral"
+    text = unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode('ascii')
+    text = re.sub(r'[^\w\s-]', '', text).strip()
+    slug = re.sub(r'[-\s]+', '_', text)
+    return slug if slug else "Geral"
+
+
+def ensure_sharepoint_image_cached(img_url: str, faq_slug: str = "Geral") -> str:
+    """
+    Verifica se a imagem do SharePoint já está salva localmente em uploads/faq/imagens/<faq_slug>/.
+    Caso exista em uploads/faq/imagens/ raiz (legado), migra ou carrega dela.
+    Se não estiver em disco, baixa usando os cookies autenticados da intranet.
+    Retorna o Data URI em base64 da imagem para exibição direta no navegador.
+    """
+    if not img_url:
+        return ""
+
+    if img_url.startswith("/"):
+        img_url = f"https://ministeriopublicoms.sharepoint.com{img_url}"
+
+    clean_filename = unquote(img_url.split("/")[-1].split("?")[0])
+    clean_filename = re.sub(r'[\\/*?:"<>|]', '_', clean_filename)
+    if not clean_filename:
+        clean_filename = f"img_{hashlib.md5(img_url.encode('utf-8')).hexdigest()[:12]}.jpg"
+
+    slug = slugify_faq_title(faq_slug)
+    folder_dir = IMAGE_FAQ_DIR / slug
+    dest_file = folder_dir / clean_filename
+    root_legacy_file = IMAGE_FAQ_DIR / clean_filename
+
+    # Se já existir na pasta organizada
+    if dest_file.exists() and dest_file.stat().st_size > 0:
+        return get_image_as_base64(dest_file)
+
+    # Se existir na raiz (legado), migra para a pasta do tutorial
+    if root_legacy_file.exists() and root_legacy_file.is_file() and root_legacy_file.stat().st_size > 0:
+        try:
+            folder_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root_legacy_file, dest_file)
+            return get_image_as_base64(dest_file)
+        except Exception:
+            return get_image_as_base64(root_legacy_file)
+
+    # Tenta baixar com cookies para a subpasta do tutorial
+    cookies = get_sharepoint_cookies()
+    if cookies:
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+                "Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
+            }
+            resp = requests.get(img_url, cookies=cookies, headers=headers, timeout=12)
+            if resp.status_code == 200 and len(resp.content) > 100:
+                folder_dir.mkdir(parents=True, exist_ok=True)
+                with open(dest_file, "wb") as f_out:
+                    f_out.write(resp.content)
+                logger.info(f"✅ Imagem FAQ baixada em '{slug}/{clean_filename}'")
+                return get_image_as_base64(dest_file)
+            else:
+                logger.warning(f"Download de imagem retornou status {resp.status_code} para {clean_filename}")
+        except Exception as e:
+            logger.error(f"Erro ao baixar imagem {img_url}: {e}")
+
+    return ""
+
+
+def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> str:
+    """
+    Verifica se o vídeo do SharePoint já está salvo localmente em uploads/faq/videos/<faq_slug>/.
+    Se não estiver, baixa usando os cookies autenticados da intranet.
+    Retorna o Data URI em base64 (para vídeos leves) ou caminho local.
+    """
+    if not video_url:
+        return ""
+
+    if video_url.startswith("/"):
+        video_url = f"https://ministeriopublicoms.sharepoint.com{video_url}"
+
+    clean_filename = unquote(video_url.split("/")[-1].split("?")[0])
+    clean_filename = re.sub(r'[\\/*?:"<>|]', '_', clean_filename)
+    if not clean_filename:
+        clean_filename = f"video_{hashlib.md5(video_url.encode('utf-8')).hexdigest()[:12]}.mp4"
+
+    slug = slugify_faq_title(faq_slug)
+    folder_dir = VIDEO_FAQ_DIR / slug
+    dest_file = folder_dir / clean_filename
+
+    # Verifica se o arquivo já existe no destino
+    if dest_file.exists() and dest_file.stat().st_size > 1000:
+        return get_video_as_base64(dest_file)
+
+    # Verifica se já existe em outra subpasta do VIDEO_FAQ_DIR
+    if VIDEO_FAQ_DIR.exists():
+        for existing in VIDEO_FAQ_DIR.rglob(clean_filename):
+            if existing.is_file() and existing.stat().st_size > 1000:
+                try:
+                    folder_dir.mkdir(parents=True, exist_ok=True)
+                    if existing != dest_file:
+                        shutil.copy2(existing, dest_file)
+                    return get_video_as_base64(dest_file)
+                except Exception:
+                    return get_video_as_base64(existing)
+
+    # Tenta baixar com cookies para a subpasta do tutorial
+    cookies = get_sharepoint_cookies()
+    if cookies:
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+                "Accept": "*/*"
+            }
+            resp = requests.get(video_url, cookies=cookies, headers=headers, stream=True, timeout=35)
+            if resp.status_code == 200:
+                folder_dir.mkdir(parents=True, exist_ok=True)
+                with open(dest_file, "wb") as f_out:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        if chunk:
+                            f_out.write(chunk)
+                if dest_file.exists() and dest_file.stat().st_size > 1000:
+                    logger.info(f"✅ Vídeo FAQ baixado em '{slug}/{clean_filename}'")
+                    return get_video_as_base64(dest_file)
+        except Exception as e:
+            logger.error(f"Erro ao baixar vídeo {video_url}: {e}")
+
+    return ""
+
+
+def get_video_as_base64(file_path: Path) -> str:
+    """Codifica o arquivo de vídeo local em base64 Data URI."""
+    try:
+        if not file_path.exists():
+            return ""
+        # Limite de segurança de 80MB para base64 direto
+        if file_path.stat().st_size > 80 * 1024 * 1024:
+            return ""
+        with open(file_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+        ext = file_path.suffix.lower()
+        mime = "video/mp4"
+        if ext == ".webm":
+            mime = "video/webm"
+        elif ext == ".mov":
+            mime = "video/mp4"
+        return f"data:{mime};base64,{encoded}"
+    except Exception as e:
+        logger.error(f"Erro ao converter vídeo em base64: {e}")
+        return ""
+
+
+def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
+    """
+    Traduz elementos de imagens e vídeos do SharePoint, remove bloco de autoria,
+    ícones quebrados e renderiza imagens com legenda e visualização direta em alta qualidade,
+    organizando a mídia por tutorial (subpasta).
     """
     if not html_str or not isinstance(html_str, str):
         return ""
 
     # 1. Limpeza do Bloco de Autoria via Regex
     html_str = re.sub(r'Paulo Henrique.*?Published \d{2}/\d{2}/\d{4}', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+
+    if BeautifulSoup is None:
+        return html_str
 
     soup = BeautifulSoup(html_str, "html.parser")
 
@@ -47,13 +283,111 @@ def parse_sharepoint_content(html_str: str) -> str:
     image_divs = soup.find_all("div", class_="imagePlugin")
     for div in image_divs:
         img_url = div.get("data-imageurl")
+        caption = (div.get("data-captiontext") or "").strip()
         if img_url:
             if img_url.startswith("/"):
                 img_url = f"https://ministeriopublicoms.sharepoint.com{img_url}"
-            new_img = soup.new_tag("img", src=img_url, attrs={"class": "sp-image"})
-            div.replace_with(new_img)
 
-    # 4. Restauração de Vídeos do SharePoint (data-sp-controldata ou DocumentEmbedWebPart)
+            # Tenta obter a imagem em base64 salva localmente na subpasta do tutorial
+            base64_src = ensure_sharepoint_image_cached(img_url, faq_slug=faq_slug)
+
+            if base64_src:
+                caption_html = f'<figcaption class="sp-caption" style="text-align: center; color: #94a3b8; font-size: 0.88rem; margin-top: 6px; font-style: italic;">{caption}</figcaption>' if caption else ''
+                img_tag_html = f'''
+                <figure class="sp-img-card" style="margin: 20px auto; max-width: 95%; text-align: center;">
+                    <img class="sp-image" src="{base64_src}" style="max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #3b3c4a; box-shadow: 0 4px 14px rgba(0,0,0,0.35); display: block; margin: 0 auto;" />
+                    {caption_html}
+                </figure>
+                '''
+                div.replace_with(BeautifulSoup(img_tag_html, "html.parser"))
+            else:
+                label_text = caption if caption else "Visualizar Imagem do Tutorial"
+                card_html = f'''
+                <div class="sp-img-card" style="margin: 20px auto; max-width: 720px; background: #1e1f29; border: 1px solid #3b3c4a; border-radius: 10px; padding: 18px 22px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+                    <div style="font-size: 1.05rem; font-weight: 600; color: #f8f9fa; margin-bottom: 6px;">
+                        🖼️ {label_text}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 14px;">
+                        Esta captura de tela requer sincronização de cookies ou abertura direta na intranet.
+                    </div>
+                    <a href="{img_url}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; font-size: 0.92rem; padding: 10px 22px; border-radius: 6px; box-shadow: 0 2px 8px rgba(255, 75, 75, 0.4); transition: background-color 0.2s;">
+                        🔗 Abrir Imagem no SharePoint ↗
+                    </a>
+                </div>
+                '''
+                div.replace_with(BeautifulSoup(card_html, "html.parser"))
+
+    # 3b. Processamento de tags <img> nativas remanescentes
+    for img in soup.find_all("img"):
+        src = img.get("src") or img.get("data-sp-originalimgsrc") or ""
+        if not src or img.get("data-automation-id") == "lowQualityImagePlaceholder":
+            img.decompose()
+            continue
+
+        if src.startswith("/"):
+            src = f"https://ministeriopublicoms.sharepoint.com{src}"
+
+        if "sharepoint.com" in src:
+            base64_src = ensure_sharepoint_image_cached(src, faq_slug=faq_slug)
+            alt_txt = img.get("alt") or ""
+            if base64_src:
+                img["src"] = base64_src
+                img["class"] = img.get("class", []) + ["sp-image"]
+                img["style"] = "max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #3b3c4a; margin: 16px auto; display: block; box-shadow: 0 4px 14px rgba(0,0,0,0.35);"
+            else:
+                alt_display = alt_txt if alt_txt else "Visualizar Imagem"
+                link_card = f'''
+                <div class="sp-img-card" style="margin: 16px auto; max-width: 600px; background: #1e1f29; border: 1px solid #3b3c4a; border-radius: 8px; padding: 14px 18px; text-align: center;">
+                    <div style="font-size: 0.95rem; font-weight: 600; color: #f8f9fa; margin-bottom: 8px;">
+                        🖼️ {alt_display}
+                    </div>
+                    <a href="{src}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; font-size: 0.85rem; padding: 8px 16px; border-radius: 6px;">
+                        🔗 Abrir no SharePoint ↗
+                    </a>
+                </div>
+                '''
+                img.replace_with(BeautifulSoup(link_card, "html.parser"))
+        else:
+            img["src"] = src
+            if "sp-image" not in img.get("class", []):
+                img["class"] = img.get("class", []) + ["sp-image"]
+
+
+
+    # 4. Restauração e Renderização de Vídeos do SharePoint (div.sp-video-embed, controldata ou video tags)
+    # 4a. Tags de vídeo enriquecidas (div.sp-video-embed)
+    for v_embed in soup.find_all("div", class_="sp-video-embed"):
+        v_url = v_embed.get("data-videourl") or ""
+        v_title = v_embed.get("data-videotitle") or "Vídeo Tutorial"
+        if v_url:
+            cached_src = ensure_sharepoint_video_cached(v_url, faq_slug=faq_slug)
+            if cached_src:
+                v_html = f'''
+                <div class="sp-video-card" style="margin: 24px auto; max-width: 95%; text-align: center;">
+                    <div style="font-size: 0.95rem; font-weight: 600; color: #f8f9fa; margin-bottom: 8px;">
+                        🎬 {v_title}
+                    </div>
+                    <video controls src="{cached_src}" style="width: 100%; max-height: 520px; border-radius: 8px; border: 1px solid #3b3c4a; box-shadow: 0 4px 14px rgba(0,0,0,0.5);"></video>
+                </div>
+                '''
+                v_embed.replace_with(BeautifulSoup(v_html, "html.parser"))
+            else:
+                card_v = f'''
+                <div class="sp-img-card" style="margin: 20px auto; max-width: 720px; background: #1e1f29; border: 1px solid #3b3c4a; border-radius: 10px; padding: 18px 22px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+                    <div style="font-size: 1.05rem; font-weight: 600; color: #f8f9fa; margin-bottom: 6px;">
+                        🎬 {v_title}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 14px;">
+                        Vídeo corporativo do tutorial disponível no SharePoint Stream.
+                    </div>
+                    <a href="{v_url}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; font-size: 0.92rem; padding: 10px 22px; border-radius: 6px; box-shadow: 0 2px 8px rgba(255, 75, 75, 0.4);">
+                        🔗 Assistir no SharePoint Stream ↗
+                    </a>
+                </div>
+                '''
+                v_embed.replace_with(BeautifulSoup(card_v, "html.parser"))
+
+    # 4b. Restauração de controldata de vídeos (caso ainda contenha tags cruas)
     controldata_divs = soup.find_all(lambda t: t.name == "div" and any(k.endswith("controldata") for k in t.attrs))
     for div in controldata_divs:
         raw_control = None
@@ -68,34 +402,51 @@ def parse_sharepoint_content(html_str: str) -> str:
         try:
             cdata = json.loads(raw_control)
             file_url = None
-            
-            # Tenta buscar em properties.file ou properties.serverRelativeUrl
+            v_title = "Vídeo do Tutorial"
+
             props = cdata.get("properties", {})
             if isinstance(props, dict):
                 file_url = props.get("file") or props.get("serverRelativeUrl") or props.get("url")
+                v_title = props.get("title") or v_title
 
-            # Tenta buscar em serverProcessedContent.links.serverRelativeUrl se não encontrou
             if not file_url:
                 sp_content = cdata.get("serverProcessedContent", {})
                 if isinstance(sp_content, dict):
                     links = sp_content.get("links", {})
                     if isinstance(links, dict):
                         file_url = links.get("serverRelativeUrl") or links.get("baseUrl")
+                    text_dict = sp_content.get("searchablePlainTexts", {})
+                    if isinstance(text_dict, dict) and text_dict.get("title"):
+                        v_title = text_dict["title"]
 
             if file_url and any(str(file_url).lower().endswith(ext) for ext in [".mp4", ".mov", ".webm", ".avi"]):
                 if str(file_url).startswith("/"):
                     file_url = f"https://ministeriopublicoms.sharepoint.com{file_url}"
-                new_video = soup.new_tag(
-                    "video",
-                    controls="",
-                    src=file_url,
-                    style="width: 100%; max-height: 500px; border-radius: 8px; margin: 20px 0;"
-                )
-                div.replace_with(new_video)
+                
+                cached_src = ensure_sharepoint_video_cached(file_url, faq_slug=faq_slug)
+                if cached_src:
+                    v_html = f'''
+                    <div class="sp-video-card" style="margin: 24px auto; max-width: 95%; text-align: center;">
+                        <div style="font-size: 0.95rem; font-weight: 600; color: #f8f9fa; margin-bottom: 8px;">
+                            🎬 {v_title}
+                        </div>
+                        <video controls src="{cached_src}" style="width: 100%; max-height: 520px; border-radius: 8px; border: 1px solid #3b3c4a; box-shadow: 0 4px 14px rgba(0,0,0,0.5);"></video>
+                    </div>
+                    '''
+                    div.replace_with(BeautifulSoup(v_html, "html.parser"))
+                else:
+                    new_video = soup.new_tag(
+                        "video",
+                        controls="",
+                        src=file_url,
+                        style="width: 100%; max-height: 500px; border-radius: 8px; margin: 20px 0;"
+                    )
+                    div.replace_with(new_video)
         except Exception:
             pass
 
     return str(soup)
+
 
 
 
@@ -393,6 +744,96 @@ def render_faq_page():
         selected_tipo = st.sidebar.selectbox("📂 Categoria:", tipos_disponiveis, key="faq_cat")
         items_per_page_faq = render_items_per_page_selector("faq_sp", options=[6, 10, 20, 50], default_index=1)
 
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("## 📥 Mídia Offline")
+        if st.sidebar.button("🔄 Sincronizar Mídias dos FAQs", width="stretch", help="Baixa e atualiza as imagens e vídeos de todos os FAQs do SharePoint usando os cookies da sua sessão ativa, organizados por pasta de cada tutorial."):
+            with st.spinner("Sincronizando mídias dos FAQs autenticados..."):
+                cookies = get_sharepoint_cookies()
+                if not cookies:
+                    st.sidebar.error("Nenhum cookie de sessão encontrado no navegador.")
+                else:
+                    sucessos_img = 0
+                    sucessos_vid = 0
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+                        "Accept": "*/*"
+                    }
+                    IMAGE_FAQ_DIR.mkdir(parents=True, exist_ok=True)
+                    VIDEO_FAQ_DIR.mkdir(parents=True, exist_ok=True)
+                    
+                    for _, r in df_faqs.iterrows():
+                        content = r.get("conteudo") or ""
+                        faq_tit = r.get("titulo") or "Geral"
+                        faq_slug = slugify_faq_title(faq_tit)
+                        target_img_folder = IMAGE_FAQ_DIR / faq_slug
+                        target_vid_folder = VIDEO_FAQ_DIR / faq_slug
+                        target_img_folder.mkdir(parents=True, exist_ok=True)
+                        target_vid_folder.mkdir(parents=True, exist_ok=True)
+                        
+                        # 1. Sincronização de Imagens
+                        found_img_urls = re.findall(r'data-imageurl="([^"]+)"', content) + re.findall(r'src="([^"]+sharepoint\.com[^"]+)"', content)
+                        for u in set(found_img_urls):
+                            if u.startswith("/"):
+                                u = f"https://ministeriopublicoms.sharepoint.com{u}"
+                            clean_fn = unquote(u.split("/")[-1].split("?")[0])
+                            clean_fn = re.sub(r'[\\/*?:"<>|]', '_', clean_fn)
+                            if not clean_fn:
+                                clean_fn = f"img_{hashlib.md5(u.encode('utf-8')).hexdigest()[:12]}.jpg"
+                            dest = target_img_folder / clean_fn
+                            
+                            # Se já existe na raiz legada, copia para a subpasta
+                            root_legacy = IMAGE_FAQ_DIR / clean_fn
+                            if not dest.exists() and root_legacy.exists() and root_legacy.is_file():
+                                try:
+                                    shutil.copy2(root_legacy, dest)
+                                    sucessos_img += 1
+                                    continue
+                                except Exception:
+                                    pass
+
+                            if not dest.exists():
+                                try:
+                                    resp = requests.get(u, cookies=cookies, headers=headers, timeout=12)
+                                    if resp.status_code == 200 and len(resp.content) > 100:
+                                        with open(dest, "wb") as f_out:
+                                            f_out.write(resp.content)
+                                        sucessos_img += 1
+                                except Exception:
+                                    pass
+                            else:
+                                sucessos_img += 1
+
+                        # 2. Sincronização de Vídeos
+                        found_vid_urls = re.findall(r'data-videourl="([^"]+)"', content)
+                        for vu in set(found_vid_urls):
+                            if vu.startswith("/"):
+                                vu = f"https://ministeriopublicoms.sharepoint.com{vu}"
+                            clean_vfn = unquote(vu.split("/")[-1].split("?")[0])
+                            clean_vfn = re.sub(r'[\\/*?:"<>|]', '_', clean_vfn)
+                            if not clean_vfn:
+                                clean_vfn = f"vid_{hashlib.md5(vu.encode('utf-8')).hexdigest()[:12]}.mp4"
+                            dest_v = target_vid_folder / clean_vfn
+
+                            if not dest_v.exists():
+                                try:
+                                    resp_v = requests.get(vu, cookies=cookies, headers=headers, stream=True, timeout=35)
+                                    if resp_v.status_code == 200:
+                                        with open(dest_v, "wb") as f_out_v:
+                                            for chunk in resp_v.iter_content(chunk_size=65536):
+                                                if chunk:
+                                                    f_out_v.write(chunk)
+                                        if dest_v.exists() and dest_v.stat().st_size > 1000:
+                                            sucessos_vid += 1
+                                except Exception:
+                                    pass
+                            else:
+                                sucessos_vid += 1
+
+                    st.sidebar.success(f"🎉 Sincronização concluída: {sucessos_img} imagem(ns) e {sucessos_vid} vídeo(s) organizados por pasta!")
+                    time.sleep(1)
+                    st.rerun()
+
         if df_faqs.empty:
             st.info("Nenhum FAQ cadastrado no momento.")
         else:
@@ -421,12 +862,30 @@ def render_faq_page():
                 }
                 .faq-container img, .faq-container .sp-image {
                     display: block;
-                    margin: 20px auto;
+                    margin: 16px auto;
                     max-width: 100%;
                     height: auto;
                     border-radius: 8px;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
                     border: 1px solid #343541;
+                }
+                .faq-container .sp-img-card {
+                    margin: 20px auto;
+                    max-width: 100%;
+                    text-align: center;
+                }
+                .faq-container .sp-caption {
+                    margin-top: 6px;
+                    color: #94a3b8;
+                    font-size: 0.88rem;
+                    font-style: italic;
+                }
+                .faq-container .sp-fallback-msg {
+                    border-radius: 8px;
+                    background: rgba(255, 75, 75, 0.08);
+                    border: 1px dashed rgba(255, 75, 75, 0.4);
+                    padding: 12px;
+                    margin: 12px auto;
                 }
                 .faq-container ol, .faq-container ul {
                     padding-left: 1.5rem;
@@ -455,7 +914,7 @@ def render_faq_page():
                 st.markdown("---")
                 
                 if faq_item['conteudo'] and str(faq_item['conteudo']).strip():
-                    parsed_html = parse_sharepoint_content(faq_item['conteudo'])
+                    parsed_html = parse_sharepoint_content(faq_item['conteudo'], faq_slug=faq_item.get('titulo', 'Geral'))
                     st.markdown(f'<div class="faq-container">{parsed_html}</div>', unsafe_allow_html=True)
                 else:
                     st.info("O conteúdo detalhado deste FAQ ainda não foi sincronizado localmente.")
@@ -823,63 +1282,42 @@ def render_faq_page():
         if st.sidebar.button("📤 Enviar Imagens", width='stretch', help="Fazer upload de imagens para a galeria local."):
             modal_upload_imagem()
 
-        # Constrói pastas de imagens combinando catálogo do SharePoint e pastas locais
+        # Constrói pastas de imagens espelhando cada página do SharePoint com sua subpasta
         folders_dict = {}
+        local_by_folder = {}
+        for img in imagens_list:
+            cat = img['categoria']
+            local_by_folder.setdefault(cat, []).append(img)
 
-        # 1. Se tiver catálogo JSON de imagens do SharePoint
-        if catalog_imagens:
-            local_imgs_map = {img['nome_arquivo']: img for img in imagens_list}
-            for item in catalog_imagens:
-                cat = item.get("categoria", "Geral")
-                fname = item.get("nome_arquivo", "")
-                ftitle = item.get("titulo", "")
-                matched_local = local_imgs_map.get(fname)
-                caminho_local = matched_local['caminho'] if matched_local else None
-                tamanho_fmt = matched_local['tamanho'] if matched_local else format_file_size(item.get("tamanho_bytes", 0))
-
-                if cat not in folders_dict:
-                    folders_dict[cat] = []
-
-                folders_dict[cat].append({
-                    "titulo": ftitle,
-                    "nome_arquivo": fname,
-                    "categoria": cat,
-                    "caminho": caminho_local,
-                    "url": item.get("url", IMAGE_FAQ_URL),
-                    "tamanho": tamanho_fmt,
-                    "extensao": Path(fname).suffix.lower() if fname else ".png"
-                })
-        else:
-            for img in imagens_list:
-                cat = img['categoria']
-                if cat not in folders_dict:
-                    folders_dict[cat] = []
-                folders_dict[cat].append(img)
-
-        folders_list = [
-            {
-                "categoria": cat,
-                "imagens": sorted(imgs, key=lambda x: x["titulo"]),
-                "total": len(imgs),
-                "url": imgs[0].get("url", IMAGE_FAQ_URL) if imgs else IMAGE_FAQ_URL
-            }
-            for cat, imgs in folders_dict.items()
-        ]
-
-        if not folders_list and not df_faqs.empty:
+        folders_list = []
+        if not df_faqs.empty:
             for _, f_row in df_faqs.iterrows():
+                f_titulo = f_row['titulo']
+                f_slug = slugify_faq_title(f_titulo)
+                imgs = local_by_folder.get(f_slug, [])
                 folders_list.append({
+                    "titulo": f_titulo,
                     "categoria": f_row['tipo_faq'],
-                    "titulo": f_row['titulo'],
-                    "imagens": [],
-                    "total": 1,
+                    "slug": f_slug,
+                    "imagens": sorted(imgs, key=lambda x: x["titulo"]),
+                    "total": len(imgs),
                     "url": f_row['url']
                 })
+        else:
+            for cat, imgs in local_by_folder.items():
+                folders_list.append({
+                    "titulo": cat.replace("_", " "),
+                    "categoria": "Geral",
+                    "slug": cat,
+                    "imagens": sorted(imgs, key=lambda x: x["titulo"]),
+                    "total": len(imgs),
+                    "url": IMAGE_FAQ_URL
+                })
 
-        folders_list.sort(key=lambda x: x.get("categoria", "Geral"))
+        folders_list.sort(key=lambda x: (x.get("categoria", "Geral"), x.get("titulo", "")))
 
         categorias_img = ["Todas"] + sorted(list(set(f.get("categoria", "Geral") for f in folders_list)))
-        selected_cat_img = st.sidebar.selectbox("📂 Categoria / Pasta:", categorias_img, key="select_cat_img")
+        selected_cat_img = st.sidebar.selectbox("📂 Categoria / Grupo:", categorias_img, key="select_cat_img")
         items_per_page_img = render_items_per_page_selector("faq_img", options=[6, 12, 24, 50], default_index=1)
 
         col_h_img1, col_h_img2 = st.columns([3, 1])

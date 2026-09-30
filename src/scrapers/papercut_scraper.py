@@ -226,7 +226,7 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
     if df_printers is not None and not df_printers.empty:
         logger.info(f"Processando {len(df_printers)} linhas do DataFrame de Impressoras (PrinterList)...")
         for idx, row in df_printers.iterrows():
-            row_dict = row.to_dict()
+            row_dict = row.to_dict() if hasattr(row, "to_dict") else dict(row)
             
             nome = get_flexible_value(row_dict, ['impressora', 'printer name', 'nome da impressora', 'name', 'nome', 'printer'])
             servidor = get_flexible_value(row_dict, ['servidor', 'servidores', 'server', 'server name', 'host'])
@@ -262,7 +262,7 @@ def merge_and_normalize_papercut_data(df_printers: pd.DataFrame, df_devices: pd.
     if df_devices is not None and not df_devices.empty:
         logger.info(f"Processando {len(df_devices)} linhas do DataFrame de Dispositivos (DeviceList)...")
         for idx, row in df_devices.iterrows():
-            row_dict = row.to_dict()
+            row_dict = row.to_dict() if hasattr(row, "to_dict") else dict(row)
             
             nome = get_flexible_value(row_dict, ['nome do dispositivo', 'device name', 'dispositivo', 'device', 'name', 'nome'])
             servidor = get_flexible_value(row_dict, ['alojado em', 'servidor', 'server', 'host'])
