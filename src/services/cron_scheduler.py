@@ -42,7 +42,9 @@ def execute_task_by_id(task_id: str) -> str:
         "sync_oxe": "oxe_scraper.lock",
         "sync_papercut": "papercut_scraper.lock",
         "sync_plantoes_matutino": "automated_plantoes_sync.lock",
-        "sync_plantoes_semanal": "automated_plantoes_sync.lock"
+        "sync_plantoes_semanal": "automated_plantoes_sync.lock",
+        "sync_sharepoint_catalog": "sharepoint_catalog_sync.lock",
+        "sync_ad_catalog": "ad_sync.lock"
     }
 
     lock_file = None
@@ -129,6 +131,23 @@ def execute_task_by_id(task_id: str) -> str:
             from src.services.ics_export import update_published_ics_file
             path = update_published_ics_file()
             return f"Calendário ICS atualizado com sucesso em {path}."
+
+        elif task_id == "sync_sharepoint_catalog":
+            from src.syncs.sync_sharepoint_catalog import run_sharepoint_catalog_sync
+            res = run_sharepoint_catalog_sync()
+            if res.get("success"):
+                s = res.get("stats", {})
+                return f"Catálogo SharePoint sincronizado com sucesso: {s.get('faqs', 0)} artigos, {s.get('videos', 0)} vídeos, {s.get('imagens', 0)} imagens."
+            else:
+                raise RuntimeError(f"Falha na sincronização do catálogo: {res.get('error')}")
+
+        elif task_id == "sync_ad_catalog":
+            from src.syncs.sync_ad_catalog import run_ad_sync
+            res = run_ad_sync()
+            if res.get("success"):
+                return f"Active Directory sincronizado com sucesso: {res.get('total_ous', 0)} OUs, {res.get('total_users', 0)} usuários, {res.get('total_computers', 0)} computadores, {res.get('total_groups', 0)} grupos."
+            else:
+                raise RuntimeError(f"Falha na sincronização do Active Directory: {res.get('error')}")
 
         elif task_id == "orquestrador_chamados":
             import subprocess

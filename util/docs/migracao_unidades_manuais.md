@@ -1,6 +1,6 @@
 # 🏢 Migração de Cadastros Manuais de Prédios e Unidades
 
-Este documento detalha o processo de migração dos registros estáticos de prédios e unidades mapeados no código Python ([`src/manual_entries.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/manual_entries.py)) para a tabela relacional `unidades_manuais` no SQLite (`chamados.db`).
+Este documento detalha o processo de migração dos registros estáticos de prédios e unidades mapeados no código Python ([`src/manual_entries.py`](automated-OTRS-and-CitSmart/src/manual_entries.py)) para a tabela relacional `unidades_manuais` no SQLite (`chamados.db`).
 
 ---
 
@@ -16,7 +16,7 @@ A migração para a tabela `unidades_manuais`:
 
 ## 🚀 2. Como Executar a Migração (`migrate_manual_entries.py`)
 
-O script [`util/migracoes/migrate_manual_entries.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/migracoes/migrate_manual_entries.py) lê todos os registros de `manual_entries.py` e os insere/atualiza no banco SQLite.
+O script [`util/migracoes/migrate_manual_entries.py`](automated-OTRS-and-CitSmart/util/migracoes/migrate_manual_entries.py) lê todos os registros de `manual_entries.py` e os insere/atualiza no banco SQLite.
 
 ### Executar via Bash:
 ```bash

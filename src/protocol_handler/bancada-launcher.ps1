@@ -199,11 +199,84 @@ try {
         return
     }
 
-    if (-not $tool -or (-not $targetHost -and $tool -ne "sccm_sync")) {
+    if (-not $tool -or (-not $targetHost -and $tool -ne "sccm_sync" -and $tool -ne "vlc" -and $tool -ne "player")) {
         Write-Host ""
         Write-Host " [ERRO] Parâmetros insuficientes na chamada:" -ForegroundColor Red
         Write-Host "        tool='$tool', host='$targetHost'" -ForegroundColor Red
         Write-Host "        URL original: $UriString" -ForegroundColor Yellow
+        return
+    }
+
+    # Ferramenta para reprodução de vídeos tutoriais locais (VLC / Windows Media Player)
+    if ($tool -eq "vlc" -or $tool -eq "player") {
+        $rawTarget = if ($params['target']) { $params['target'] } elseif ($params['file']) { $params['file'] } else { $params['path'] }
+        if (-not $rawTarget) {
+            Write-Host " [ERRO] Nenhum arquivo de vídeo especificado no parâmetro 'target'." -ForegroundColor Red
+            return
+        }
+
+        Write-Host " [INFO] Solicitada reprodução de vídeo:" -ForegroundColor Cyan
+        Write-Host "        Alvo recebido: $rawTarget" -ForegroundColor Gray
+
+        # Traduz caminho caso tenha vindo do container Docker (/app/...)
+        $targetVideo = $rawTarget
+        if ($targetVideo.StartsWith("/app/")) {
+            $relPath = $targetVideo.Substring(5).Replace('/', '\')
+            $wslCandidates = @(
+                "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
+                "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
+                "\\wsl.localhost\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
+                "\\wsl$\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
+                "\\wsl.localhost\Ubuntu-24.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
+                "\\wsl$\Ubuntu-24.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
+                "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\$relPath",
+                "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\$relPath"
+            )
+            $resolved = $false
+            foreach ($cand in $wslCandidates) {
+                if (Test-Path $cand) {
+                    $targetVideo = $cand
+                    $resolved = $true
+                    break
+                }
+            }
+            if (-not $resolved) {
+                # Se não conseguiu testar de imediato (ex: WSL acordando), usa o primeiro candidato padrão
+                $targetVideo = $wslCandidates[0]
+            }
+        }
+
+        Write-Host " [INFO] Caminho resolvido para o Windows: $targetVideo" -ForegroundColor Gray
+
+        # Procura o executável do VLC Media Player
+        $vlcExe = $null
+        $vlcCandidates = @(
+            "C:\Program Files\VideoLAN\VLC\vlc.exe",
+            "C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+            (Join-Path $env:ProgramFiles "VideoLAN\VLC\vlc.exe"),
+            (Join-Path ${env:ProgramFiles(x86)} "VideoLAN\VLC\vlc.exe"),
+            (Join-Path $env:LOCALAPPDATA "Programs\VideoLAN\VLC\vlc.exe")
+        )
+        foreach ($vPath in $vlcCandidates) {
+            if ($vPath -and (Test-Path $vPath)) {
+                $vlcExe = $vPath
+                break
+            }
+        }
+        if (-not $vlcExe) {
+            $cmdVlc = Get-Command "vlc.exe" -ErrorAction SilentlyContinue
+            if ($cmdVlc) { $vlcExe = $cmdVlc.Source }
+        }
+
+        if ($vlcExe) {
+            Write-Host " [INFO] Abrindo no VLC Media Player ($vlcExe)..." -ForegroundColor Green
+            Start-Process -FilePath $vlcExe -ArgumentList "`"$targetVideo`""
+            Write-Host " [OK] Vídeo enviado ao VLC com sucesso!" -ForegroundColor Green
+        } else {
+            Write-Host " [AVISO] VLC não encontrado nas pastas padrão. Abrindo no Player padrão do Windows..." -ForegroundColor Yellow
+            Start-Process -FilePath $targetVideo
+            Write-Host " [OK] Vídeo iniciado no player do sistema com sucesso!" -ForegroundColor Green
+        }
         return
     }
 

@@ -29,13 +29,40 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.status_banner import render_log_expander
+from src.syncs.sync_sharepoint_catalog import (
+    check_sharepoint_catalog_sync_running,
+    read_sharepoint_catalog_last_log_lines
+)
 
 logger = setup_logging(DEBUG_DIR_FAQ / "faq.log", "faq")
 
 
-from urllib.parse import unquote
+from urllib.parse import unquote, quote
 
 SHAREPOINT_COOKIES_FILE = Path(__file__).resolve().parent.parent.parent / "uploads" / "faq" / "sharepoint_cookies.json"
+
+
+def normalize_sharepoint_url(url: str) -> str:
+    """Garante que a URL do SharePoint esteja absoluta e com caracteres especiais/espaços codificados."""
+    if not url or not isinstance(url, str):
+        return ""
+    u = url.strip()
+    if u.startswith("/"):
+        u = f"https://ministeriopublicoms.sharepoint.com{u}"
+    # Se já tem protocolo http/https, codifica cada segmento após o domínio preservando barras
+    if "://" in u:
+        scheme, rest = u.split("://", 1)
+        if "/" in rest:
+            domain, path = rest.split("/", 1)
+            # Separa query string se houver
+            query = ""
+            if "?" in path:
+                path, query = path.split("?", 1)
+                query = "?" + query
+            path_segments = [quote(unquote(seg)) for seg in path.split("/")]
+            return f"{scheme}://{domain}/{'/'.join(path_segments)}{query}"
+    return u
 
 
 def get_sharepoint_cookies() -> dict:
@@ -115,6 +142,158 @@ def slugify_faq_title(title: str) -> str:
     slug = re.sub(r'[-\s]+', '_', text)
     return slug if slug else "Geral"
 
+def sync_sharepoint_catalog_via_api() -> dict:
+    """
+    Sincroniza o catálogo completo diretamente da API REST do SharePoint Online:
+    1. 'Site Pages' (artigos e tutoriais HTML) -> tabela faqs
+    2. 'Vídeos FAQ' (vídeos mp4/mov por pasta) -> tabela faq_videos
+    3. 'Imagens FAQ' (imagens jpg/png recursivas) -> tabela faq_imagens
+    Preserva o SQLite local atualizado sem depender de arquivos JSON estáticos.
+    """
+    cookies = get_sharepoint_cookies()
+    if not cookies:
+        return {"success": False, "error": "Cookies de autenticação do SharePoint não encontrados."}
+
+    headers = {
+        "Accept": "application/json;odata=verbose",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
+    }
+
+    db_path = Path(__file__).parent.parent.parent / "chamados.db"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    stats = {"faqs": 0, "videos": 0, "imagens": 0}
+
+    try:
+        # -------------------------------------------------------------
+        # 1. Sincroniza ARTIGOS (Site Pages)
+        # -------------------------------------------------------------
+        p_url = "https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/lists/getbytitle('Site Pages')/items?$select=Id,Title,FileRef,CanvasContent1,BannerImageUrl,Modified&$top=200"
+        resp_p = requests.get(p_url, cookies=cookies, headers=headers, timeout=20)
+        if resp_p.status_code == 200:
+            p_items = resp_p.json().get('d', {}).get('results', [])
+            for item in p_items:
+                ref = item.get('FileRef', '')
+                title = item.get('Title') or Path(ref).stem
+                # Ignora homepages padrão de sites de equipe
+                if not ref.endswith('.aspx') or ref.endswith('CollabHome.aspx') or ref.endswith('Home.aspx'):
+                    continue
+
+                full_url = f"https://ministeriopublicoms.sharepoint.com{ref}"
+                canvas = item.get('CanvasContent1') or ""
+                tipo_faq = "Tutoriais SharePoint"
+
+                cursor.execute("""
+                    INSERT INTO faqs (titulo, tipo_faq, url, conteudo, data_atualizacao)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(url) DO UPDATE SET
+                        titulo = excluded.titulo,
+                        tipo_faq = excluded.tipo_faq,
+                        conteudo = CASE WHEN excluded.conteudo != '' THEN excluded.conteudo ELSE faqs.conteudo END,
+                        data_atualizacao = CURRENT_TIMESTAMP
+                """, (title, tipo_faq, full_url, canvas))
+                stats["faqs"] += 1
+            conn.commit()
+
+        # -------------------------------------------------------------
+        # 2. Sincroniza VÍDEOS FAQ (Pastas e Arquivos)
+        # -------------------------------------------------------------
+        v_base = "https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('/sites/dit-manutencao/Shared Documents/Tutoriais-FAQs/Vídeos FAQ')"
+        resp_vf = requests.get(f"{v_base}/Folders", cookies=cookies, headers=headers, timeout=15)
+        if resp_vf.status_code == 200:
+            v_folders = resp_vf.json().get('d', {}).get('results', [])
+            for vf in v_folders:
+                v_cat = vf.get('Name')
+                if not v_cat or v_cat in ['Forms']:
+                    continue
+                vf_rel = vf.get('ServerRelativeUrl')
+                resp_vfiles = requests.get(
+                    f"https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('{vf_rel}')/Files",
+                    cookies=cookies, headers=headers, timeout=15
+                )
+                if resp_vfiles.status_code == 200:
+                    v_files = resp_vfiles.json().get('d', {}).get('results', [])
+                    for file_obj in v_files:
+                        fn = file_obj.get('Name', '')
+                        if not any(fn.lower().endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.avi']):
+                            continue
+                        f_rel = file_obj.get('ServerRelativeUrl', '')
+                        full_v_url = f"https://ministeriopublicoms.sharepoint.com{f_rel}"
+                        f_len = int(file_obj.get('Length', 0) or 0)
+                        f_title = Path(fn).stem
+
+                        cursor.execute("""
+                            INSERT INTO faq_videos (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes, data_atualizacao)
+                            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                            ON CONFLICT(url) DO UPDATE SET
+                                titulo = excluded.titulo,
+                                categoria = excluded.categoria,
+                                nome_arquivo = excluded.nome_arquivo,
+                                tamanho_bytes = excluded.tamanho_bytes,
+                                data_atualizacao = CURRENT_TIMESTAMP
+                        """, (f_title, v_cat, fn, full_v_url, f_rel, f_len))
+                        stats["videos"] += 1
+            conn.commit()
+
+        # -------------------------------------------------------------
+        # 3. Sincroniza IMAGENS FAQ (Pastas e Subpastas Recursivas)
+        # -------------------------------------------------------------
+        img_base = "https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('/sites/dit-manutencao/Shared Documents/Tutoriais-FAQs/Imagens FAQ')"
+
+        def harvest_images_folder(folder_rel_url: str, current_category: str = ""):
+            r_sub = requests.get(
+                f"https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('{folder_rel_url}')/Files",
+                cookies=cookies, headers=headers, timeout=15
+            )
+            if r_sub.status_code == 200:
+                for ifile in r_sub.json().get('d', {}).get('results', []):
+                    ifn = ifile.get('Name', '')
+                    if not any(ifn.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']):
+                        continue
+                    i_rel = ifile.get('ServerRelativeUrl', '')
+                    full_i_url = f"https://ministeriopublicoms.sharepoint.com{i_rel}"
+                    i_len = int(ifile.get('Length', 0) or 0)
+                    i_title = Path(ifn).stem
+
+                    cursor.execute("""
+                        INSERT INTO faq_imagens (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes, data_atualizacao)
+                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(url) DO UPDATE SET
+                            titulo = excluded.titulo,
+                            categoria = excluded.categoria,
+                            nome_arquivo = excluded.nome_arquivo,
+                            tamanho_bytes = excluded.tamanho_bytes,
+                            data_atualizacao = CURRENT_TIMESTAMP
+                    """, (i_title, current_category or "Geral", ifn, full_i_url, i_rel, i_len))
+                    stats["imagens"] += 1
+
+            # Subpastas
+            r_fold = requests.get(
+                f"https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('{folder_rel_url}')/Folders",
+                cookies=cookies, headers=headers, timeout=15
+            )
+            if r_fold.status_code == 200:
+                for subf in r_fold.json().get('d', {}).get('results', []):
+                    s_name = subf.get('Name')
+                    if not s_name or s_name in ['Forms']:
+                        continue
+                    sub_rel = subf.get('ServerRelativeUrl')
+                    sub_cat = f"{current_category} > {s_name}" if current_category else s_name
+                    harvest_images_folder(sub_rel, sub_cat)
+
+        harvest_images_folder("/sites/dit-manutencao/Shared Documents/Tutoriais-FAQs/Imagens FAQ", "")
+        conn.commit()
+
+        logger.info(f"✨ Sincronização SharePoint API concluída com sucesso: {stats}")
+        return {"success": True, "stats": stats}
+
+    except Exception as e:
+        logger.error(f"Erro na sincronização SharePoint API: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
 
 def ensure_sharepoint_image_cached(img_url: str, faq_slug: str = "Geral") -> str:
     """
@@ -126,8 +305,7 @@ def ensure_sharepoint_image_cached(img_url: str, faq_slug: str = "Geral") -> str
     if not img_url:
         return ""
 
-    if img_url.startswith("/"):
-        img_url = f"https://ministeriopublicoms.sharepoint.com{img_url}"
+    img_url = normalize_sharepoint_url(img_url)
 
     clean_filename = unquote(img_url.split("/")[-1].split("?")[0])
     clean_filename = re.sub(r'[\\/*?:"<>|]', '_', clean_filename)
@@ -184,8 +362,7 @@ def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> s
     if not video_url:
         return ""
 
-    if video_url.startswith("/"):
-        video_url = f"https://ministeriopublicoms.sharepoint.com{video_url}"
+    video_url = normalize_sharepoint_url(video_url)
 
     clean_filename = unquote(video_url.split("/")[-1].split("?")[0])
     clean_filename = re.sub(r'[\\/*?:"<>|]', '_', clean_filename)
@@ -198,7 +375,7 @@ def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> s
 
     # Verifica se o arquivo já existe no destino
     if dest_file.exists() and dest_file.stat().st_size > 1000:
-        return get_video_as_base64(dest_file)
+        return get_video_as_base64(dest_file), dest_file
 
     # Verifica se já existe em outra subpasta do VIDEO_FAQ_DIR
     if VIDEO_FAQ_DIR.exists():
@@ -208,9 +385,9 @@ def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> s
                     folder_dir.mkdir(parents=True, exist_ok=True)
                     if existing != dest_file:
                         shutil.copy2(existing, dest_file)
-                    return get_video_as_base64(dest_file)
+                    return get_video_as_base64(dest_file), dest_file
                 except Exception:
-                    return get_video_as_base64(existing)
+                    return get_video_as_base64(existing), existing
 
     # Tenta baixar com cookies para a subpasta do tutorial
     cookies = get_sharepoint_cookies()
@@ -229,20 +406,20 @@ def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> s
                             f_out.write(chunk)
                 if dest_file.exists() and dest_file.stat().st_size > 1000:
                     logger.info(f"✅ Vídeo FAQ baixado em '{slug}/{clean_filename}'")
-                    return get_video_as_base64(dest_file)
+                    return get_video_as_base64(dest_file), dest_file
         except Exception as e:
             logger.error(f"Erro ao baixar vídeo {video_url}: {e}")
 
-    return ""
+    return "", None
 
 
 def get_video_as_base64(file_path: Path) -> str:
-    """Codifica o arquivo de vídeo local em base64 Data URI."""
+    """Codifica o arquivo de vídeo local em base64 Data URI se for leve (até 75MB)."""
     try:
         if not file_path.exists():
             return ""
-        # Limite de segurança de 80MB para base64 direto
-        if file_path.stat().st_size > 80 * 1024 * 1024:
+        # Limite ideal para reprodução no navegador sem travar ou sobrecarregar memória DOM
+        if file_path.stat().st_size > 75 * 1024 * 1024:
             return ""
         with open(file_path, "rb") as f:
             encoded = base64.b64encode(f.read()).decode("utf-8")
@@ -275,9 +452,19 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
 
     soup = BeautifulSoup(html_str, "html.parser")
 
-    # 2. Remoção de Ícones Quebrados (tags <i>)
-    for tag in soup.find_all("i"):
-        tag.decompose()
+    # 2. Remoção de Ícones Quebrados (tags <i>) e avatares/placeholders irrelevantes
+    for tag in soup.find_all(["i", "span"]):
+        if tag.name == "i" or "ms-Icon" in tag.get("class", []):
+            tag.decompose()
+
+    for img in list(soup.find_all("img")):
+        src = img.get("src") or img.get("data-sp-originalimgsrc") or ""
+        if "userphoto.jpg" in src or "fabric-cdn-prod" in src or img.get("data-automation-id") == "lowQualityImagePlaceholder":
+            # Remove o container do avatar do autor se for imagem pequena
+            parent = img.parent
+            img.decompose()
+            if parent and parent.name in ["div", "span", "figure"] and not parent.get_text(strip=True) and not parent.find_all(["img", "video"]):
+                parent.decompose()
 
     # 3. Processamento de Imagens (<div class="imagePlugin" data-imageurl="...">)
     image_divs = soup.find_all("div", class_="imagePlugin")
@@ -285,8 +472,7 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
         img_url = div.get("data-imageurl")
         caption = (div.get("data-captiontext") or "").strip()
         if img_url:
-            if img_url.startswith("/"):
-                img_url = f"https://ministeriopublicoms.sharepoint.com{img_url}"
+            img_url = normalize_sharepoint_url(img_url)
 
             # Tenta obter a imagem em base64 salva localmente na subpasta do tutorial
             base64_src = ensure_sharepoint_image_cached(img_url, faq_slug=faq_slug)
@@ -320,12 +506,11 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
     # 3b. Processamento de tags <img> nativas remanescentes
     for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-sp-originalimgsrc") or ""
-        if not src or img.get("data-automation-id") == "lowQualityImagePlaceholder":
+        if not src:
             img.decompose()
             continue
 
-        if src.startswith("/"):
-            src = f"https://ministeriopublicoms.sharepoint.com{src}"
+        src = normalize_sharepoint_url(src)
 
         if "sharepoint.com" in src:
             base64_src = ensure_sharepoint_image_cached(src, faq_slug=faq_slug)
@@ -360,7 +545,7 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
         v_url = v_embed.get("data-videourl") or ""
         v_title = v_embed.get("data-videotitle") or "Vídeo Tutorial"
         if v_url:
-            cached_src = ensure_sharepoint_video_cached(v_url, faq_slug=faq_slug)
+            cached_src, local_file = ensure_sharepoint_video_cached(v_url, faq_slug=faq_slug)
             if cached_src:
                 v_html = f'''
                 <div class="sp-video-card" style="margin: 24px auto; max-width: 95%; text-align: center;">
@@ -371,6 +556,28 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
                 </div>
                 '''
                 v_embed.replace_with(BeautifulSoup(v_html, "html.parser"))
+            elif local_file and local_file.exists():
+                file_size_fmt = format_file_size(local_file.stat().st_size)
+                clean_name = local_file.name
+                card_v = f'''
+                <div class="sp-img-card" style="margin: 20px auto; max-width: 720px; background: #1e1f29; border: 1px solid #3b3c4a; border-radius: 10px; padding: 18px 22px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+                    <div style="font-size: 1.05rem; font-weight: 600; color: #f8f9fa; margin-bottom: 6px;">
+                        🎬 {v_title}
+                    </div>
+                    <div style="font-size: 0.88rem; color: #94a3b8; margin-bottom: 12px;">
+                        Vídeo em alta definição disponível localmente ({file_size_fmt}) e na intranet:
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <a href="bancada://run?tool=vlc&target={local_file}" style="display: inline-block; background-color: #3b82f6; color: white; text-decoration: none; font-weight: bold; font-size: 0.9rem; padding: 10px 18px; border-radius: 6px; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);">
+                            ▶️ Abrir no Player VLC / Sistema
+                        </a>
+                        <a href="{v_url}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; font-size: 0.9rem; padding: 10px 18px; border-radius: 6px; box-shadow: 0 2px 8px rgba(255, 75, 75, 0.4);">
+                            🔗 Assistir no SharePoint Stream ↗
+                        </a>
+                    </div>
+                </div>
+                '''
+                v_embed.replace_with(BeautifulSoup(card_v, "html.parser"))
             else:
                 card_v = f'''
                 <div class="sp-img-card" style="margin: 20px auto; max-width: 720px; background: #1e1f29; border: 1px solid #3b3c4a; border-radius: 10px; padding: 18px 22px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
@@ -423,7 +630,7 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
                 if str(file_url).startswith("/"):
                     file_url = f"https://ministeriopublicoms.sharepoint.com{file_url}"
                 
-                cached_src = ensure_sharepoint_video_cached(file_url, faq_slug=faq_slug)
+                cached_src, local_file = ensure_sharepoint_video_cached(file_url, faq_slug=faq_slug)
                 if cached_src:
                     v_html = f'''
                     <div class="sp-video-card" style="margin: 24px auto; max-width: 95%; text-align: center;">
@@ -434,6 +641,27 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
                     </div>
                     '''
                     div.replace_with(BeautifulSoup(v_html, "html.parser"))
+                elif local_file and local_file.exists():
+                    file_size_fmt = format_file_size(local_file.stat().st_size)
+                    card_v = f'''
+                    <div class="sp-img-card" style="margin: 20px auto; max-width: 720px; background: #1e1f29; border: 1px solid #3b3c4a; border-radius: 10px; padding: 18px 22px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+                        <div style="font-size: 1.05rem; font-weight: 600; color: #f8f9fa; margin-bottom: 6px;">
+                            🎬 {v_title}
+                        </div>
+                        <div style="font-size: 0.88rem; color: #94a3b8; margin-bottom: 12px;">
+                            Vídeo em alta definição disponível localmente ({file_size_fmt}) e na intranet:
+                        </div>
+                        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                            <a href="bancada://run?tool=vlc&target={local_file}" style="display: inline-block; background-color: #3b82f6; color: white; text-decoration: none; font-weight: bold; font-size: 0.9rem; padding: 10px 18px; border-radius: 6px; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);">
+                                ▶️ Abrir no Player VLC / Sistema
+                            </a>
+                            <a href="{file_url}" target="_blank" style="display: inline-block; background-color: #ff4b4b; color: white; text-decoration: none; font-weight: bold; font-size: 0.9rem; padding: 10px 18px; border-radius: 6px; box-shadow: 0 2px 8px rgba(255, 75, 75, 0.4);">
+                                🔗 Assistir no SharePoint Stream ↗
+                            </a>
+                        </div>
+                    </div>
+                    '''
+                    div.replace_with(BeautifulSoup(card_v, "html.parser"))
                 else:
                     new_video = soup.new_tag(
                         "video",
@@ -721,6 +949,29 @@ def render_faq_page():
     videos_list = scan_video_faqs(VIDEO_FAQ_DIR)
     imagens_list = scan_image_faqs(IMAGE_FAQ_DIR)
 
+    # Controle de processo em segundo plano (Sincronização SharePoint)
+    sp_sync_ativo = check_sharepoint_catalog_sync_running()
+
+    if "was_sp_syncing" not in st.session_state:
+        st.session_state["was_sp_syncing"] = False
+
+    if st.session_state["was_sp_syncing"] and not sp_sync_ativo:
+        st.session_state["was_sp_syncing"] = False
+        st.cache_data.clear()
+        st.toast("🎉 Sincronização do catálogo SharePoint concluída com sucesso!", icon="✅")
+        st.rerun()
+
+    if sp_sync_ativo:
+        st.session_state["was_sp_syncing"] = True
+
+    render_log_expander(
+        "🤖 Sincronização de Catálogo SharePoint em Segundo Plano",
+        sp_sync_ativo,
+        read_sharepoint_catalog_last_log_lines,
+        check_sharepoint_catalog_sync_running,
+        "O worker está consultando a API REST do SharePoint Online (Artigos, Vídeos e Imagens) em segundo plano. O painel permanece totalmente livre para uso!"
+    )
+
     # Navegação superior estilo Abas com suporte a query parameter (?subtab=slug)
     FAQ_SUBTAB_MAP = {
         "sharepoint": "📚 FAQs & Tutoriais (SharePoint)",
@@ -733,8 +984,6 @@ def render_faq_page():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-
-
     # Roteamento dinâmico das Abas com Filtros Específicos na Sidebar
     if active_tab == "📚 FAQs & Tutoriais (SharePoint)":
         st.sidebar.markdown("## 🔍 Filtros do FAQ")
@@ -745,6 +994,17 @@ def render_faq_page():
         items_per_page_faq = render_items_per_page_selector("faq_sp", options=[6, 10, 20, 50], default_index=1)
 
         st.sidebar.markdown("---")
+        st.sidebar.markdown("## 🌐 SharePoint Online")
+        if sp_sync_ativo:
+            st.sidebar.button("🤖 Sincronizando Catálogo...", width='stretch', disabled=True)
+        else:
+            if st.sidebar.button("🔄 Sincronizar Catálogo do SharePoint", width="stretch", help="Consulta as APIs REST do SharePoint Online em segundo plano e atualiza os artigos, vídeos e imagens sem bloquear a página."):
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/syncs/sync_sharepoint_catalog.py"], **popen_kwargs)
+                time.sleep(0.8)
+                st.toast("🚀 Sincronização do catálogo iniciada em segundo plano!", icon="🤖")
+                st.rerun()
+
         st.sidebar.markdown("---")
         st.sidebar.markdown("## 📥 Mídia Offline")
         if st.sidebar.button("🔄 Sincronizar Mídias dos FAQs", width="stretch", help="Baixa e atualiza as imagens e vídeos de todos os FAQs do SharePoint usando os cookies da sua sessão ativa, organizados por pasta de cada tutorial."):
@@ -771,11 +1031,26 @@ def render_faq_page():
                         target_img_folder.mkdir(parents=True, exist_ok=True)
                         target_vid_folder.mkdir(parents=True, exist_ok=True)
                         
-                        # 1. Sincronização de Imagens
-                        found_img_urls = re.findall(r'data-imageurl="([^"]+)"', content) + re.findall(r'src="([^"]+sharepoint\.com[^"]+)"', content)
-                        for u in set(found_img_urls):
-                            if u.startswith("/"):
-                                u = f"https://ministeriopublicoms.sharepoint.com{u}"
+                        # 1. Sincronização de Imagens (via BeautifulSoup para cobrir tags nativas e plugins)
+                        soup_sync = BeautifulSoup(content, "html.parser") if BeautifulSoup else None
+                        
+                        img_candidates = []
+                        if soup_sync:
+                            for div in soup_sync.find_all("div", class_="imagePlugin"):
+                                u = div.get("data-imageurl")
+                                if u:
+                                    img_candidates.append(u)
+                            for img in soup_sync.find_all("img"):
+                                src = img.get("src") or img.get("data-sp-originalimgsrc")
+                                if src and "userphoto.jpg" not in src and "fabric-cdn-prod" not in src and img.get("data-automation-id") != "lowQualityImagePlaceholder":
+                                    img_candidates.append(src)
+                        else:
+                            img_candidates = re.findall(r'data-imageurl="([^"]+)"', content) + re.findall(r'src="([^"]+sharepoint\.com[^"]+)"', content)
+
+                        for u in set(img_candidates):
+                            u = normalize_sharepoint_url(u)
+                            if not u:
+                                continue
                             clean_fn = unquote(u.split("/")[-1].split("?")[0])
                             clean_fn = re.sub(r'[\\/*?:"<>|]', '_', clean_fn)
                             if not clean_fn:
@@ -784,7 +1059,7 @@ def render_faq_page():
                             
                             # Se já existe na raiz legada, copia para a subpasta
                             root_legacy = IMAGE_FAQ_DIR / clean_fn
-                            if not dest.exists() and root_legacy.exists() and root_legacy.is_file():
+                            if not dest.exists() and root_legacy.exists() and root_legacy.is_file() and root_legacy.stat().st_size > 0:
                                 try:
                                     shutil.copy2(root_legacy, dest)
                                     sucessos_img += 1
@@ -792,7 +1067,7 @@ def render_faq_page():
                                 except Exception:
                                     pass
 
-                            if not dest.exists():
+                            if not dest.exists() or dest.stat().st_size == 0:
                                 try:
                                     resp = requests.get(u, cookies=cookies, headers=headers, timeout=12)
                                     if resp.status_code == 200 and len(resp.content) > 100:
@@ -804,18 +1079,51 @@ def render_faq_page():
                             else:
                                 sucessos_img += 1
 
-                        # 2. Sincronização de Vídeos
-                        found_vid_urls = re.findall(r'data-videourl="([^"]+)"', content)
-                        for vu in set(found_vid_urls):
-                            if vu.startswith("/"):
-                                vu = f"https://ministeriopublicoms.sharepoint.com{vu}"
+                        # 2. Sincronização de Vídeos (sp-video-embed e controldata)
+                        vid_candidates = []
+                        if soup_sync:
+                            for v_emb in soup_sync.find_all("div", class_="sp-video-embed"):
+                                vu = v_emb.get("data-videourl")
+                                if vu:
+                                    vid_candidates.append(vu)
+                            # Extrai também de controldata cru se houver
+                            for div in soup_sync.find_all(lambda t: t.name == "div" and any(k.endswith("controldata") for k in t.attrs)):
+                                for k, val in div.attrs.items():
+                                    if k.endswith("controldata"):
+                                        try:
+                                            c_obj = json.loads(val)
+                                            props = c_obj.get("properties", {})
+                                            if isinstance(props, dict):
+                                                furl = props.get("file") or props.get("serverRelativeUrl") or props.get("url")
+                                                if furl and any(str(furl).lower().endswith(ext) for ext in [".mp4", ".mov", ".webm", ".avi"]):
+                                                    vid_candidates.append(furl)
+                                        except Exception:
+                                            pass
+                        else:
+                            vid_candidates = re.findall(r'data-videourl="([^"]+)"', content)
+
+                        for vu in set(vid_candidates):
+                            vu = normalize_sharepoint_url(vu)
+                            if not vu:
+                                continue
                             clean_vfn = unquote(vu.split("/")[-1].split("?")[0])
                             clean_vfn = re.sub(r'[\\/*?:"<>|]', '_', clean_vfn)
                             if not clean_vfn:
                                 clean_vfn = f"vid_{hashlib.md5(vu.encode('utf-8')).hexdigest()[:12]}.mp4"
                             dest_v = target_vid_folder / clean_vfn
 
-                            if not dest_v.exists():
+                            # Verifica se já existe em qualquer subpasta de vídeo
+                            if not dest_v.exists() and VIDEO_FAQ_DIR.exists():
+                                for existing in VIDEO_FAQ_DIR.rglob(clean_vfn):
+                                    if existing.is_file() and existing.stat().st_size > 1000:
+                                        try:
+                                            if existing != dest_v:
+                                                shutil.copy2(existing, dest_v)
+                                            break
+                                        except Exception:
+                                            pass
+
+                            if not dest_v.exists() or dest_v.stat().st_size < 1000:
                                 try:
                                     resp_v = requests.get(vu, cookies=cookies, headers=headers, stream=True, timeout=35)
                                     if resp_v.status_code == 200:
@@ -1026,123 +1334,69 @@ def render_faq_page():
             c_left, c_main, c_right = st.columns([0.1, 3.8, 0.1])
             with c_main:
                 caminho = video_item.get('caminho')
+                target_sp_video = video_item.get('url') or VIDEO_FAQ_URL
                 video_rendered = False
                 
-                # 1. Se já existe o arquivo local em cache/upload/OneDrive
+                # 1. Se já existe o arquivo local em disco
                 if caminho and Path(caminho).exists():
-                    try:
-                        ext = video_item.get('extensao', '.mp4').lower().replace('.', '')
-                        mime_map = {
-                            'mp4': 'video/mp4',
-                            'webm': 'video/webm',
-                            'mov': 'video/mp4',
-                            'mkv': 'video/mp4',
-                            'avi': 'video/x-msvideo',
-                            'wmv': 'video/x-ms-wmv'
-                        }
-                        mime_type = mime_map.get(ext, 'video/mp4')
-                        with open(caminho, 'rb') as f:
-                            video_bytes = f.read()
-                        st.video(video_bytes, format=mime_type)
-                        video_rendered = True
-                    except Exception as e_vid:
+                    file_p = Path(caminho)
+                    file_size = file_p.stat().st_size
+                    # Se for até 75MB, reproduz diretamente no navegador via base64 / st.video
+                    if file_size <= 75 * 1024 * 1024:
                         try:
-                            st.video(str(caminho), format="video/mp4")
+                            ext = video_item.get('extensao', '.mp4').lower().replace('.', '')
+                            mime_map = {
+                                'mp4': 'video/mp4',
+                                'webm': 'video/webm',
+                                'mov': 'video/mp4',
+                                'mkv': 'video/mp4',
+                                'avi': 'video/x-msvideo',
+                                'wmv': 'video/x-ms-wmv'
+                            }
+                            mime_type = mime_map.get(ext, 'video/mp4')
+                            with open(file_p, 'rb') as f:
+                                video_bytes = f.read()
+                            st.video(video_bytes, format=mime_type)
                             video_rendered = True
-                        except Exception as e_fb:
-                            st.error(f"Erro ao reproduzir arquivo local: {e_fb}")
+                        except Exception as e_vid:
+                            try:
+                                st.video(str(file_p), format="video/mp4")
+                                video_rendered = True
+                            except Exception as e_fb:
+                                st.error(f"Erro ao reproduzir arquivo local: {e_fb}")
+                    else:
+                        # Vídeo grande (>75MB): exibe aviso e botão direto bancada:// para VLC para não estourar memória do navegador
+                        st.info(f"💡 Este tutorial é um vídeo em alta definição ({format_file_size(file_size)}). Para evitar lentidão no navegador, assista-o diretamente pelo player VLC:")
+                        c_bancada_play = f'''
+                        <div style="margin: 18px auto; text-align: center;">
+                            <a href="bancada://run?tool=vlc&target={file_p}" style="display: inline-block; background-color: #3b82f6; color: white; text-decoration: none; font-weight: bold; font-size: 1.05rem; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);">
+                                ▶️ Abrir no Player VLC Local (Windows)
+                            </a>
+                        </div>
+                        '''
+                        st.markdown(c_bancada_play, unsafe_allow_html=True)
+                        video_rendered = True
 
                 # 2. Se for link em nuvem do SharePoint e ainda não tiver arquivo local
                 if not video_rendered:
-                    st.info("💡 Este vídeo está na nuvem corporativa do SharePoint Online. Clique no botão abaixo para autenticar, baixar para o sistema e reproduzir diretamente no player:")
-                    
-                    target_sp_video = video_item.get('url') or VIDEO_FAQ_URL
+                    st.info("💡 Este vídeo está na nuvem corporativa do SharePoint Online. Clique no botão abaixo para baixar usando seus cookies corporativos ou assista no SharePoint Stream:")
                     
                     c_dl1, c_dl2 = st.columns([2, 1])
                     with c_dl1:
-                        if st.button("📥 Baixar & Assistir no Sistema", type="primary", key=f"btn_dl_play_{hash(video_item.get('titulo'))}", width='stretch', help="Faz o download autenticado do vídeo para o servidor e reproduz nativamente no sistema."):
-                            with st.spinner("Autenticando no SharePoint corporativo e baixando o vídeo para o player..."):
+                        if st.button("📥 Baixar Vídeo para o Sistema", type="primary", key=f"btn_dl_play_{hash(video_item.get('titulo'))}", width='stretch', help="Faz o download autenticado do vídeo para o servidor usando a sessão ativa."):
+                            with st.spinner("Baixando vídeo tutorial com cookies corporativos autenticados..."):
                                 try:
-                                    dest_dir = VIDEO_FAQ_DIR / video_item.get('categoria', 'Geral')
-                                    dest_dir.mkdir(parents=True, exist_ok=True)
-                                    dest_file = dest_dir / video_item.get('nome_arquivo', f"{video_item.get('titulo')}.mp4")
-                                    
-                                    # 1. Tentativa via HTTP direto
-                                    headers = {
-                                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                                    }
-                                    dl_url = target_sp_video + ("&download=1" if "?e=" in target_sp_video else "?download=1")
-                                    resp = requests.get(dl_url, headers=headers, timeout=20, allow_redirects=True)
-                                    
-                                    download_success = False
-                                    if resp.status_code == 200 and len(resp.content) > 100000 and not resp.content.startswith(b'<!DOCTYPE') and not resp.content.startswith(b'<html'):
-                                        with open(dest_file, "wb") as f_out:
-                                            f_out.write(resp.content)
-                                        download_success = True
-                                    
-                                    # 2. Se necessitar de autenticação institucional, usa Selenium com as credenciais corporativas
-                                    if not download_success:
-                                        driver = get_chrome_driver(headless=HEADLESS)
-                                        try:
-                                            driver.command_executor._commands["send_command"] = ("POST", '/session/$sessionId/chromium/send_command')
-                                            driver.execute("send_command", {'cmd': 'Page.setDownloadBehavior', 'params': {'behavior': 'allow', 'downloadPath': str(dest_dir)}})
-                                            driver.get(target_sp_video)
-                                            time.sleep(3)
-
-                                            from selenium.webdriver.common.by import By
-                                            if "login" in driver.current_url.lower():
-                                                user_in = driver.find_elements(By.XPATH, "//input[@type='email' or @name='loginfmt' or @type='text']")
-                                                if user_in and CITSMART_EMAIL:
-                                                    user_in[0].clear()
-                                                    user_in[0].send_keys(CITSMART_EMAIL)
-                                                    sub_btn = driver.find_elements(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
-                                                    if sub_btn:
-                                                        sub_btn[0].click()
-                                                        time.sleep(3)
-                                                if PASSWORD:
-                                                    pass_in = driver.find_elements(By.XPATH, "//input[@type='password']")
-                                                    if pass_in:
-                                                        pass_in[0].clear()
-                                                        pass_in[0].send_keys(PASSWORD)
-                                                        sub_btn = driver.find_elements(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
-                                                        if sub_btn:
-                                                            sub_btn[0].click()
-                                                            time.sleep(4)
-                                                stay_in = driver.find_elements(By.XPATH, "//input[@id='idSIButton9'] | //input[@value='Sim' or @value='Yes']")
-                                                if stay_in:
-                                                    stay_in[0].click()
-                                                    time.sleep(4)
-
-                                            # Extrai cookies de sessão autenticados
-                                            s_auth = requests.Session()
-                                            s_auth.headers.update(headers)
-                                            for ck in driver.get_cookies():
-                                                s_auth.cookies.set(name=ck['name'], value=ck['value'], domain=ck.get('domain'))
-                                            
-                                            resp_auth = s_auth.get(dl_url, timeout=60, stream=True)
-                                            if resp_auth.status_code == 200:
-                                                with open(dest_file, "wb") as f_out:
-                                                    for chunk in resp_auth.iter_content(chunk_size=65536):
-                                                        if chunk:
-                                                            f_out.write(chunk)
-                                                if dest_file.exists() and dest_file.stat().st_size > 100000:
-                                                    download_success = True
-                                        finally:
-                                            try:
-                                                driver.quit()
-                                            except Exception:
-                                                pass
-
-                                    if download_success and dest_file.exists():
-                                        video_item['caminho'] = dest_file
-                                        st.success(f"🎉 Vídeo baixado com sucesso ({format_file_size(dest_file.stat().st_size)})! Iniciando player...")
+                                    _, local_downloaded = ensure_sharepoint_video_cached(target_sp_video, faq_slug=video_item.get('categoria', 'Geral'))
+                                    if local_downloaded and local_downloaded.exists() and local_downloaded.stat().st_size > 1000:
+                                        video_item['caminho'] = local_downloaded
+                                        st.success(f"🎉 Vídeo baixado com sucesso ({format_file_size(local_downloaded.stat().st_size)})! Atualizando tela...")
                                         time.sleep(1)
                                         st.rerun()
                                     else:
-                                        st.warning("Não foi possível transferir o arquivo direto. Utilize a opção de assistir no SharePoint Stream:")
+                                        st.warning("Não foi possível transferir o arquivo direto com a sessão atual. Utilize a opção de assistir no SharePoint Stream:")
                                         st.link_button("🌐 Assistir no SharePoint Stream ↗", target_sp_video, width='stretch')
                                 except Exception as e_dl:
-                                    st.error(f"Erro durante autenticação/download: {e_dl}")
+                                    st.error(f"Erro durante download: {e_dl}")
                     with c_dl2:
                         st.link_button("🌐 Assistir no Stream ↗", target_sp_video, width='stretch')
 
@@ -1156,13 +1410,19 @@ def render_faq_page():
                 elif video_item.get('url'):
                     st.caption(f"🔗 **URL SharePoint:** `{video_item['url']}`")
             with c_act1:
-                target_media = str(video_item.get('caminho') or video_item.get('url') or VIDEO_FAQ_URL)
-                if st.button("🎬 Abrir no VLC", key=f"btn_vlc_modal_direct_{hash(video_item.get('titulo'))}", width='stretch', help="Executa o player VLC local no seu Windows."):
-                    opened = open_in_vlc_player(target_media)
-                    if opened:
-                        st.toast("Vídeo enviado para o VLC Player com áudio e vídeo!", icon="🎬")
-                    else:
-                        st.warning("VLC Player não localizado. Abra diretamente pelo SharePoint ou baixe o vídeo.")
+                if video_item.get('caminho') and Path(video_item['caminho']).exists():
+                    st.markdown(
+                        f'<a href="bancada://run?tool=vlc&target={video_item["caminho"]}" style="display: block; text-align: center; background-color: #3b82f6; color: white; text-decoration: none; font-weight: bold; padding: 9px; border-radius: 6px; box-shadow: 0 2px 6px rgba(59,130,246,0.4);">🎬 Abrir no VLC</a>',
+                        unsafe_allow_html=True
+                    )
+                else:
+                    target_media = str(video_item.get('url') or VIDEO_FAQ_URL)
+                    if st.button("🎬 Abrir no VLC", key=f"btn_vlc_modal_direct_{hash(video_item.get('titulo'))}", width='stretch', help="Executa o player VLC local no seu Windows."):
+                        opened = open_in_vlc_player(target_media)
+                        if opened:
+                            st.toast("Vídeo enviado para o VLC Player com áudio e vídeo!", icon="🎬")
+                        else:
+                            st.warning("VLC Player não localizado. Abra diretamente pelo SharePoint ou baixe o vídeo.")
             with c_act2:
                 target_sp = video_item.get('url') or VIDEO_FAQ_URL
                 if target_sp:
@@ -1171,15 +1431,40 @@ def render_faq_page():
         # Constrói lista de vídeos priorizando o catálogo oficial do SharePoint com vínculo local
         all_videos_display = []
         
-        # Mapeia arquivos locais por título/nome para associar rapidamente
+        # Mapeia arquivos locais por múltiplos critérios (nome exato, slug e stem)
         local_vids_map = {v['nome_arquivo']: v for v in videos_list}
         local_vids_by_title = {v['titulo']: v for v in videos_list}
+
+        def find_local_video(filename, title):
+            if filename in local_vids_map:
+                return local_vids_map[filename]
+            if title in local_vids_by_title:
+                return local_vids_by_title[title]
+            # Busca por correspondência aproximada ou por arquivo em disco
+            clean_fn = unquote(filename).strip()
+            for v in videos_list:
+                if v['nome_arquivo'].lower() == clean_fn.lower() or v['titulo'].lower() == title.lower():
+                    return v
+            # Varredura em disco por segurança
+            if VIDEO_FAQ_DIR.exists() and clean_fn:
+                for match_f in VIDEO_FAQ_DIR.rglob(clean_fn):
+                    if match_f.is_file() and match_f.stat().st_size > 1000:
+                        return {
+                            "titulo": match_f.stem,
+                            "nome_arquivo": match_f.name,
+                            "categoria": match_f.parent.name,
+                            "caminho": match_f,
+                            "tamanho": format_file_size(match_f.stat().st_size),
+                            "extensao": match_f.suffix.lower(),
+                            "origem": "Upload Local"
+                        }
+            return None
 
         if catalog_videos:
             for item in catalog_videos:
                 fname = item.get("nome_arquivo", "")
                 ftitle = item.get("titulo", "")
-                matched_local = local_vids_map.get(fname) or local_vids_by_title.get(ftitle)
+                matched_local = find_local_video(fname, ftitle)
                 
                 caminho_local = matched_local['caminho'] if matched_local else None
                 tamanho_fmt = matched_local['tamanho'] if matched_local else format_file_size(item.get("tamanho_bytes", 0))
@@ -1244,8 +1529,14 @@ def render_faq_page():
                             if st.button("🎥 Assistir", key=f"btn_vid_card_{idx}_{hash(vid['titulo'])}", width='stretch', help="Abrir modal de reprodução"):
                                 open_video_modal(vid)
                         with c_btn_v2:
-                            sp_url = vid.get('url') or VIDEO_FAQ_URL
-                            st.link_button("🌐 SharePoint ↗", url=sp_url, width='stretch', help="Abrir vídeo direto no SharePoint Online / Stream")
+                            if vid.get('caminho') and Path(vid['caminho']).exists():
+                                st.markdown(
+                                    f'<a href="bancada://run?tool=vlc&target={vid["caminho"]}" style="display: block; text-align: center; background-color: #3b82f6; color: white; text-decoration: none; font-weight: bold; padding: 7px; border-radius: 6px; font-size: 0.88rem; box-shadow: 0 2px 6px rgba(59,130,246,0.35);">▶️ VLC ↗</a>',
+                                    unsafe_allow_html=True
+                                )
+                            else:
+                                sp_url = vid.get('url') or VIDEO_FAQ_URL
+                                st.link_button("🌐 Stream ↗", url=sp_url, width='stretch', help="Abrir vídeo direto no SharePoint Online / Stream")
 
             render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
 
@@ -1282,37 +1573,85 @@ def render_faq_page():
         if st.sidebar.button("📤 Enviar Imagens", width='stretch', help="Fazer upload de imagens para a galeria local."):
             modal_upload_imagem()
 
-        # Constrói pastas de imagens espelhando cada página do SharePoint com sua subpasta
+        # Constrói pastas de imagens unificando imagens locais com o catálogo oficial do SQLite
         folders_dict = {}
         local_by_folder = {}
         for img in imagens_list:
             cat = img['categoria']
             local_by_folder.setdefault(cat, []).append(img)
 
+        # Mapeia catálogo de imagens do SQLite por categoria/pasta
+        catalog_by_cat = {}
+        if catalog_imagens:
+            for c_img in catalog_imagens:
+                c_cat = c_img.get('categoria', 'Geral')
+                catalog_by_cat.setdefault(c_cat, []).append(c_img)
+
+        # Constrói pastas de imagens unificando o catálogo oficial da biblioteca 'Imagens FAQ' (SQLite)
+        # com os arquivos baixados localmente na pasta uploads/faq/imagens/
         folders_list = []
-        if not df_faqs.empty:
-            for _, f_row in df_faqs.iterrows():
-                f_titulo = f_row['titulo']
-                f_slug = slugify_faq_title(f_titulo)
-                imgs = local_by_folder.get(f_slug, [])
-                folders_list.append({
-                    "titulo": f_titulo,
-                    "categoria": f_row['tipo_faq'],
-                    "slug": f_slug,
-                    "imagens": sorted(imgs, key=lambda x: x["titulo"]),
-                    "total": len(imgs),
-                    "url": f_row['url']
-                })
-        else:
-            for cat, imgs in local_by_folder.items():
+        seen_slugs = set()
+
+        def build_sp_folder_url(folder_name: str) -> str:
+            """Gera a URL oficial de navegação dentro da biblioteca Imagens FAQ no SharePoint."""
+            if not folder_name:
+                return IMAGE_FAQ_URL
+            folder_part = folder_name.replace(" > ", "/")
+            encoded_path = quote(f"/sites/dit-manutencao/Shared Documents/Tutoriais-FAQs/Imagens FAQ/{folder_part}")
+            return f"https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/Shared%20Documents/Forms/AllItems.aspx?id={encoded_path}&viewid=fa6fa6a3%2Dc035%2D4588%2Da4c8%2D6df7e448e42d"
+
+        # 1. Pastas do Catálogo Oficial da biblioteca 'Imagens FAQ'
+        for cat_name, c_imgs in catalog_by_cat.items():
+            cat_slug = slugify_faq_title(cat_name)
+            seen_slugs.add(cat_slug)
+            seen_slugs.add(cat_name)
+
+            # Localiza imagens em disco correspondentes (por slug ou nome direto)
+            local_imgs = local_by_folder.get(cat_slug, []) or local_by_folder.get(cat_name, [])
+            combined_imgs = list(local_imgs)
+            local_names = {
+                Path(x['caminho']).name.lower() if x.get('caminho') else x['nome_arquivo'].lower()
+                for x in local_imgs
+            }
+
+            for ci in c_imgs:
+                fn = ci.get('nome_arquivo', '')
+                if fn.lower() not in local_names:
+                    combined_imgs.append({
+                        "titulo": ci.get('titulo') or Path(fn).stem,
+                        "nome_arquivo": fn,
+                        "categoria": cat_name,
+                        "caminho": None,
+                        "url": ci.get('url', IMAGE_FAQ_URL),
+                        "tamanho": format_file_size(ci.get('tamanho_bytes', 0)),
+                        "extensao": Path(fn).suffix.lower() if fn else ".png",
+                        "origem": "SharePoint Online"
+                    })
+
+            folder_group = cat_name.split(" > ")[0] if " > " in cat_name else "Imagens FAQ"
+            folders_list.append({
+                "titulo": cat_name,
+                "categoria": folder_group,
+                "slug": cat_slug,
+                "imagens": sorted(combined_imgs, key=lambda x: x["titulo"]),
+                "total": len(combined_imgs),
+                "url": build_sp_folder_url(cat_name)
+            })
+
+        # 2. Pastas extras locais que não estejam no catálogo
+        for cat, imgs in local_by_folder.items():
+            cat_slug = slugify_faq_title(cat)
+            if cat not in seen_slugs and cat_slug not in seen_slugs:
                 folders_list.append({
                     "titulo": cat.replace("_", " "),
-                    "categoria": "Geral",
-                    "slug": cat,
+                    "categoria": "Upload Local",
+                    "slug": cat_slug,
                     "imagens": sorted(imgs, key=lambda x: x["titulo"]),
                     "total": len(imgs),
-                    "url": IMAGE_FAQ_URL
+                    "url": build_sp_folder_url(cat.replace("_", " "))
                 })
+                seen_slugs.add(cat)
+                seen_slugs.add(cat_slug)
 
         folders_list.sort(key=lambda x: (x.get("categoria", "Geral"), x.get("titulo", "")))
 
@@ -1348,7 +1687,7 @@ def render_faq_page():
         @st.dialog("🖼️ Visualizador de Galeria de Fotos (Carrossel)", width="large")
         def open_image_modal():
             folder_name = st.session_state.get('active_img_folder', '')
-            matching_folder = next((f for f in folders_list if f.get('categoria') == folder_name or f.get('titulo') == folder_name), None)
+            matching_folder = next((f for f in folders_list if f.get('categoria') == folder_name or f.get('titulo') == folder_name or f.get('slug') == folder_name), None)
 
             if not matching_folder:
                 st.info("Tutorial ou pasta não encontrada.")
@@ -1370,7 +1709,7 @@ def render_faq_page():
 
             img_item = folder_imgs[idx]
 
-            st.subheader(f"📂 {folder_name}")
+            st.subheader(f"📂 {matching_folder.get('titulo', folder_name)}")
             st.markdown(f"**{img_item['titulo']}**  *(Imagem {idx + 1} de {len(folder_imgs)})*")
             st.markdown("---")
 
@@ -1404,8 +1743,32 @@ def render_faq_page():
                     st.rerun()
 
             with c_img:
+                img_path = img_item.get('caminho')
+                img_url = img_item.get('url')
+
+                # Se o arquivo não existir localmente, tenta baixar via cookies sob demanda
+                if (not img_path or not Path(img_path).exists()) and img_url:
+                    with st.spinner("Baixando imagem com sessão corporativa..."):
+                        b64_res = ensure_sharepoint_image_cached(img_url, faq_slug=matching_folder.get('slug', 'Geral'))
+                        if b64_res:
+                            # Procura o arquivo recém-baixado em disco para salvar na estrutura
+                            clean_fn = unquote(img_url.split("/")[-1].split("?")[0])
+                            dest_f = IMAGE_FAQ_DIR / matching_folder.get('slug', 'Geral') / clean_fn
+                            if dest_f.exists():
+                                img_item['caminho'] = dest_f
+                                img_path = dest_f
+
                 try:
-                    st.image(str(img_item['caminho']), width='stretch')
+                    if img_path and Path(img_path).exists():
+                        b64_src = get_image_as_base64(Path(img_path))
+                        if b64_src:
+                            st.markdown(f'<img src="{b64_src}" style="max-height: 480px; max-width: 100%; object-fit: contain; margin: 0 auto; display: block; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);" />', unsafe_allow_html=True)
+                        else:
+                            st.image(str(img_path), width='stretch')
+                    elif img_url:
+                        st.image(img_url, width='stretch')
+                    else:
+                        st.warning("Imagem não disponível para visualização.")
                 except Exception as e:
                     st.error(f"Erro ao carregar a imagem: {e}")
 
@@ -1415,12 +1778,15 @@ def render_faq_page():
                     st.rerun()
 
             st.markdown("---")
-            c_info, c_act = st.columns([3, 1])
+            c_info, c_act = st.columns([2.5, 1.5])
             with c_info:
                 st.caption(f"💾 **Tamanho:** `{img_item['tamanho']}`")
-                st.caption(f"📁 **Arquivo:** `{img_item['caminho']}`")
+                if img_item.get('caminho'):
+                    st.caption(f"📁 **Arquivo:** `{img_item['caminho']}`")
+                elif img_item.get('url'):
+                    st.caption(f"🔗 **URL SharePoint:** `{img_item['url']}`")
             with c_act:
-                target_url = matching_folder.get('url') or IMAGE_FAQ_URL
+                target_url = img_item.get('url') or matching_folder.get('url') or IMAGE_FAQ_URL
                 if target_url:
                     st.link_button("🌐 Abrir no SharePoint", target_url, width='stretch')
 

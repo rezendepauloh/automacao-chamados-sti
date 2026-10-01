@@ -301,6 +301,10 @@ DEBUG_DIR_FISCALIZACAO.mkdir(parents=True, exist_ok=True)
 DEBUG_DIR_VIAGENS = BASE_DIR / "debug_logs" / "viagens"
 DEBUG_DIR_VIAGENS.mkdir(parents=True, exist_ok=True)
 
+# Active Directory Logs
+DEBUG_DIR_AD = BASE_DIR / "debug_logs" / "ad"
+DEBUG_DIR_AD.mkdir(parents=True, exist_ok=True)
+
 
 
 LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"

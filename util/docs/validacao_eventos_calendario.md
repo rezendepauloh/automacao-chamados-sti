@@ -11,7 +11,7 @@ A aba de Calendário Geral agrega em uma única linha do tempo:
 - Escalas de plantão matutino e semanal;
 - Férias, garantias e viagens técnicas.
 
-O script [`util/diagnosticos/test_json_events.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/diagnosticos/test_json_events.py) simula a carga de chamados do banco de dados SQLite e valida se todos os atributos esperados pelo frontend JavaScript do FullCalendar (como `id`, `title`, `start`, `backgroundColor`, `extendedProps`) estão devidamente formatados e sem erros de serialização JSON.
+O script [`util/diagnosticos/test_json_events.py`](automated-OTRS-and-CitSmart/util/diagnosticos/test_json_events.py) simula a carga de chamados do banco de dados SQLite e valida se todos os atributos esperados pelo frontend JavaScript do FullCalendar (como `id`, `title`, `start`, `backgroundColor`, `extendedProps`) estão devidamente formatados e sem erros de serialização JSON.
 
 ---
 

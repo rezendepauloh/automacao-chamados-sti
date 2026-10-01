@@ -6,7 +6,7 @@ Este documento descreve o funcionamento do utilitário de conversão de document
 
 ## 🎯 1. Objetivo do Utilitário (`converter_pdf.py`)
 
-No sistema Bancada STI, alguns anexos, fluxogramas e documentos de portarias/fiscalizações chegam em formato `.pdf`. Para que sejam pré-visualizados dinamicamente na interface sem plugins adicionais, o script [`util/arquivos/converter_pdf.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/arquivos/converter_pdf.py) converte a primeira página de cada PDF localizado na pasta `uploads/` em uma imagem `.png`.
+No sistema Bancada STI, alguns anexos, fluxogramas e documentos de portarias/fiscalizações chegam em formato `.pdf`. Para que sejam pré-visualizados dinamicamente na interface sem plugins adicionais, o script [`util/arquivos/converter_pdf.py`](automated-OTRS-and-CitSmart/util/arquivos/converter_pdf.py) converte a primeira página de cada PDF localizado na pasta `uploads/` em uma imagem `.png`.
 
 O utilitário utiliza a biblioteca de alta performance `PyMuPDF` (`fitz`), aplicando uma matriz de escala de 2.0x para preservar a legibilidade e nitidez do texto.
 

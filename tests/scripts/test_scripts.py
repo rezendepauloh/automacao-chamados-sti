@@ -37,7 +37,7 @@ class TestScriptsAndIntegrity(unittest.TestCase):
         launcher_file = ROOT_DIR / "src" / "protocol_handler" / "bancada-launcher.ps1"
         content = launcher_file.read_text(encoding="utf-8", errors="ignore").lower()
         
-        required_tools = ["cmrc", "rdp", "explorer", "ping", "sccm_sync", "manutencao", "analisador", "perfis"]
+        required_tools = ["cmrc", "rdp", "explorer", "ping", "sccm_sync", "manutencao", "analisador", "perfis", "vlc"]
         for tool in required_tools:
             self.assertIn(tool, content, f"Ferramenta '{tool}' não mapeada no bancada-launcher.ps1")
 

@@ -34,6 +34,11 @@ from src.components.pagination import (
     paginate_items,
     render_pagination_controls
 )
+from src.components.status_banner import render_log_expander
+from src.syncs.sync_ad_catalog import (
+    check_ad_sync_running,
+    read_ad_last_log_lines
+)
 from src.config import DOMINIO
 
 
@@ -1491,6 +1496,16 @@ def show_user_details_dialog(user_row):
         else:
             st.caption("Nenhum grupo adicional associado ou sincronizado.")
 
+    # Atalho cruzado para dispositivos e coleções no SCCM
+    st.markdown("---")
+    sccm_usr_url = f"?tab=sccm&subtab=dispositivos&search={sam}"
+    st.link_button(
+        f"💻 Buscar Dispositivos do Usuário no SCCM ({sam}) ↗",
+        url=sccm_usr_url,
+        use_container_width=True,
+        help="Localiza computadores onde este usuário fez o último logon registrado pelo SCCM."
+    )
+
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Fechar Ficha do Usuário", key="close_user_dialog_btn", use_container_width=True):
         st.rerun()
@@ -1611,6 +1626,17 @@ def show_computer_details_dialog(comp_row):
         )
         st.caption("Ping contínuo no console")
 
+    # Atalho cruzado para o inventário de hardware e agente SCCM
+    st.markdown("<br>", unsafe_allow_html=True)
+    clean_host_name = name.split(".")[0].strip()
+    sccm_url = f"?tab=sccm&subtab=dispositivos&search={clean_host_name}"
+    st.link_button(
+        f"🔍 Ver Inventário Completo de Hardware no SCCM ({clean_host_name}) ↗",
+        url=sccm_url,
+        use_container_width=True,
+        help="Abre os detalhes de CPU, Memória, Placa-mãe e Discos na aba SCCM."
+    )
+
     proto_cmd = Path(__file__).parent.parent / "protocol_handler" / "instalar_disparador_windows.cmd"
     if proto_cmd.exists():
         with st.expander("🛠️ Instalar disparador local nesta máquina (`instalar_disparador_windows.cmd`)", expanded=False):
@@ -1643,6 +1669,29 @@ def render_ad_page():
             </p>
         </div>
     """, unsafe_allow_html=True)
+
+    # Controle de processo em segundo plano (Sincronização Active Directory)
+    ad_sync_ativo = check_ad_sync_running()
+
+    if "was_ad_syncing" not in st.session_state:
+        st.session_state["was_ad_syncing"] = False
+
+    if st.session_state["was_ad_syncing"] and not ad_sync_ativo:
+        st.session_state["was_ad_syncing"] = False
+        st.cache_data.clear()
+        st.toast("🎉 Sincronização do Active Directory concluída com sucesso!", icon="✅")
+        st.rerun()
+
+    if ad_sync_ativo:
+        st.session_state["was_ad_syncing"] = True
+
+    render_log_expander(
+        "🤖 Sincronização do Active Directory em Segundo Plano",
+        ad_sync_ativo,
+        read_ad_last_log_lines,
+        check_ad_sync_running,
+        "O robô está consultando o Domain Controller corporativo (OUs, Usuários, Computadores e Grupos) via LDAP em segundo plano. O painel permanece totalmente livre para uso!"
+    )
 
     # Sub-Navegação Sincronizada por URL (?subtab=arvore|usuarios|computadores|grupos|sync)
     TAB_MAP = {
@@ -1702,8 +1751,10 @@ def render_ad_page():
 
         with st.sidebar:
             st.markdown("### 🔍 Filtros de Usuários")
+            default_usr_search = st.query_params.get("search", "") if current_slug == "usuarios" else ""
             ad_search = st.text_input(
                 "Buscar por Nome, Login, E-mail ou Descrição:",
+                value=default_usr_search,
                 placeholder="Ex: João, Silva, jsilva, dti...",
                 key="ad_user_search"
             )
@@ -1875,8 +1926,10 @@ def render_ad_page():
 
         with st.sidebar:
             st.markdown("### 🔍 Filtros de Computadores")
+            default_comp_search = st.query_params.get("search", "") if current_slug == "computadores" else ""
             comp_search = st.text_input(
                 "Buscar por Nome, DNS, Descrição ou Responsável:",
+                value=default_comp_search,
                 placeholder="Ex: SRV-1165, BANCADA, Windows...",
                 key="ad_comp_search"
             )
@@ -2147,17 +2200,14 @@ def render_ad_page():
 
         with d_col2:
             st.markdown("#### 🔄 Atualizar Cache Local")
-            st.caption("Efetua a leitura completa da hierarquia de OUs, contas de usuários, computadores e grupos e atualiza o banco relacional.")
-            if st.button("Sincronizar Active Directory Agora 🚀", type="primary", use_container_width=True):
-                prog_bar = st.progress(0, text="Iniciando sincronização...")
-
-                def _update_progress(pct: int, msg: str):
-                    prog_bar.progress(pct, text=msg)
-
-                res = sync_active_directory_cache(page_size=500, progress_callback=_update_progress)
-
-                if res.get("success"):
-                    st.success(f"🎉 Sincronização concluída com sucesso! ({res.get('total_ous', 0)} OUs, {res.get('total_users', 0)} Usuários, {res.get('total_computers', 0)} Computadores, {res.get('total_groups', 0)} Grupos)")
+            st.caption("Efetua a leitura completa da hierarquia de OUs, contas de usuários, computadores e grupos em segundo plano, mantendo a página livre.")
+            if ad_sync_ativo:
+                st.button("🤖 Sincronizando Active Directory...", type="primary", use_container_width=True, disabled=True)
+            else:
+                if st.button("Sincronizar Active Directory Agora 🚀", type="primary", use_container_width=True, help="Inicia a sincronização completa via LDAP em segundo plano."):
+                    import sys, subprocess, time
+                    popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                    subprocess.Popen([sys.executable, "src/syncs/sync_ad_catalog.py"], **popen_kwargs)
+                    time.sleep(0.8)
+                    st.toast("🚀 Sincronização do AD iniciada em segundo plano!", icon="🤖")
                     st.rerun()
-                else:
-                    st.error(f"❌ Erro na sincronização: {res.get('error')}")

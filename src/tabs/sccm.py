@@ -237,6 +237,20 @@ def modal_device_details(device_row: dict):
         st.markdown("<br>", unsafe_allow_html=True)
         st.caption(f"🌳 **Distinguished Name (DN):** `{dn}`")
 
+    # Atalhos cruzados com o Active Directory
+    st.markdown("---")
+    c_ad1, c_ad2 = st.columns(2)
+    with c_ad1:
+        ad_comp_url = f"?tab=active-directory&subtab=computadores&search={name}"
+        st.link_button("🌳 Ver Conta da Máquina no AD ↗", url=ad_comp_url, use_container_width=True, help="Abre a ficha desta máquina no Active Directory.")
+    with c_ad2:
+        if user and user != "Não identificado":
+            clean_u = user.split("\\")[-1] if "\\" in user else user
+            ad_usr_url = f"?tab=active-directory&subtab=usuarios&search={clean_u}"
+            st.link_button(f"👤 Ver Usuário ({clean_u}) no AD ↗", url=ad_usr_url, use_container_width=True, help="Abre a ficha cadastral do usuário no Active Directory.")
+        else:
+            st.button("👤 Usuário não identificado", disabled=True, use_container_width=True)
+
     # Exibe JSON bruto em expander caso queira auditar propriedades adicionais
     if raw_str:
         with st.expander("📄 Ver Dados Brutos WMI/CIM do SCCM"):
@@ -244,6 +258,11 @@ def modal_device_details(device_row: dict):
                 st.json(raw_data if raw_data else json.loads(raw_str))
             except Exception:
                 st.code(raw_str)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Fechar Ficha Técnica", key="close_sccm_device_dialog_btn", use_container_width=True):
+        st.session_state["last_selected_sccm_dev"] = None
+        st.rerun()
 
 
 def render_subtab_dispositivos(
@@ -324,11 +343,18 @@ def render_subtab_dispositivos(
         key=f"sccm_devices_table_p{current_page}"
     )
 
+    if "last_selected_sccm_dev" not in st.session_state:
+        st.session_state["last_selected_sccm_dev"] = None
+
     if event and event.selection and event.selection.rows:
         sel_idx = event.selection.rows[0]
-        sel_row = page_df.iloc[sel_idx]
-        device_data = sel_row.to_dict() if hasattr(sel_row, "to_dict") else dict(sel_row)
-        modal_device_details(device_data)
+        if st.session_state["last_selected_sccm_dev"] != sel_idx:
+            st.session_state["last_selected_sccm_dev"] = sel_idx
+            sel_row = page_df.iloc[sel_idx]
+            device_data = sel_row.to_dict() if hasattr(sel_row, "to_dict") else dict(sel_row)
+            modal_device_details(device_data)
+    else:
+        st.session_state["last_selected_sccm_dev"] = None
 
     render_pagination_controls(
         page_key="sccm_dev",
@@ -561,8 +587,10 @@ def render_sccm_page():
     conf_per_page = 50
 
     if selected_title == "💻 Dispositivos":
+        default_sccm_search = st.query_params.get("search", "")
         dev_search = st.sidebar.text_input(
             "🔎 Buscar Estação, Usuário, IP ou Modelo:",
+            value=default_sccm_search,
             placeholder="Ex: PGJ-NT-0123, paulo, ThinkCentre...",
             key="sccm_dev_search"
         ).strip().lower()

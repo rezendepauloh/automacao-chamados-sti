@@ -8,7 +8,7 @@ Esses utilitários são úteis quando há falha de importação de CSVs corrompi
 
 ## 🖨️ 1. Limpeza da Tabela de Impressoras (`limpar_impressoras.py`)
 
-O script [`util/limpeza_banco/limpar_impressoras.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_impressoras.py) apaga todos os registros da tabela `impressoras` para permitir uma reimportação limpa a partir do PaperCut.
+O script [`util/limpeza_banco/limpar_impressoras.py`](automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_impressoras.py) apaga todos os registros da tabela `impressoras` para permitir uma reimportação limpa a partir do PaperCut.
 
 ### Como Executar via Bash:
 ```bash
@@ -29,7 +29,7 @@ sqlite3 chamados.db "DELETE FROM impressoras;"
 
 ## 📅 2. Limpeza das Tabelas de Plantões (`limpar_plantoes.py`)
 
-O script [`util/limpeza_banco/limpar_plantoes.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_plantoes.py) remove todos os registros das tabelas `plantoes_matutino` e `plantoes_semanal`.
+O script [`util/limpeza_banco/limpar_plantoes.py`](automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_plantoes.py) remove todos os registros das tabelas `plantoes_matutino` e `plantoes_semanal`.
 
 ### Como Executar via Bash:
 ```bash
