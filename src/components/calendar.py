@@ -481,6 +481,16 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
               <p><strong>🏁 Data de Retorno:</strong> <span id="vRetorno"></span></p>
             </div>
 
+            <!-- BLOCO FÉRIAS -->
+            <div id="blocoFerias" style="display:none;">
+              <p><strong>👤 Membro da Equipe:</strong> <span id="feMembro" style="font-weight:600; color:#10b981;"></span></p>
+              <p><strong>🏖️ Modalidade / Escala:</strong> <span id="feTipo"></span></p>
+              <p><strong>📅 Período:</strong> <span id="fePeriodo"></span></p>
+              <p><strong>⏱️ Duração:</strong> <span id="feDias"></span> dia(s)</p>
+              <p><strong>🏷️ Status:</strong> <span id="feStatus"></span></p>
+              <p id="feAnoExContainer"><strong>📆 Ano de Exercício:</strong> <span id="feAnoEx"></span></p>
+            </div>
+
           </div>
           <div class="modal-footer">
             <button class="btn-dismiss" onclick="closeModal()">Fechar</button>
@@ -591,6 +601,7 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
               document.getElementById('blocoChamado').style.display = 'none';
               document.getElementById('blocoPortaria').style.display = 'none';
               document.getElementById('blocoViagem').style.display = 'none';
+              document.getElementById('blocoFerias').style.display = 'none';
 
               switch(cat) {
                 case 'manual':
@@ -829,6 +840,24 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
 
                   document.getElementById('vSaida').innerText = props.saida_br || formatBrDateTime(info.event.start, props.raw_data_inicio);
                   document.getElementById('vRetorno').innerText = props.retorno_br || formatBrDateTime(info.event.end, props.raw_data_fim);
+                  break;
+
+                case 'ferias':
+                  document.getElementById('blocoFerias').style.display = 'block';
+
+                  badge.className = 'modal-badge';
+                  var corEvento = props.cor_hex || '#10b981';
+                  badge.style.backgroundColor = corEvento + '33';
+                  badge.style.color = corEvento;
+                  badge.style.border = '1px solid ' + corEvento;
+
+                  document.getElementById('mTitle').innerText = (props.tipo || 'Férias') + ': ' + (props.membro || info.event.title);
+                  document.getElementById('feMembro').innerText = props.membro || 'Não informado';
+                  document.getElementById('feTipo').innerText = props.tipo_escala_label || props.tipo || 'Férias';
+                  document.getElementById('fePeriodo').innerText = (props.data_inicio_br || '') + ' até ' + (props.data_fim_br || '');
+                  document.getElementById('feDias').innerText = props.dias || 'N/A';
+                  document.getElementById('feStatus').innerText = props.status || 'Confirmada';
+                  document.getElementById('feAnoEx').innerText = props.ano || 'N/A';
                   break;
 
                 default:

@@ -43,6 +43,7 @@ def execute_task_by_id(task_id: str) -> str:
         "sync_papercut": "papercut_scraper.lock",
         "sync_plantoes_matutino": "automated_plantoes_sync.lock",
         "sync_plantoes_semanal": "automated_plantoes_sync.lock",
+        "sync_ferias": "ferias_sync.lock",
         "sync_sharepoint_catalog": "sharepoint_catalog_sync.lock",
         "sync_ad_catalog": "ad_sync.lock"
     }
@@ -131,6 +132,14 @@ def execute_task_by_id(task_id: str) -> str:
             from src.services.ics_export import update_published_ics_file
             path = update_published_ics_file()
             return f"Calendário ICS atualizado com sucesso em {path}."
+
+        elif task_id == "sync_ferias":
+            from src.syncs.sync_ferias import run_ferias_sync
+            ok = run_ferias_sync()
+            if ok:
+                return "Sincronização de férias da bancada finalizada com sucesso."
+            else:
+                raise RuntimeError("Falha na sincronização da planilha de férias.")
 
         elif task_id == "sync_sharepoint_catalog":
             from src.syncs.sync_sharepoint_catalog import run_sharepoint_catalog_sync

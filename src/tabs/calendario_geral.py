@@ -9,6 +9,7 @@ from src.database import (
     get_plantoes_semanal,
     get_garantia_contratos_df,
     get_viagens_df,
+    get_ferias_df,
     load_data,
     save_evento_manual,
     get_eventos_manuais
@@ -174,6 +175,7 @@ def render_calendario_geral_page():
     chk_semanal = st.sidebar.checkbox("Plantão Semanal", value=True)
     chk_garantias = st.sidebar.checkbox("Garantias", value=True)
     chk_viagens = st.sidebar.checkbox("Viagens da Bancada", value=True)
+    chk_escala_ferias = st.sidebar.checkbox("🏖️ Férias da Bancada", value=True)
     chk_otrs = st.sidebar.checkbox("Chamados OTRS", value=True)
     chk_citsmart = st.sidebar.checkbox("Chamados CitSmart", value=True)
     chk_portarias = st.sidebar.checkbox("Portarias (Geral)", value=True)
@@ -434,6 +436,72 @@ def render_calendario_geral_page():
                         "retorno_br": retorno_br,
                         "raw_data_inicio": saida_br,
                         "raw_data_fim": retorno_br
+                    }
+                })
+
+    # FÉRIAS DA BANCADA (OFICIAL)
+    if chk_escala_ferias:
+        df_ferias_cal = get_ferias_df()
+        if not df_ferias_cal.empty:
+            paleta_local = {
+                "Paulo Rezende": "#10b981",
+                "Reginaldo Bandeira": "#3b82f6",
+                "Luiz Villalba": "#f59e0b",
+                "Alex": "#8b5cf6"
+            }
+            for idx, r_fe in df_ferias_cal.iterrows():
+                dt_ini_fe = str(r_fe.get("data_inicio_iso", "")).strip()
+                dt_fim_fe = str(r_fe.get("data_fim_iso", "")).strip()
+                membro_fe = str(r_fe.get("membro", "")).strip()
+                tipo_fe = str(r_fe.get("tipo_escala", "ferias"))
+                dias_fe = r_fe.get("dias", 0)
+
+                if not dt_ini_fe:
+                    continue
+
+                if bancada_only and not is_bancada_member(membro_fe):
+                    continue
+
+                cor_fe = "#10b981"
+                for m_k, col_v in paleta_local.items():
+                    if m_k.lower() in membro_fe.lower():
+                        cor_fe = col_v
+                        break
+
+                cal_end_fe = dt_fim_fe if dt_fim_fe else dt_ini_fe
+                try:
+                    dt_fim_o = datetime.strptime(cal_end_fe, "%Y-%m-%d") + timedelta(days=1)
+                    cal_end_fe = dt_fim_o.strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+
+                titulo_prefix = "🏖️ Férias"
+                if tipo_fe == "recesso_forense":
+                    titulo_prefix = "⚖️ Recesso"
+                elif tipo_fe == "licencas_compensacoes":
+                    titulo_prefix = "📜 Licença"
+
+                events.append({
+                    "id": f"ferias_{r_fe.get('id', idx)}",
+                    "title": f"{titulo_prefix}: {membro_fe.split()[0]} ({dias_fe}d)",
+                    "start": dt_ini_fe,
+                    "end": cal_end_fe,
+                    "backgroundColor": cor_fe,
+                    "borderColor": cor_fe,
+                    "allDay": True,
+                    "extendedProps": {
+                        "categoria_evento": "ferias",
+                        "membro": membro_fe,
+                        "tipo": titulo_prefix,
+                        "tipo_escala_label": "Férias Regulamentares" if tipo_fe == "ferias" else ("Recesso Forense" if tipo_fe == "recesso_forense" else "Compensação / Licença"),
+                        "data_inicio_br": r_fe.get("data_inicio_br", dt_ini_fe),
+                        "data_fim_br": r_fe.get("data_fim_br", dt_fim_fe),
+                        "dias": dias_fe,
+                        "ano": r_fe.get("ano", ""),
+                        "status": r_fe.get("status", "Confirmada"),
+                        "cor_hex": cor_fe,
+                        "raw_data_inicio": r_fe.get("data_inicio_br", dt_ini_fe),
+                        "raw_data_fim": r_fe.get("data_fim_br", dt_fim_fe)
                     }
                 })
 

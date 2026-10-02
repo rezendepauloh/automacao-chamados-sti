@@ -92,6 +92,18 @@ DEFAULT_TASKS = [
         "descricao": "Baixa a planilha oficial de viagens da bancada do SharePoint e atualiza o calendário e lista."
     },
     {
+        "task_id": "sync_ferias",
+        "nome": "🏖️ Sincronização de Férias da Bancada",
+        "categoria": "Planilhas",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 4,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "08:15",
+        "apenas_dias_uteis": 0,
+        "descricao": "Sincroniza a planilha oficial de previsão de férias da bancada e atualiza o calendário e a tabela."
+    },
+    {
         "task_id": "sync_doacoes",
         "nome": "🖥️ Doações & Redistribuições de Máquinas",
         "categoria": "Planilhas",

@@ -142,6 +142,7 @@ MASTER_FILE_PATH = USER_HOME / _cfg("SHAREPOINT_RELATIVE_PATH", os.getenv("SHARE
 DONATIONS_FILE_PATH = USER_HOME / _cfg("DONATIONS_EXCEL_RELATIVE_PATH", os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", ""))
 WARRANTY_FILE_PATH = USER_HOME / _cfg("WARRANTY_EXCEL_RELATIVE_PATH", os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", ""))
 VIAGENS_FILE_PATH = USER_HOME / _cfg("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", ""))
+FERIAS_EXCEL_RELATIVE_PATH = _cfg("FERIAS_EXCEL_RELATIVE_PATH", os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"))
 SHAREPOINT_MATUTINO_URL = _cfg("SHAREPOINT_MATUTINO_URL", os.getenv("SHAREPOINT_MATUTINO_URL", ""))
 
 VIDEO_FAQ_ENV = os.getenv("VIDEO_FAQ_PATH", "")
@@ -300,6 +301,10 @@ DEBUG_DIR_FISCALIZACAO.mkdir(parents=True, exist_ok=True)
 
 DEBUG_DIR_VIAGENS = BASE_DIR / "debug_logs" / "viagens"
 DEBUG_DIR_VIAGENS.mkdir(parents=True, exist_ok=True)
+
+# Ferias Logs
+DEBUG_DIR_FERIAS = BASE_DIR / "debug_logs" / "ferias"
+DEBUG_DIR_FERIAS.mkdir(parents=True, exist_ok=True)
 
 # Active Directory Logs
 DEBUG_DIR_AD = BASE_DIR / "debug_logs" / "ad"

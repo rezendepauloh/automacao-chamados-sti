@@ -92,6 +92,11 @@ elif selected_page == "📅 Plantões da Bancada":
     importlib.reload(src.tabs.plantoes)
     src.tabs.plantoes.render_plantoes_page()
 
+elif selected_page == "🏖️ Férias da Bancada":
+    import src.tabs.ferias
+    importlib.reload(src.tabs.ferias)
+    src.tabs.ferias.render_ferias_page()
+
 elif selected_page == "📅 Calendário Geral":
     import src.tabs.calendario_geral
     importlib.reload(src.tabs.calendario_geral)

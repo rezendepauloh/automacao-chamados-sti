@@ -6,6 +6,7 @@ PAGE_TO_SLUG = {
     "🏢 Catálogo de Unidades": "unidades",
     "📞 Central Telefônica (OXE)": "central-telefonica",
     "📅 Plantões da Bancada": "plantoes",
+    "🏖️ Férias da Bancada": "ferias",
     "📅 Calendário Geral": "calendario-geral",
     "📜 Portarias da Bancada": "portarias",
     "📍 Mapa & Localização": "mapa",
@@ -73,48 +74,53 @@ def render_header_navigation() -> str:
     def get_btn_type(page_name: str) -> str:
         return "primary" if st.session_state.get("current_page") == page_name else "secondary"
 
+    MENU_ITEMS = [
+        ("📋 Painel de Chamados", "hdr_btn_chamados"),
+        ("🏢 Catálogo de Unidades", "hdr_btn_unidades"),
+        ("📞 Central Telefônica (OXE)", "hdr_btn_central_telefonica"),
+        ("📅 Plantões da Bancada", "hdr_btn_plantoes"),
+        ("🏖️ Férias da Bancada", "hdr_btn_ferias"),
+        ("📅 Calendário Geral", "hdr_btn_calendario_geral"),
+        ("📜 Portarias da Bancada", "hdr_btn_portarias"),
+        ("📍 Mapa & Localização", "hdr_btn_mapa"),
+        ("🖥️ Doação & Redistribuição", "hdr_btn_redistribuicao"),
+        ("📜 Fiscalização de Contratos", "hdr_btn_fiscalizacao"),
+        ("✈️ Viagens da Bancada", "hdr_btn_viagens"),
+        ("🛡️ Controle de Garantia", "hdr_btn_garantia"),
+        ("🖨️ Impressoras (PaperCut)", "hdr_btn_impressoras"),
+        ("🌳 Active Directory (AD)", "hdr_btn_ad"),
+        ("💻 Inventário SCCM", "hdr_btn_sccm"),
+        ("⚡ Scripts de Automação", "hdr_btn_scripts_automacao"),
+        ("📚 FAQ & Tutoriais", "hdr_btn_faq"),
+    ]
+
+    FOOTER_ITEMS = [
+        ("⚙️ Configurações", "hdr_btn_configuracoes", "⚙️ Configurações"),
+        (notif_btn_label, "hdr_btn_notificacoes", "🔔 Central de Notificações")
+    ]
+
     with st.popover("☰ Menu"):
         st.markdown("### 📌 Sistemas / Páginas")
-        if st.button("📋 Painel de Chamados", key="hdr_btn_chamados", use_container_width=True, type=get_btn_type("📋 Painel de Chamados")):
-            set_page("📋 Painel de Chamados")
-        if st.button("🏢 Catálogo de Unidades", key="hdr_btn_unidades", use_container_width=True, type=get_btn_type("🏢 Catálogo de Unidades")):
-            set_page("🏢 Catálogo de Unidades")
-        if st.button("📞 Central Telefônica (OXE)", key="hdr_btn_central_telefonica", use_container_width=True, type=get_btn_type("📞 Central Telefônica (OXE)")):
-            set_page("📞 Central Telefônica (OXE)")
 
-        if st.button("📅 Plantões da Bancada", key="hdr_btn_plantoes", use_container_width=True, type=get_btn_type("📅 Plantões da Bancada")):
-            set_page("📅 Plantões da Bancada")
-        if st.button("📅 Calendário Geral", key="hdr_btn_calendario_geral", use_container_width=True, type=get_btn_type("📅 Calendário Geral")):
-            set_page("📅 Calendário Geral")
-        if st.button("📜 Portarias da Bancada", key="hdr_btn_portarias", use_container_width=True, type=get_btn_type("📜 Portarias da Bancada")):
-            set_page("📜 Portarias da Bancada")
-        if st.button("📍 Mapa & Localização", key="hdr_btn_mapa", use_container_width=True, type=get_btn_type("📍 Mapa & Localização")):
-            set_page("📍 Mapa & Localização")
-        if st.button("🖥️ Doação & Redistribuição", key="hdr_btn_redistribuicao", use_container_width=True, type=get_btn_type("🖥️ Doação & Redistribuição")):
-            set_page("🖥️ Doação & Redistribuição")
-        if st.button("📜 Fiscalização de Contratos", key="hdr_btn_fiscalizacao", use_container_width=True, type=get_btn_type("📜 Fiscalização de Contratos")):
-            set_page("📜 Fiscalização de Contratos")
-        if st.button("✈️ Viagens da Bancada", key="hdr_btn_viagens", use_container_width=True, type=get_btn_type("✈️ Viagens da Bancada")):
-            set_page("✈️ Viagens da Bancada")
-        if st.button("🛡️ Controle de Garantia", key="hdr_btn_garantia", use_container_width=True, type=get_btn_type("🛡️ Controle de Garantia")):
-            set_page("🛡️ Controle de Garantia")
-        if st.button("🖨️ Impressoras (PaperCut)", key="hdr_btn_impressoras", use_container_width=True, type=get_btn_type("🖨️ Impressoras (PaperCut)")):
-            set_page("🖨️ Impressoras (PaperCut)")
-        if st.button("🌳 Active Directory (AD)", key="hdr_btn_ad", use_container_width=True, type=get_btn_type("🌳 Active Directory (AD)")):
-            set_page("🌳 Active Directory (AD)")
-        if st.button("💻 Inventário SCCM", key="hdr_btn_sccm", use_container_width=True, type=get_btn_type("💻 Inventário SCCM")):
-            set_page("💻 Inventário SCCM")
+        for page_name, btn_key in MENU_ITEMS:
+            col_main, col_newtab = st.columns([5, 1], gap="small")
+            slug = PAGE_TO_SLUG.get(page_name, "chamados")
+            with col_main:
+                if st.button(page_name, key=btn_key, use_container_width=True, type=get_btn_type(page_name)):
+                    set_page(page_name)
+            with col_newtab:
+                st.link_button("↗", url=f"?tab={slug}", use_container_width=True, help=f"Abrir {page_name} em nova aba")
 
-        if st.button("⚡ Scripts de Automação", key="hdr_btn_scripts_automacao", use_container_width=True, type=get_btn_type("⚡ Scripts de Automação")):
-            set_page("⚡ Scripts de Automação")
-        if st.button("📚 FAQ & Tutoriais", key="hdr_btn_faq", use_container_width=True, type=get_btn_type("📚 FAQ & Tutoriais")):
-            set_page("📚 FAQ & Tutoriais")
-        
         st.markdown("---")
-        if st.button("⚙️ Configurações", key="hdr_btn_configuracoes", use_container_width=True, type=get_btn_type("⚙️ Configurações")):
-            set_page("⚙️ Configurações")
-        if st.button(notif_btn_label, key="hdr_btn_notificacoes", use_container_width=True, type=get_btn_type("🔔 Central de Notificações")):
-            set_page("🔔 Central de Notificações")
+
+        for label, btn_key, page_name in FOOTER_ITEMS:
+            col_main, col_newtab = st.columns([5, 1], gap="small")
+            slug = PAGE_TO_SLUG.get(page_name, "chamados")
+            with col_main:
+                if st.button(label, key=btn_key, use_container_width=True, type=get_btn_type(page_name)):
+                    set_page(page_name)
+            with col_newtab:
+                st.link_button("↗", url=f"?tab={slug}", use_container_width=True, help=f"Abrir {label} em nova aba")
 
     return st.session_state["current_page"]
 

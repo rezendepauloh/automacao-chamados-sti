@@ -339,14 +339,16 @@ def ensure_sharepoint_image_cached(img_url: str, faq_slug: str = "Geral") -> str
                 "Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
             }
             resp = requests.get(img_url, cookies=cookies, headers=headers, timeout=12)
-            if resp.status_code == 200 and len(resp.content) > 100:
+            c_type = resp.headers.get("content-type", "").lower()
+            is_real_img = "image" in c_type or resp.content.startswith(b'\xff\xd8') or resp.content.startswith(b'\x89PNG') or resp.content.startswith(b'GIF') or resp.content.startswith(b'RIFF')
+            if resp.status_code == 200 and len(resp.content) > 100 and is_real_img:
                 folder_dir.mkdir(parents=True, exist_ok=True)
                 with open(dest_file, "wb") as f_out:
                     f_out.write(resp.content)
                 logger.info(f"✅ Imagem FAQ baixada em '{slug}/{clean_filename}'")
                 return get_image_as_base64(dest_file)
             else:
-                logger.warning(f"Download de imagem retornou status {resp.status_code} para {clean_filename}")
+                logger.warning(f"Download de imagem retornou status {resp.status_code} ({c_type}) para {clean_filename}")
         except Exception as e:
             logger.error(f"Erro ao baixar imagem {img_url}: {e}")
 
@@ -398,7 +400,8 @@ def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> s
                 "Accept": "*/*"
             }
             resp = requests.get(video_url, cookies=cookies, headers=headers, stream=True, timeout=35)
-            if resp.status_code == 200:
+            c_type = resp.headers.get("content-type", "").lower()
+            if resp.status_code == 200 and "text/html" not in c_type:
                 folder_dir.mkdir(parents=True, exist_ok=True)
                 with open(dest_file, "wb") as f_out:
                     for chunk in resp.iter_content(chunk_size=65536):
@@ -407,6 +410,8 @@ def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> s
                 if dest_file.exists() and dest_file.stat().st_size > 1000:
                     logger.info(f"✅ Vídeo FAQ baixado em '{slug}/{clean_filename}'")
                     return get_video_as_base64(dest_file), dest_file
+            else:
+                logger.warning(f"Download de vídeo retornou status {resp.status_code} ({c_type}) para {clean_filename}")
         except Exception as e:
             logger.error(f"Erro ao baixar vídeo {video_url}: {e}")
 

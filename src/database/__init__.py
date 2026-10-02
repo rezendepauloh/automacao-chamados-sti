@@ -112,6 +112,14 @@ from .viagens_db import (
     get_viagens_df
 )
 
+from .ferias_db import (
+    setup_ferias_table,
+    sync_ferias_from_excel,
+    get_ferias_df,
+    get_ferias_membros,
+    get_ferias_anos
+)
+
 from .whatsapp_db import (
     setup_whatsapp_tables,
     get_whatsapp_destinatarios,

@@ -1,7 +1,7 @@
 # 🧭 Contexto Geral do Sistema Bancada — Automação de Chamados STI
 
 > **Documento de Contexto Vivo & Roteiro Evolutivo**  
-> **Última Atualização:** 25/09/2026  
+> **Última Atualização:** 02/10/2026  
 > **Finalidade:** Servir de referência central unificada para alinhar o estado atual da arquitetura, módulos entregues, decisões de design e nortear as próximas etapas de desenvolvimento e resolução de bugs.
 
 ---
@@ -232,11 +232,43 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
             * Da Ficha do Computador no AD (`show_computer_details_dialog`): botão direto *"🔍 Ver Inventário Completo de Hardware no SCCM"* com preenchimento automático de busca via URL.
             * Da Ficha do Usuário no AD (`show_user_details_dialog`): botão direto *"💻 Buscar Dispositivos do Usuário no SCCM"* para auditar as estações utilizadas pelo servidor.
             * Da Ficha Técnica no SCCM (`modal_device_details`): botões rápidos para abrir a conta da máquina no AD e o cadastro do usuário logado no AD com 1 clique.
+        * **Navegação Híbrida no Menu Principal ([`src/components/header.py`](automated-OTRS-and-CitSmart/src/components/header.py)):**
+          - Cada item do menu superior (hambúrguer) agora possui layout em duas colunas (`[5, 1]`):
+            * **Lado esquerdo:** Botão principal de navegação interna que atualiza a página mantendo a mesma aba e os estados da sessão.
+            * **Canto direito:** Botão com ícone `↗` (`st.link_button` com link relativo `?tab=<slug>`), disparando a abertura da página diretamente em uma **nova aba (`target="_blank"`)**.
+          - Estilização refinada em [`assets/css/styles.css`](automated-OTRS-and-CitSmart/assets/css/styles.css) com largura equilibrada e microinterações de hover.
         * **Suíte Completa de 46 Testes Automatizados 100% Verde (`python3 tests/run_all.py`).**
 
 ---
 
+    10. **Implementação Concluída: Módulo de Férias da Bancada ([`src/tabs/ferias.py`](automated-OTRS-and-CitSmart/src/tabs/ferias.py)):**
+       - **Fonte de Dados & Extração da Planilha do SharePoint:**
+         * Integrada a planilha oficial `Previsão de Férias-Manutencao.xlsx` mantida na biblioteca `Shared Documents/DIT-Manutenção` do SharePoint.
+         * Parser robusto em [`src/database/ferias_db.py`](automated-OTRS-and-CitSmart/src/database/ferias_db.py) com suporte aos exercícios anuais (2024, 2025, 2026, 2027) e às modalidades: *Férias Regulamentares*, *Licenças & Compensações* e *Recesso Forense*.
+         * Extração de períodos contínuos e listas de datas (`DD a DD`, `DD/MM a DD/MM`, `DD-DD/MM`, `3-7/ago`, `30 e 31`, etc.).
+       - **Persistência Relacional SQLite:**
+         * Criada tabela dedicada `ferias_bancada` no banco `chamados.db` com cálculo automático de dias, tipo de escala e paleta de cores institucional.
+       - **Worker de Sincronização em Segundo Plano ([`src/syncs/sync_ferias.py`](automated-OTRS-and-CitSmart/src/syncs/sync_ferias.py)):**
+         * Execução assíncrona não-bloqueante com lock file (`ferias_sync.lock`), log dedicado em `debug_logs/ferias/sync_ferias.log` e accordion em tempo real com auto-refresh (`render_log_expander`).
+         * Suporte a download HTTP autenticado via cookies do SharePoint, leitura de cópia local sincronizada do OneDrive e contingência via Selenium.
+         * Integrado ao daemon agendador de tarefas periódicas ([`src/services/cron_scheduler.py`](automated-OTRS-and-CitSmart/src/services/cron_scheduler.py) e [`src/database/cron_db.py`](automated-OTRS-and-CitSmart/src/database/cron_db.py)).
+       - **Interface Streamlit & Sub-abas com URL State (`?tab=ferias&subtab=...`):**
+         * **📊 Planilha & Escala:** Tabela completa com filtros por exercício/ano, membro e modalidade, paginação dinâmica (`paginate_items`), exportação CSV e KPIs resumidos (períodos, total de dias, membros e alerta expansível com detecção automática de sobreposições de ausências da equipe).
+         * **📅 Calendário de Férias:** Calendário interativo FullCalendar renderizado via [`render_master_calendar()`](automated-OTRS-and-CitSmart/src/components/calendar.py) com cores temáticas por integrante e modal inteligente com ficha completa de detalhes.
+         * **Calendário Geral Integrado:** Adicionada camada de Férias da Bancada no [`src/tabs/calendario_geral.py`](automated-OTRS-and-CitSmart/src/tabs/calendario_geral.py) com controle de exibição via checkbox na sidebar.
+       - **Navegação Híbrida no Header ([`src/components/header.py`](automated-OTRS-and-CitSmart/src/components/header.py)):**
+         * Mapeamento de rota `"🏖️ Férias da Bancada": "ferias"` com navegação interna no menu hambúrguer e atalho `↗` para abertura em nova aba (`target="_blank"`).
+       - **Suíte de Testes 100% Verde:**
+         * Implementados testes unitários em [`tests/unit/test_ferias.py`](automated-OTRS-and-CitSmart/tests/unit/test_ferias.py).
+         * Suíte completa agora com **50 testes automatizados passando com 100% de sucesso** (`python3 tests/run_all.py`).
+
+---
+
 ## 📋 5. Próximas Etapas e Melhorias Planejadas
+
+---
+
+### 5.2 Outras Melhorias Planejadas
 1. **Sincronização Periódica Automática do Cache do SCCM:**
    - Agendamento da rotina via daemon interno de cron (`cron_scheduler.py`).
 2. **Métricas de Acurácia de Localização:**
