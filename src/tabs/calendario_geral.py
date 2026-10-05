@@ -8,6 +8,8 @@ from src.database import (
     get_plantoes_matutino,
     get_plantoes_semanal,
     get_garantia_contratos_df,
+    get_garantia_chamados_df,
+    get_garantia_agendamentos_df,
     get_viagens_df,
     get_ferias_df,
     load_data,
@@ -331,7 +333,7 @@ def render_calendario_geral_page():
                         }
                     })
 
-    # 4. CONTRATOS DE GARANTIA
+    # 4. CONTRATOS, AGENDAMENTOS E CHAMADOS DE GARANTIA
     if chk_garantias:
         df_garantia = get_garantia_contratos_df()
         if not df_garantia.empty:
@@ -350,10 +352,11 @@ def render_calendario_geral_page():
                         "id": f"garantia_ini_{idx}",
                         "title": f"🟢 Início Garantia: {item} ({fornecedor})",
                         "start": iso_ini,
-                        "backgroundColor": "#3b82f6",
-                        "borderColor": "#1d4ed8",
+                        "backgroundColor": "#10b981",
+                        "borderColor": "#059669",
                         "extendedProps": {
                             "categoria_evento": "garantia",
+                            "subtipo": "vigencia",
                             "tipo": "🟢 Início da Garantia",
                             "contrato": contrato,
                             "pu_saj": pu_saj,
@@ -377,6 +380,7 @@ def render_calendario_geral_page():
                         "borderColor": bg_col,
                         "extendedProps": {
                             "categoria_evento": "garantia",
+                            "subtipo": "vigencia",
                             "tipo": "🔴 Fim / Vencimento da Garantia",
                             "contrato": contrato,
                             "pu_saj": pu_saj,
@@ -388,6 +392,82 @@ def render_calendario_geral_page():
                             "link_suporte": link_suporte
                         }
                     })
+
+        # Eventos de Agendamentos de Atendimento Técnico
+        df_agendamentos = get_garantia_agendamentos_df()
+        if not df_agendamentos.empty:
+            for idx, row in df_agendamentos.iterrows():
+                tecnico = str(row.get('tecnico', '')).strip()
+                dt_prev = str(row.get('data_prevista', '')).strip()
+                hr_prev = str(row.get('hora_prevista', '')).strip()
+                chamado_at = str(row.get('chamado_a_atender', '')).strip()
+
+                iso_ag, br_ag = parse_date_to_iso_and_br(dt_prev)
+                if iso_ag:
+                    hora_clean = hr_prev.replace('h', ':').strip() if hr_prev else ""
+                    if len(hora_clean) == 5 and ':' in hora_clean:
+                        start_datetime = f"{iso_ag}T{hora_clean}:00"
+                    else:
+                        start_datetime = iso_ag
+
+                    titulo_ag = f"🕒 Agendamento: {tecnico} ({chamado_at})" if chamado_at else f"🕒 Agendamento: {tecnico}"
+                    events.append({
+                        "id": f"garantia_ag_{idx}",
+                        "title": titulo_ag,
+                        "start": start_datetime,
+                        "backgroundColor": "#a855f7",
+                        "borderColor": "#9333ea",
+                        "extendedProps": {
+                            "categoria_evento": "garantia",
+                            "subtipo": "agendamento",
+                            "tipo": "🕒 Agendamento de Atendimento",
+                            "tecnico": tecnico,
+                            "hora_prevista": hr_prev,
+                            "chamado_a_atender": chamado_at,
+                            "data_formatada": f"{br_ag} às {hr_prev}" if hr_prev else br_ag
+                        }
+                    })
+
+        # Eventos de Abertura de Chamados de Garantia
+        df_chamados_garantia = get_garantia_chamados_df()
+        if not df_chamados_garantia.empty:
+            for idx, row in df_chamados_garantia.iterrows():
+                dt_ab = str(row.get('data_abertura', '')).strip()
+                if not dt_ab:
+                    continue
+                iso_ab, br_ab = parse_date_to_iso_and_br(dt_ab)
+                if not iso_ab:
+                    continue
+
+                item_ch = str(row.get('item', '')).strip()
+                st_ch = str(row.get('status', '')).strip()
+                c_mpm = str(row.get('chamado_mpm', '')).strip()
+                c_ext = str(row.get('chamado_externo', '')).strip()
+                patrim = str(row.get('patrimonio', '')).strip()
+                n_serie = str(row.get('numero_serie', '')).strip()
+                defeito = str(row.get('defeito', '')).strip()
+
+                label_ch = c_ext or c_mpm or patrim or item_ch
+                events.append({
+                    "id": f"garantia_ab_{idx}",
+                    "title": f"🛠️ Abertura Garantia: {item_ch} ({label_ch})",
+                    "start": iso_ab,
+                    "backgroundColor": "#0ea5e9",
+                    "borderColor": "#0284c7",
+                    "extendedProps": {
+                        "categoria_evento": "garantia",
+                        "subtipo": "abertura_chamado",
+                        "tipo": "🛠️ Abertura de Chamado",
+                        "item": item_ch,
+                        "status": st_ch,
+                        "chamado_mpm": c_mpm,
+                        "chamado_externo": c_ext,
+                        "patrimonio": patrim,
+                        "numero_serie": n_serie,
+                        "defeito": defeito,
+                        "data_formatada": br_ab
+                    }
+                })
 
     # VIAGENS DA BANCADA
     if chk_viagens:

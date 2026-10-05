@@ -427,12 +427,20 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
 
             <!-- BLOCO GARANTIA -->
             <div id="blocoGarantia" style="display:none;">
-              <p><strong>📜 Contrato:</strong> <span id="gContrato"></span></p>
-              <p><strong>📂 PU SAJ:</strong> <span id="gPuSaj"></span></p>
-              <p><strong>💻 Item / Equipamento:</strong> <span id="gItem"></span></p>
-              <p><strong>🏢 Fornecedor:</strong> <span id="gFornecedor"></span></p>
-              <p><strong>📅 Data do Evento:</strong> <span id="gData"></span></p>
-              <p><strong>🛡️ Status Vigência:</strong> <span id="gStatus"></span></p>
+              <p id="gContratoContainer"><strong>📜 Contrato:</strong> <span id="gContrato"></span></p>
+              <p id="gPuSajContainer"><strong>📂 PU SAJ:</strong> <span id="gPuSaj"></span></p>
+              <p id="gItemContainer"><strong>💻 Item / Equipamento:</strong> <span id="gItem"></span></p>
+              <p id="gFornecedorContainer"><strong>🏢 Fornecedor:</strong> <span id="gFornecedor"></span></p>
+              <p id="gTecnicoContainer"><strong>👨‍🔧 Técnico Responsável:</strong> <span id="gTecnico"></span></p>
+              <p id="gHoraContainer"><strong>🕒 Horário Previsto:</strong> <span id="gHora"></span></p>
+              <p id="gChamadoAtenderContainer"><strong>🎫 Chamado a Atender:</strong> <span id="gChamadoAtender"></span></p>
+              <p id="gPatrimonioContainer"><strong>🏷️ Patrimônio:</strong> <span id="gPatrimonio"></span></p>
+              <p id="gSerieContainer"><strong>🔢 Número de Série:</strong> <span id="gSerie"></span></p>
+              <p id="gChamadoMpmContainer"><strong>🎫 Chamado MPMS:</strong> <span id="gChamadoMpm"></span></p>
+              <p id="gChamadoExtContainer"><strong>🌐 Chamado Externo:</strong> <span id="gChamadoExt"></span></p>
+              <p id="gDefeitoContainer"><strong>⚠️ Defeito:</strong> <span id="gDefeito"></span></p>
+              <p id="gDataContainer"><strong>📅 Data do Evento:</strong> <span id="gData"></span></p>
+              <p id="gStatusContainer"><strong>🛡️ Status:</strong> <span id="gStatus"></span></p>
               <p id="gNotaContainer"><strong>📄 Nota Fiscal:</strong> <span id="gNota"></span></p>
               <p id="gLinkContainer"><strong>🌐 Suporte:</strong> <a id="gLink" href="#" target="_blank" style="color: #3b82f6; text-decoration: underline;">Abrir Chamado / Suporte ↗</a></p>
             </div>
@@ -677,7 +685,18 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
                 case 'garantia':
                   document.getElementById('blocoGarantia').style.display = 'block';
                   
-                  if (props.tipo && props.tipo.includes('Início')) {
+                  var subTipoGarantia = props.subtipo || '';
+                  if (props.tipo && props.tipo.includes('Agendamento')) {
+                    badge.className = 'modal-badge';
+                    badge.style.backgroundColor = 'rgba(168, 85, 247, 0.2)';
+                    badge.style.color = '#a855f7';
+                    badge.style.border = '1px solid #a855f7';
+                  } else if (props.tipo && (props.tipo.includes('Abertura') || props.tipo.includes('Chamado'))) {
+                    badge.className = 'modal-badge';
+                    badge.style.backgroundColor = 'rgba(14, 165, 233, 0.2)';
+                    badge.style.color = '#0ea5e9';
+                    badge.style.border = '1px solid #0ea5e9';
+                  } else if (props.tipo && props.tipo.includes('Início')) {
                     badge.className = 'modal-badge';
                     badge.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
                     badge.style.color = '#10b981';
@@ -689,21 +708,33 @@ def render_master_calendar(events: list[dict], height_px=860, scrolling_enabled=
                     badge.style.border = '1px solid #ef4444';
                   }
 
-                  document.getElementById('gContrato').innerText = props.contrato || 'N/A';
-                  document.getElementById('gPuSaj').innerText = props.pu_saj || 'N/A';
-                  document.getElementById('gItem').innerText = props.item || 'N/A';
-                  document.getElementById('gFornecedor').innerText = props.fornecedor || 'N/A';
-                  document.getElementById('gData').innerText = props.data_formatada || 'N/A';
-                  document.getElementById('gStatus').innerText = props.status_garantia || 'N/A';
+                  // Configura campos com exibição condicional
+                  var setField = function(elemId, contId, val) {
+                    var el = document.getElementById(elemId);
+                    var cont = document.getElementById(contId);
+                    if (val && String(val).trim() !== '' && String(val).trim() !== 'N/A') {
+                      el.innerText = val;
+                      cont.style.display = 'block';
+                    } else {
+                      cont.style.display = 'none';
+                    }
+                  };
 
-                  var gNota = document.getElementById('gNota');
-                  var gNotaContainer = document.getElementById('gNotaContainer');
-                  if (props.nota_fiscal) {
-                    gNota.innerText = props.nota_fiscal;
-                    gNotaContainer.style.display = 'block';
-                  } else {
-                    gNotaContainer.style.display = 'none';
-                  }
+                  setField('gContrato', 'gContratoContainer', props.contrato);
+                  setField('gPuSaj', 'gPuSajContainer', props.pu_saj);
+                  setField('gItem', 'gItemContainer', props.item);
+                  setField('gFornecedor', 'gFornecedorContainer', props.fornecedor);
+                  setField('gTecnico', 'gTecnicoContainer', props.tecnico);
+                  setField('gHora', 'gHoraContainer', props.hora_prevista);
+                  setField('gChamadoAtender', 'gChamadoAtenderContainer', props.chamado_a_atender);
+                  setField('gPatrimonio', 'gPatrimonioContainer', props.patrimonio);
+                  setField('gSerie', 'gSerieContainer', props.numero_serie);
+                  setField('gChamadoMpm', 'gChamadoMpmContainer', props.chamado_mpm);
+                  setField('gChamadoExt', 'gChamadoExtContainer', props.chamado_externo);
+                  setField('gDefeito', 'gDefeitoContainer', props.defeito);
+                  setField('gData', 'gDataContainer', props.data_formatada || formatBrDateTime(info.event.start, props.raw_data));
+                  setField('gStatus', 'gStatusContainer', props.status_garantia || props.status);
+                  setField('gNota', 'gNotaContainer', props.nota_fiscal || props.nota_no_chamado);
 
                   var gLink = document.getElementById('gLink');
                   var gLinkContainer = document.getElementById('gLinkContainer');

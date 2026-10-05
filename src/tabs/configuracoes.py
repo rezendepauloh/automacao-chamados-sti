@@ -269,6 +269,10 @@ def render_configuracoes_page():
                 st.text_input("URL Planilha Fiscalização de Contratos", value=settings.get("FISCAL_EXCEL_RELATIVE_PATH", {}).get("value", ""), key="cfg_sp_fiscal"),
                 False, "sharepoint", "URL/Caminho da Planilha de Fiscalização de Contratos"
             )
+            form_values["FERIAS_EXCEL_RELATIVE_PATH"] = (
+                st.text_input("URL Planilha Previsão de Férias e Licenças", value=settings.get("FERIAS_EXCEL_RELATIVE_PATH", {}).get("value", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"), key="cfg_sp_ferias"),
+                False, "sharepoint", "URL/Caminho da Planilha de Férias e Licenças da Bancada"
+            )
         with c2:
             form_values["WARRANTY_EXCEL_RELATIVE_PATH"] = (
                 st.text_input("URL Planilha Controle de Garantia", value=settings.get("WARRANTY_EXCEL_RELATIVE_PATH", {}).get("value", ""), key="cfg_sp_garantia"),
@@ -594,6 +598,8 @@ def render_configuracoes_page():
             "sync_ramais": Path("debug_logs") / "ramais" / "ramais_scraper.log",
             "sync_oxe": Path("debug_logs") / "oxe" / "oxe_scraper.log",
             "sync_papercut": Path("debug_logs") / "papercut" / "papercut_scraper.log",
+            "sync_ad_catalog": Path("debug_logs") / "ad" / "sync_ad.log",
+            "sync_sccm": Path("debug_logs") / "sync" / "sccm_service.log",
             "orquestrador_chamados": Path("debug_logs") / "orquestrador" / "orquestrador.log",
         }
 

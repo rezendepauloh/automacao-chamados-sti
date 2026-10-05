@@ -158,6 +158,11 @@ elif selected_page == "⚡ Scripts de Automação":
     importlib.reload(src.tabs.scripts_automacao)
     src.tabs.scripts_automacao.render_scripts_automacao_page()
 
+elif selected_page == "🔐 Cofre de Senhas":
+    import src.tabs.senhas
+    importlib.reload(src.tabs.senhas)
+    src.tabs.senhas.render_senhas_page()
+
 elif selected_page == "🔔 Central de Notificações":
 
     import src.tabs.notificacoes

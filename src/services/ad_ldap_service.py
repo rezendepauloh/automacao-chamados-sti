@@ -45,6 +45,51 @@ def get_ldap_connection(timeout: int = 10) -> Tuple[Optional[ldap3.Connection], 
         return None, f"Erro de conexão com o DC: {str(e)}"
 
 
+def authenticate_user_credentials(user: str, password: str, timeout: int = 5) -> Tuple[bool, str]:
+    """
+    Valida a autenticação das credenciais fornecidas (usuário e senha) no Active Directory / LDAP.
+    Suporta fallback caso o ambiente de rede local esteja offline ou em testes.
+    Retorna uma tupla (sucesso: bool, mensagem: str).
+    """
+    if not user or not user.strip():
+        return False, "Usuário não informado."
+    if not password:
+        return False, "Senha não informada."
+
+    clean_user = user.strip()
+
+    # Validação via LDAP se o domínio estiver configurado
+    if DOMINIO:
+        try:
+            server = ldap3.Server(DOMINIO, port=389, connect_timeout=timeout)
+            upn = f"{clean_user}@{DOMINIO}" if "@" not in clean_user else clean_user
+            conn = ldap3.Connection(
+                server,
+                user=upn,
+                password=password,
+                authentication=ldap3.SIMPLE,
+                auto_bind=False,
+                receive_timeout=timeout
+            )
+            if conn.bind():
+                conn.unbind()
+                return True, "Autenticação via Active Directory realizada com sucesso."
+            else:
+                desc = conn.result.get('description', 'Credenciais inválidas.')
+                return False, f"Credenciais incorretas no Active Directory ({desc})."
+        except Exception as e:
+            # Em caso de falha de conexão com o DC (rede externa/offline), verifica contra AD_PASSWORD se for o mesmo usuário configurado
+            if clean_user.lower() == str(USERNAME).lower() and PASSWORD and password == PASSWORD:
+                return True, "Autenticado com credencial institucional local (offline)."
+            return False, f"Não foi possível contatar o Active Directory: {e}"
+
+    # Fallback se DOMINIO não estiver configurado
+    if clean_user.lower() == str(USERNAME).lower() and PASSWORD and password == PASSWORD:
+        return True, "Autenticado com credencial institucional do sistema."
+
+    return False, "Domínio do Active Directory não configurado."
+
+
 def test_ad_connection() -> Dict[str, Any]:
     """
     Testa a conectividade e autenticação com o Domain Controller e retorna status detalhado.

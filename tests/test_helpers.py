@@ -78,6 +78,32 @@ except ImportError:
         def copy(self):
             return MockDataFrame(data=dict(self.data), columns=list(self.columns))
 
+        def dropna(self, subset=None):
+            if not self.data:
+                return self.copy()
+            rows_count = len(next(iter(self.data.values())))
+            cols_to_check = subset if subset else self.columns
+            valid_indices = []
+            for i in range(rows_count):
+                keep = True
+                for col in cols_to_check:
+                    val = self.data.get(col, [None] * rows_count)[i]
+                    if val is None or (isinstance(val, float) and val != val) or val == "":
+                        keep = False
+                        break
+                if keep:
+                    valid_indices.append(i)
+            new_data = {col: [self.data[col][i] for i in valid_indices] for col in self.columns}
+            return MockDataFrame(data=new_data, columns=list(self.columns))
+
+        def to_dict(self, orient="records"):
+            if not self.data:
+                return [] if orient == "records" else {}
+            rows_count = len(next(iter(self.data.values())))
+            if orient == "records":
+                return [{col: self.data[col][i] for col in self.columns} for i in range(rows_count)]
+            return dict(self.data)
+
         def iterrows(self):
             if isinstance(self.data, dict) and self.data:
                 rows_count = len(next(iter(self.data.values())))
@@ -261,6 +287,23 @@ except ImportError:
     sys.modules["xlsxwriter"] = mock_xlsx
     sys.modules["xlsxwriter.workbook"] = mock_wb_mod
 
+# Mock openpyxl
+try:
+    import openpyxl
+except ImportError:
+    mock_openpyxl = types.ModuleType("openpyxl")
+    mock_openpyxl.Workbook = MagicMock()
+    mock_openpyxl.load_workbook = MagicMock()
+    mock_styles = types.ModuleType("openpyxl.styles")
+    mock_styles.PatternFill = MagicMock()
+    mock_styles.Font = MagicMock()
+    mock_styles.Alignment = MagicMock()
+    mock_styles.Border = MagicMock()
+    mock_styles.Side = MagicMock()
+    mock_openpyxl.styles = mock_styles
+    sys.modules["openpyxl"] = mock_openpyxl
+    sys.modules["openpyxl.styles"] = mock_styles
+
 # Mock dotenv
 try:
     import dotenv
@@ -290,12 +333,26 @@ _mock_module_if_missing("schedule", {
 })
 
 # 5. Mock de ldap3
+class _MockLDAPConnection:
+    def __init__(self, *args, **kwargs):
+        self.bound = False
+        self.result = {"description": "Invalid credentials"}
+    def bind(self):
+        return False
+    def unbind(self):
+        self.bound = False
+
 _mock_module_if_missing("ldap3", {
     "Server": MagicMock(),
-    "Connection": MagicMock(),
+    "Connection": _MockLDAPConnection,
     "ALL": "ALL",
     "SUBTREE": "SUBTREE",
     "NTLM": "NTLM",
+    "SIMPLE": "SIMPLE",
+})
+_mock_module_if_missing("ldap3.core", {})
+_mock_module_if_missing("ldap3.core.exceptions", {
+    "LDAPException": Exception,
 })
 
 # 6. Mock de icalendar
@@ -361,23 +418,32 @@ except ImportError:
         def find_all(self, *args, **kwargs):
             # Procura tags básicas baseadas no nome ou predicado
             if args:
-                tag_name = args[0]
-                if tag_name == "i":
+                target = args[0]
+                # Suporta lista de tags como ["i", "span"]
+                tag_names = target if isinstance(target, (list, tuple)) else [target]
+
+                if any(t == "i" for t in tag_names):
                     matches = []
                     for m in re.finditer(r'<i(\s+[^>]*)?>.*?</i>|<i(\s+[^>]*)?/>', self.html, flags=re.DOTALL | re.IGNORECASE):
+                        attrs_raw = m.group(1) or ""
+                        attrs = {}
+                        for attr_match in re.finditer(r'([a-zA-Z0-9_-]+)=[\'"]([^\'"]*)[\'"]', attrs_raw):
+                            attrs[attr_match.group(1)] = html_lib.unescape(attr_match.group(2))
                         class MockI(MockTag):
-                            def __init__(self, full, soup_ref):
-                                super().__init__("i")
+                            def __init__(self, full, attrs_dict, soup_ref):
+                                super().__init__("i", attrs_dict)
                                 self.full = full
                                 self.soup_ref = soup_ref
                             def decompose(self):
                                 self.soup_ref.html = self.soup_ref.html.replace(self.full, "")
-                        matches.append(MockI(m.group(0), self))
-                    return matches
+                        matches.append(MockI(m.group(0), attrs, self))
+                    if target == "i" or (isinstance(target, (list, tuple)) and set(target) == {"i"}):
+                        return matches
+                    if isinstance(target, (list, tuple)):
+                        return matches
                 
-                if tag_name == "div" and kwargs.get("class_") == "imagePlugin":
+                if "div" in tag_names and kwargs.get("class_") == "imagePlugin":
                     matches = []
-                    # Encontra tags <div ... class="...imagePlugin..." ...>...</div>
                     pattern = re.compile(r'<div([^>]*class=[\'"][^\'"]*imagePlugin[^\'"]*[\'"][^>]*)>(.*?)</div>', re.DOTALL | re.IGNORECASE)
                     for m in pattern.finditer(self.html):
                         attrs_raw = m.group(1)
@@ -396,8 +462,29 @@ except ImportError:
 
                         matches.append(MockDiv(full, attrs, self))
                     return matches
+
+                if "div" in tag_names and kwargs.get("class_") == "sp-video-embed":
+                    matches = []
+                    pattern = re.compile(r'<div([^>]*class=[\'"][^\'"]*sp-video-embed[^\'"]*[\'"][^>]*)>(.*?)</div>', re.DOTALL | re.IGNORECASE)
+                    for m in pattern.finditer(self.html):
+                        attrs_raw = m.group(1)
+                        full = m.group(0)
+                        attrs = {}
+                        for attr_match in re.finditer(r'([a-zA-Z0-9_-]+)=[\'"]([^\'"]*)[\'"]', attrs_raw):
+                            attrs[attr_match.group(1)] = html_lib.unescape(attr_match.group(2))
+                        
+                        class MockVideoDiv(MockTag):
+                            def __init__(self, full_str, attrs_dict, soup_ref):
+                                super().__init__("div", attrs_dict)
+                                self.full_str = full_str
+                                self.soup_ref = soup_ref
+                            def replace_with(self, new_content):
+                                self.soup_ref.html = self.soup_ref.html.replace(self.full_str, str(new_content))
+
+                        matches.append(MockVideoDiv(full, attrs, self))
+                    return matches
                 
-                if tag_name == "img":
+                if "img" in tag_names:
                     matches = []
                     for m in re.finditer(r'<img(\s+[^>]*)?>', self.html, flags=re.IGNORECASE):
                         attrs_raw = m.group(1) or ""

@@ -61,7 +61,14 @@ def modal_config_ferias():
     tab_online, tab_upload = st.tabs(["🌐 Link SharePoint / Atualizar Online", "📥 Envio Direto de Planilha"])
 
     with tab_online:
-        excel_url = (_cfg("FERIAS_EXCEL_RELATIVE_PATH") or os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "")).strip()
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+        excel_url = (
+            os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "")
+            or _cfg("FERIAS_EXCEL_RELATIVE_PATH")
+            or FERIAS_EXCEL_RELATIVE_PATH
+            or "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"
+        ).strip()
         st.write("Planilha oficial vinculada no SharePoint:")
 
         if excel_url.startswith("http://") or excel_url.startswith("https://"):
@@ -73,6 +80,8 @@ def modal_config_ferias():
                 help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."
             )
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        else:
+            st.info(f"Caminho configurado: `{excel_url}`")
 
         if st.button("🚀 Sincronizar pelo Link do SharePoint Agora", type="primary", width='stretch'):
             popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
@@ -334,10 +343,10 @@ def render_ferias_page():
             })
 
             # Paginação
-            paginated_df, total_pages, current_page = paginate_items(
+            paginated_df, current_page, total_pages, total_items = paginate_items(
                 df_disp_view,
-                items_per_page=items_per_page,
-                key_prefix="ferias_tbl"
+                page_key="ferias_tbl",
+                items_per_page=items_per_page
             )
 
             st.dataframe(
@@ -347,9 +356,11 @@ def render_ferias_page():
             )
 
             render_pagination_controls(
-                total_pages=total_pages,
+                page_key="ferias_tbl",
                 current_page=current_page,
-                key_prefix="ferias_tbl"
+                total_pages=total_pages,
+                total_items=total_items,
+                items_per_page=items_per_page
             )
 
             # Exportação

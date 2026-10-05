@@ -79,7 +79,8 @@ from .garantia_db import (
     setup_garantia_tables,
     sync_garantia_from_excel,
     get_garantia_contratos_df,
-    get_garantia_chamados_df
+    get_garantia_chamados_df,
+    get_garantia_agendamentos_df
 )
 
 from .events_db import (
@@ -160,6 +161,19 @@ from .sccm_db import (
     get_sccm_users_df,
     get_sccm_collections_df,
     get_device_by_user
+)
+
+from .senhas_db import (
+    setup_senhas_table,
+    salvar_senha,
+    listar_senhas,
+    get_senhas_df,
+    obter_senha_decifrada,
+    obter_credencial_por_id,
+    atualizar_senha,
+    excluir_senha,
+    get_senhas_stats,
+    CATEGORIAS_PADRAO
 )
 
 __all__ = [
@@ -247,5 +261,15 @@ __all__ = [
     "update_cron_schedule",
     "log_cron_execution_start",
     "log_cron_execution_end",
-    "get_recent_cron_logs"
+    "get_recent_cron_logs",
+    "setup_senhas_table",
+    "salvar_senha",
+    "listar_senhas",
+    "get_senhas_df",
+    "obter_senha_decifrada",
+    "obter_credencial_por_id",
+    "atualizar_senha",
+    "excluir_senha",
+    "get_senhas_stats",
+    "CATEGORIAS_PADRAO"
 ]

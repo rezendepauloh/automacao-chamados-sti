@@ -6,7 +6,7 @@ import pandas as pd
 from .connection import get_connection
 
 def setup_garantia_tables():
-    """Cria as tabelas de contratos e chamados de garantia no SQLite se não existirem."""
+    """Cria as tabelas de contratos, chamados e agendamentos de garantia no SQLite se não existirem."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -31,6 +31,7 @@ def setup_garantia_tables():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS garantia_chamados (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        data_abertura TEXT,
         item TEXT,
         status TEXT,
         numero_serie TEXT,
@@ -41,6 +42,26 @@ def setup_garantia_tables():
         solucao TEXT,
         nota_no_chamado TEXT,
         chamado_dmp TEXT,
+        data_atualizacao TEXT
+    )
+    """)
+
+    # Migração suave para banco existente sem a coluna data_abertura
+    cursor.execute("PRAGMA table_info(garantia_chamados)")
+    colunas_chamados = [info[1] for info in cursor.fetchall()]
+    if "data_abertura" not in colunas_chamados:
+        try:
+            cursor.execute("ALTER TABLE garantia_chamados ADD COLUMN data_abertura TEXT")
+        except Exception:
+            pass
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS garantia_agendamentos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tecnico TEXT,
+        data_prevista TEXT,
+        hora_prevista TEXT,
+        chamado_a_atender TEXT,
         data_atualizacao TEXT
     )
     """)
@@ -208,6 +229,30 @@ def sync_garantia_from_excel(excel_path_or_buffer = None) -> bool:
                 cursor.execute("DELETE FROM garantia_chamados")
 
                 for _, row in df_chamados.iterrows():
+                    data_abertura = ""
+                    for k in row.index:
+                        if 'abertur' in str(k).lower():
+                            raw_ab = str(row[k]).strip()
+                            if raw_ab and raw_ab.lower() not in ['nan', 'none']:
+                                # Se vier como número serial do Excel (ex: 45911)
+                                try:
+                                    num_val = float(raw_ab)
+                                    if 30000 <= num_val <= 60000:
+                                        import datetime as dt_mod
+                                        data_abertura = (dt_mod.datetime(1899, 12, 30) + dt_mod.timedelta(days=num_val)).strftime("%Y-%m-%d")
+                                except Exception:
+                                    pass
+                                if not data_abertura:
+                                    try:
+                                        dt_ab = pd.to_datetime(raw_ab, dayfirst=True, errors='coerce')
+                                        if pd.notnull(dt_ab):
+                                            data_abertura = dt_ab.strftime("%Y-%m-%d")
+                                    except Exception:
+                                        pass
+                                if not data_abertura:
+                                    data_abertura = raw_ab
+                            break
+
                     item = ""
                     for k in row.index:
                         if 'item' in str(k).lower() or 'equipamento' in str(k).lower():
@@ -273,14 +318,82 @@ def sync_garantia_from_excel(excel_path_or_buffer = None) -> bool:
 
                     cursor.execute("""
                     INSERT INTO garantia_chamados (
-                        item, status, numero_serie, patrimonio, chamado_mpm,
+                        data_abertura, item, status, numero_serie, patrimonio, chamado_mpm,
                         chamado_externo, defeito, solucao, nota_no_chamado,
                         chamado_dmp, data_atualizacao
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        item, status, n_serie, patrimonio, c_mpm,
+                        data_abertura, item, status, n_serie, patrimonio, c_mpm,
                         c_ext, defeito, solucao, nota_chamado,
                         c_dmp, now_str
+                    ))
+
+            # Sincronização da aba Agendamento
+            sheet_agendamento_name = next((s for s in xls.sheet_names if 'agend' in s.lower()), None)
+            if sheet_agendamento_name:
+                df_raw_ag = pd.read_excel(xls, sheet_name=sheet_agendamento_name, header=None, dtype=str)
+                header_idx_ag = 0
+                for r_idx, r in df_raw_ag.iterrows():
+                    r_str = " ".join([str(val).lower() for val in r if pd.notnull(val)])
+                    if 'técnico' in r_str or 'tecnico' in r_str or 'data prevista' in r_str or 'chamado' in r_str:
+                        header_idx_ag = r_idx
+                        break
+
+                df_agendamentos = pd.read_excel(xls, sheet_name=sheet_agendamento_name, header=header_idx_ag, dtype=str)
+                df_agendamentos.fillna("", inplace=True)
+                cursor.execute("DELETE FROM garantia_agendamentos")
+
+                for _, row in df_agendamentos.iterrows():
+                    tecnico = ""
+                    for k in row.index:
+                        if 'técnic' in str(k).lower() or 'tecnic' in str(k).lower() or 'analista' in str(k).lower() or 'nome' in str(k).lower():
+                            tecnico = str(row[k]).strip()
+                            break
+
+                    data_prevista = ""
+                    for k in row.index:
+                        if 'data' in str(k).lower() or 'previst' in str(k).lower() and 'hora' not in str(k).lower():
+                            raw_dt = str(row[k]).strip()
+                            if raw_dt and raw_dt.lower() not in ['nan', 'none']:
+                                try:
+                                    num_val = float(raw_dt)
+                                    if 30000 <= num_val <= 60000:
+                                        import datetime as dt_mod
+                                        data_prevista = (dt_mod.datetime(1899, 12, 30) + dt_mod.timedelta(days=num_val)).strftime("%Y-%m-%d")
+                                except Exception:
+                                    pass
+                                if not data_prevista:
+                                    try:
+                                        dt_prev = pd.to_datetime(raw_dt, dayfirst=True, errors='coerce')
+                                        if pd.notnull(dt_prev):
+                                            data_prevista = dt_prev.strftime("%Y-%m-%d")
+                                    except Exception:
+                                        pass
+                                if not data_prevista:
+                                    data_prevista = raw_dt
+                            break
+
+                    hora_prevista = ""
+                    for k in row.index:
+                        if 'hora' in str(k).lower():
+                            hora_prevista = str(row[k]).strip()
+                            break
+
+                    chamado_atender = ""
+                    for k in row.index:
+                        if 'chamado' in str(k).lower() or 'atendid' in str(k).lower() or 'atender' in str(k).lower():
+                            chamado_atender = str(row[k]).strip()
+                            break
+
+                    if not tecnico and not data_prevista and not chamado_atender:
+                        continue
+
+                    cursor.execute("""
+                    INSERT INTO garantia_agendamentos (
+                        tecnico, data_prevista, hora_prevista, chamado_a_atender, data_atualizacao
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """, (
+                        tecnico, data_prevista, hora_prevista, chamado_atender, now_str
                     ))
 
             conn.commit()
@@ -313,6 +426,18 @@ def get_garantia_chamados_df() -> pd.DataFrame:
     conn = get_connection()
     try:
         df = pd.read_sql_query("SELECT * FROM garantia_chamados ORDER BY id ASC", conn)
+        conn.close()
+        return df
+    except Exception:
+        conn.close()
+        return pd.DataFrame()
+
+def get_garantia_agendamentos_df() -> pd.DataFrame:
+    """Retorna o DataFrame de Agendamentos de Atendimento de Garantia do SQLite."""
+    setup_garantia_tables()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT * FROM garantia_agendamentos ORDER BY id ASC", conn)
         conn.close()
         return df
     except Exception:

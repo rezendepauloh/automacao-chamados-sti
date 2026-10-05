@@ -19,6 +19,7 @@ PAGE_TO_SLUG = {
     "💻 Inventário SCCM": "sccm",
     "⚡ Scripts de Automação": "scripts-automacao",
     "📚 FAQ & Tutoriais": "faq",
+    "🔐 Cofre de Senhas": "senhas",
     "🔔 Central de Notificações": "notificacoes",
     "⚙️ Configurações": "configuracoes",
 }
@@ -92,6 +93,7 @@ def render_header_navigation() -> str:
         ("💻 Inventário SCCM", "hdr_btn_sccm"),
         ("⚡ Scripts de Automação", "hdr_btn_scripts_automacao"),
         ("📚 FAQ & Tutoriais", "hdr_btn_faq"),
+        ("🔐 Cofre de Senhas", "hdr_btn_senhas"),
     ]
 
     FOOTER_ITEMS = [

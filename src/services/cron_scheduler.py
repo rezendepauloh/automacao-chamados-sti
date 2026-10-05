@@ -45,7 +45,8 @@ def execute_task_by_id(task_id: str) -> str:
         "sync_plantoes_semanal": "automated_plantoes_sync.lock",
         "sync_ferias": "ferias_sync.lock",
         "sync_sharepoint_catalog": "sharepoint_catalog_sync.lock",
-        "sync_ad_catalog": "ad_sync.lock"
+        "sync_ad_catalog": "ad_sync.lock",
+        "sync_sccm": "sccm_sync.lock"
     }
 
     lock_file = None
@@ -157,6 +158,14 @@ def execute_task_by_id(task_id: str) -> str:
                 return f"Active Directory sincronizado com sucesso: {res.get('total_ous', 0)} OUs, {res.get('total_users', 0)} usuários, {res.get('total_computers', 0)} computadores, {res.get('total_groups', 0)} grupos."
             else:
                 raise RuntimeError(f"Falha na sincronização do Active Directory: {res.get('error')}")
+
+        elif task_id == "sync_sccm":
+            from src.services.sccm_service import sync_all_sccm
+            res = sync_all_sccm()
+            devs = res.get("devices", 0)
+            usrs = res.get("users", 0)
+            cols = res.get("collections", 0)
+            return f"Inventário SCCM sincronizado com sucesso: {devs} estações, {usrs} usuários e {cols} coleções."
 
         elif task_id == "orquestrador_chamados":
             import subprocess

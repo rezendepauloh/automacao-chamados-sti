@@ -126,6 +126,27 @@ class TestServices(unittest.TestCase):
         sunday = datetime(2026, 10, 4, 12, 0, 0) # Domingo
         self.assertFalse(daemon._should_run(task_active, sunday))
 
+    def test_cron_tasks_ad_and_sccm_registered(self):
+        """Valida que as tarefas de Active Directory e SCCM estão registradas nos cron jobs e executáveis."""
+        from src.database.cron_db import get_cron_schedules, setup_cron_tables
+        from src.services.cron_scheduler import execute_task_by_id
+
+        setup_cron_tables()
+        df = get_cron_schedules()
+        task_ids = [r["task_id"] for _, r in df.iterrows()]
+        self.assertIn("sync_ad_catalog", task_ids)
+        self.assertIn("sync_sccm", task_ids)
+
+        # Valida que o despachador execute_task_by_id reconhece sync_sccm e sync_ad_catalog
+        with patch("src.syncs.sync_ad_catalog.run_ad_sync", return_value={"success": True, "total_ous": 5, "total_users": 10, "total_computers": 2, "total_groups": 3}):
+            msg_ad = execute_task_by_id("sync_ad_catalog")
+            self.assertIn("Active Directory sincronizado com sucesso", msg_ad)
+
+        with patch("src.services.sccm_service.sync_all_sccm", return_value={"devices": 15, "users": 10, "collections": 5}):
+            msg_sccm = execute_task_by_id("sync_sccm")
+            self.assertIn("Inventário SCCM sincronizado com sucesso", msg_sccm)
+
+
 if __name__ == "__main__":
     unittest.main()
 

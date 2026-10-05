@@ -220,6 +220,7 @@ def seed_settings_from_env_if_empty(force: bool = False):
         ("FISCAL_EXCEL_RELATIVE_PATH", os.getenv("FISCAL_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Fiscalização de Contratos"),
         ("WARRANTY_EXCEL_RELATIVE_PATH", os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Garantia"),
         ("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Viagens da Bancada"),
+        ("FERIAS_EXCEL_RELATIVE_PATH", os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"), False, "sharepoint", "URL/Caminho da Planilha de Férias e Licenças da Bancada"),
         ("SHAREPOINT_MATUTINO_URL", os.getenv("SHAREPOINT_MATUTINO_URL", ""), False, "sharepoint", "URL da Planilha de Escala Matutina"),
         ("VIDEO_FAQ_PATH", os.getenv("VIDEO_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Vídeos FAQ no SharePoint"),
         ("IMAGE_FAQ_PATH", os.getenv("IMAGE_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Imagens FAQ no SharePoint"),

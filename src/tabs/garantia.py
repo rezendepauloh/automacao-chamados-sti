@@ -3,7 +3,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 from datetime import datetime
-from src.database import get_garantia_contratos_df, get_garantia_chamados_df, sync_garantia_from_excel
+from src.database import (
+    get_garantia_contratos_df,
+    get_garantia_chamados_df,
+    get_garantia_agendamentos_df,
+    sync_garantia_from_excel
+)
 from src.components.subtabs import render_subtabs
 from src.components.calendar import render_master_calendar
 from src.components.pagination import (
@@ -74,7 +79,7 @@ def modal_config_garantia():
             else:
                 from src.database.garantia_db import sync_garantia_from_excel
                 import time
-                with st.spinner("Lendo abas 'Contratos' e 'Chamados'..."):
+                with st.spinner("Lendo abas 'Contratos', 'Chamados' e 'Agendamento'..."):
                     res = sync_garantia_from_excel(uploaded_garantia_excel)
                     if res:
                         st.success("🎉 Planilha de garantia importada com sucesso!")
@@ -129,9 +134,9 @@ def render_garantia_page():
 
     df_contratos = get_garantia_contratos_df()
     df_chamados = get_garantia_chamados_df()
+    df_agendamentos = get_garantia_agendamentos_df()
 
-
-    if df_contratos.empty and df_chamados.empty:
+    if df_contratos.empty and df_chamados.empty and df_agendamentos.empty:
         st.warning("Nenhum dado cadastrado no banco SQLite. Clique no botão acima para sincronizar com a planilha.")
         return
 
@@ -139,6 +144,7 @@ def render_garantia_page():
     GARANTIA_SUBTAB_MAP = {
         "contratos": "📜 Contratos de Garantia",
         "chamados": "🛠️ Chamados de Garantia",
+        "agendamentos": "🕒 Agendamentos de Atendimento",
         "calendario": "📅 Calendário de Garantias",
         "graficos": "📊 Gráficos & Estatísticas"
     }
@@ -356,7 +362,7 @@ def render_garantia_page():
             )
 
         cols_ch = [
-            'item', 'status', 'patrimonio', 'numero_serie', 'chamado_mpm',
+            'data_abertura', 'item', 'status', 'patrimonio', 'numero_serie', 'chamado_mpm',
             'chamado_externo', 'defeito', 'solucao', 'nota_no_chamado', 'chamado_dmp'
         ]
         cols_ch = [c for c in cols_ch if c in df_filtered_ch.columns]
@@ -370,6 +376,7 @@ def render_garantia_page():
         st.dataframe(
             df_page_ch,
             column_config={
+                "data_abertura": st.column_config.DateColumn("Abertura", format="DD/MM/YYYY"),
                 "item": st.column_config.TextColumn("Item / Equipamento"),
                 "status": st.column_config.TextColumn("Status"),
                 "patrimonio": st.column_config.TextColumn("Patrimônio"),
@@ -394,34 +401,157 @@ def render_garantia_page():
         )
 
     # -------------------------------------------------------------------------
-    # ABA 3: CALENDÁRIO DE GARANTIAS
+    # ABA 3: AGENDAMENTOS DE ATENDIMENTO
+    # -------------------------------------------------------------------------
+    elif selected_subtab == "🕒 Agendamentos de Atendimento":
+        st.sidebar.markdown("## 🔍 Filtros de Agendamentos")
+
+        tecnicos = ["Todos"] + sorted([t for t in df_agendamentos['tecnico'].dropna().unique() if str(t).strip()]) if not df_agendamentos.empty else ["Todos"]
+        selected_tec = st.sidebar.selectbox("Técnico", tecnicos, key="f_garantia_ag_tec")
+
+        datas_previstas = ["Todas"] + sorted([d for d in df_agendamentos['data_prevista'].dropna().unique() if str(d).strip()]) if not df_agendamentos.empty else ["Todas"]
+        selected_data_ag = st.sidebar.selectbox("Data Prevista", datas_previstas, key="f_garantia_ag_data")
+
+        search_ag = st.sidebar.text_input("🔎 Buscar (Técnico, Chamado, Horário)", "", key="f_garantia_search_ag").strip().lower()
+
+        items_per_page_ag = render_items_per_page_selector(
+            key_prefix="garantia_agendamentos",
+            options=[10, 25, 50, 100, "Todos"],
+            default_index=1,
+            label="📄 Agendamentos por página:"
+        )
+
+        df_filtered_ag = df_agendamentos.copy() if not df_agendamentos.empty else pd.DataFrame(columns=['id', 'tecnico', 'data_prevista', 'hora_prevista', 'chamado_a_atender', 'data_atualizacao'])
+        if selected_tec != "Todos":
+            df_filtered_ag = df_filtered_ag[df_filtered_ag['tecnico'] == selected_tec]
+        if selected_data_ag != "Todas":
+            df_filtered_ag = df_filtered_ag[df_filtered_ag['data_prevista'] == selected_data_ag]
+
+        if search_ag and not df_filtered_ag.empty:
+            mask_ag = (
+                df_filtered_ag['tecnico'].str.lower().str.contains(search_ag, na=False) |
+                df_filtered_ag['hora_prevista'].str.lower().str.contains(search_ag, na=False) |
+                df_filtered_ag['chamado_a_atender'].str.lower().str.contains(search_ag, na=False)
+            )
+            df_filtered_ag = df_filtered_ag[mask_ag]
+
+        # CARDS KPI DE AGENDAMENTOS
+        total_ag = len(df_filtered_ag)
+        hoje_iso = datetime.now().strftime("%Y-%m-%d")
+        ag_hoje = len(df_filtered_ag[df_filtered_ag['data_prevista'] == hoje_iso]) if not df_filtered_ag.empty else 0
+        ag_futuros = len(df_filtered_ag[df_filtered_ag['data_prevista'] > hoje_iso]) if not df_filtered_ag.empty else 0
+        tecnicos_unicos = df_filtered_ag['tecnico'].nunique() if not df_filtered_ag.empty else 0
+
+        render_metric_cards([
+            {
+                "title": "TOTAL DE AGENDAMENTOS",
+                "value": total_ag,
+                "border_color": "#a855f7",
+            },
+            {
+                "title": "AGENDADOS PARA HOJE",
+                "value": ag_hoje,
+                "border_color": "#f59e0b",
+                "value_color": "#f59e0b",
+            },
+            {
+                "title": "AGENDAMENTOS FUTUROS",
+                "value": ag_futuros,
+                "border_color": "#10b981",
+                "value_color": "#10b981",
+            },
+            {
+                "title": "TÉCNICOS ESCALADOS",
+                "value": tecnicos_unicos,
+                "border_color": "#3b82f6",
+                "value_color": "#3b82f6",
+            },
+        ])
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        h_col1, h_col2 = st.columns([3, 1])
+        with h_col1:
+            st.subheader(f"🕒 Agendamentos de Atendimento Técnico ({len(df_filtered_ag)} registros)")
+        with h_col2:
+            buffer_ag = io.BytesIO()
+            with pd.ExcelWriter(buffer_ag, engine='openpyxl') as writer:
+                df_filtered_ag.to_excel(writer, index=False, sheet_name='Agendamento')
+            buffer_ag.seek(0)
+            st.download_button(
+                label="📥 Exportar Excel",
+                data=buffer_ag,
+                file_name=f"agendamentos_garantia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width='stretch'
+            )
+
+        cols_ag = ['tecnico', 'data_prevista', 'hora_prevista', 'chamado_a_atender']
+        cols_ag = [c for c in cols_ag if c in df_filtered_ag.columns]
+
+        df_page_ag, current_page_ag, total_pages_ag, total_items_ag = paginate_items(
+            df_filtered_ag[cols_ag],
+            page_key="garantia_agendamentos",
+            items_per_page=items_per_page_ag
+        )
+
+        st.dataframe(
+            df_page_ag,
+            column_config={
+                "tecnico": st.column_config.TextColumn("Técnico"),
+                "data_prevista": st.column_config.DateColumn("Data Prevista", format="DD/MM/YYYY"),
+                "hora_prevista": st.column_config.TextColumn("Hora Prevista"),
+                "chamado_a_atender": st.column_config.TextColumn("Chamado a ser Atendido"),
+            },
+            hide_index=True,
+            width='stretch'
+        )
+
+        render_pagination_controls(
+            page_key="garantia_agendamentos",
+            current_page=current_page_ag,
+            total_pages=total_pages_ag,
+            total_items=total_items_ag,
+            items_per_page=items_per_page_ag
+        )
+
+    # -------------------------------------------------------------------------
+    # ABA 4: CALENDÁRIO DE GARANTIAS
     # -------------------------------------------------------------------------
     elif selected_subtab == "📅 Calendário de Garantias":
         st.sidebar.markdown("## 🔍 Filtros do Calendário")
 
-        fornecedores_cal = ["Todos"] + sorted([f for f in df_contratos['fornecedor'].dropna().unique() if str(f).strip()])
-        selected_forn_cal = st.sidebar.selectbox("Fornecedor / Empresa", fornecedores_cal, key="f_garantia_cal_forn")
-
         tipo_evento_cal = st.sidebar.selectbox(
             "Tipo de Evento",
-            ["Todos os Eventos", "🟢 Início de Garantia", "🔴 Fim / Vencimento de Garantia"],
+            [
+                "Todos os Eventos",
+                "🟢 Início de Garantia",
+                "🔴 Fim / Vencimento de Garantia",
+                "🕒 Agendamento de Atendimento",
+                "🛠️ Abertura de Chamado"
+            ],
             key="f_garantia_cal_tipo"
         )
 
+        fornecedores_cal = ["Todos"] + sorted([f for f in df_contratos['fornecedor'].dropna().unique() if str(f).strip()])
+        selected_forn_cal = st.sidebar.selectbox("Fornecedor / Empresa", fornecedores_cal, key="f_garantia_cal_forn")
+
         status_cal = st.sidebar.selectbox(
-            "Status da Vigência",
+            "Status da Vigência (Contratos)",
             ["Todos", "Garantia Ativa", "A Vencer (≤ 30 dias)", "Garantia Vencida"],
             key="f_garantia_cal_status"
         )
 
-        df_cal = df_contratos.copy()
+        df_cal_contratos = df_contratos.copy()
         if selected_forn_cal != "Todos":
-            df_cal = df_cal[df_cal['fornecedor'] == selected_forn_cal]
+            df_cal_contratos = df_cal_contratos[df_cal_contratos['fornecedor'] == selected_forn_cal]
         if status_cal != "Todos":
-            df_cal = df_cal[df_cal['status_garantia'] == status_cal]
+            df_cal_contratos = df_cal_contratos[df_cal_contratos['status_garantia'] == status_cal]
 
         events = []
-        for idx, row in df_cal.iterrows():
+
+        # 1. Vigências dos Contratos
+        for idx, row in df_cal_contratos.iterrows():
             contrato = str(row.get('contrato', '')).strip()
             pu_saj = str(row.get('pu_saj', '')).strip()
             item = str(row.get('item', '')).strip()
@@ -443,6 +573,7 @@ def render_garantia_page():
                         "textColor": "#ffffff",
                         "extendedProps": {
                             "categoria_evento": "garantia",
+                            "subtipo": "vigencia",
                             "tipo": "🟢 Início da Garantia",
                             "contrato": contrato,
                             "pu_saj": pu_saj,
@@ -469,6 +600,7 @@ def render_garantia_page():
                         "textColor": "#ffffff",
                         "extendedProps": {
                             "categoria_evento": "garantia",
+                            "subtipo": "vigencia",
                             "tipo": "🔴 Fim / Vencimento da Garantia",
                             "contrato": contrato,
                             "pu_saj": pu_saj,
@@ -481,11 +613,87 @@ def render_garantia_page():
                         }
                     })
 
-        st.subheader(f"📅 Agenda de Vigências de Garantia ({len(events)} eventos mapeados)")
+        # 2. Agendamentos de Atendimento Técnico
+        if tipo_evento_cal in ["Todos os Eventos", "🕒 Agendamento de Atendimento"] and not df_agendamentos.empty:
+            for idx, row in df_agendamentos.iterrows():
+                tecnico = str(row.get('tecnico', '')).strip()
+                dt_prev = str(row.get('data_prevista', '')).strip()
+                hr_prev = str(row.get('hora_prevista', '')).strip()
+                chamado_at = str(row.get('chamado_a_atender', '')).strip()
+
+                iso_ag, br_ag = parse_date_to_iso_and_br(dt_prev)
+                if iso_ag:
+                    hora_clean = hr_prev.replace('h', ':').strip() if hr_prev else ""
+                    if len(hora_clean) == 5 and ':' in hora_clean:
+                        start_datetime = f"{iso_ag}T{hora_clean}:00"
+                    else:
+                        start_datetime = iso_ag
+
+                    titulo_ag = f"🕒 Agendamento: {tecnico} ({chamado_at})" if chamado_at else f"🕒 Agendamento: {tecnico}"
+                    events.append({
+                        "id": f"garantia_ag_{idx}",
+                        "title": titulo_ag,
+                        "start": start_datetime,
+                        "backgroundColor": "#a855f7",
+                        "borderColor": "#9333ea",
+                        "textColor": "#ffffff",
+                        "extendedProps": {
+                            "categoria_evento": "garantia",
+                            "subtipo": "agendamento",
+                            "tipo": "🕒 Agendamento de Atendimento",
+                            "tecnico": tecnico,
+                            "hora_prevista": hr_prev,
+                            "chamado_a_atender": chamado_at,
+                            "data_formatada": f"{br_ag} às {hr_prev}" if hr_prev else br_ag
+                        }
+                    })
+
+        # 3. Abertura de Chamados de Garantia
+        if tipo_evento_cal in ["Todos os Eventos", "🛠️ Abertura de Chamado"] and not df_chamados.empty:
+            for idx, row in df_chamados.iterrows():
+                dt_ab = str(row.get('data_abertura', '')).strip()
+                if not dt_ab:
+                    continue
+                iso_ab, br_ab = parse_date_to_iso_and_br(dt_ab)
+                if not iso_ab:
+                    continue
+
+                item_ch = str(row.get('item', '')).strip()
+                st_ch = str(row.get('status', '')).strip()
+                c_mpm = str(row.get('chamado_mpm', '')).strip()
+                c_ext = str(row.get('chamado_externo', '')).strip()
+                patrim = str(row.get('patrimonio', '')).strip()
+                n_serie = str(row.get('numero_serie', '')).strip()
+                defeito = str(row.get('defeito', '')).strip()
+
+                label_ch = c_ext or c_mpm or patrim or item_ch
+                events.append({
+                    "id": f"garantia_ab_{idx}",
+                    "title": f"🛠️ Abertura: {item_ch} ({label_ch})",
+                    "start": iso_ab,
+                    "backgroundColor": "#0ea5e9",
+                    "borderColor": "#0284c7",
+                    "textColor": "#ffffff",
+                    "extendedProps": {
+                        "categoria_evento": "garantia",
+                        "subtipo": "abertura_chamado",
+                        "tipo": "🛠️ Abertura de Chamado",
+                        "item": item_ch,
+                        "status": st_ch,
+                        "chamado_mpm": c_mpm,
+                        "chamado_externo": c_ext,
+                        "patrimonio": patrim,
+                        "numero_serie": n_serie,
+                        "defeito": defeito,
+                        "data_formatada": br_ab
+                    }
+                })
+
+        st.subheader(f"📅 Agenda de Garantias & Atendimentos ({len(events)} eventos mapeados)")
         render_master_calendar(events, height_px=750, scrolling_enabled=True)
 
     # -------------------------------------------------------------------------
-    # ABA 4: GRÁFICOS & ESTATÍSTICAS
+    # ABA 5: GRÁFICOS & ESTATÍSTICAS
     # -------------------------------------------------------------------------
     elif selected_subtab == "📊 Gráficos & Estatísticas":
 

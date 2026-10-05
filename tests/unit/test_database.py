@@ -49,6 +49,13 @@ from src.database.viagens_db import (
     setup_viagens_table,
     get_viagens_df
 )
+from src.database.garantia_db import (
+    setup_garantia_tables,
+    get_garantia_contratos_df,
+    get_garantia_chamados_df,
+    get_garantia_agendamentos_df,
+    sync_garantia_from_excel
+)
 
 class TestDatabaseModule(unittest.TestCase):
     def setUp(self):
@@ -63,6 +70,7 @@ class TestDatabaseModule(unittest.TestCase):
             patch("src.database.tickets_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.plantoes_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.viagens_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
+            patch("src.database.garantia_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
         ]
         for p in self.patchers:
             p.start()
@@ -379,6 +387,45 @@ class TestDatabaseModule(unittest.TestCase):
         self.assertIn("chamado_diaria", df.columns)
         self.assertEqual(df.iloc[0]["chamado_diaria"], "123456")
         self.assertEqual(df.iloc[0]["localidade"], "Dourados")
+
+    def test_garantia_tables_and_agendamentos_crud(self):
+        """Valida criação de tabelas de garantia, coluna data_abertura e CRUD de agendamentos."""
+        setup_garantia_tables()
+
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+
+        # Inserção de chamado com data_abertura
+        c.execute("""
+            INSERT INTO garantia_chamados (data_abertura, item, status, numero_serie, patrimonio, chamado_mpm, chamado_externo)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, ("2025-09-11", "Monitor Dell", "Concluído", "JZSGKY3", "077674", "41236", "215642741"))
+
+        # Inserção de agendamento de atendimento
+        c.execute("""
+            INSERT INTO garantia_agendamentos (tecnico, data_prevista, hora_prevista, chamado_a_atender, data_atualizacao)
+            VALUES (?, ?, ?, ?, ?)
+        """, ("Técnico Dell", "2026-10-15", "14:00", "41236", "2026-10-05 16:00:00"))
+
+        conn.commit()
+        conn.close()
+
+        # Teste de consulta via get_garantia_chamados_df
+        df_ch = get_garantia_chamados_df()
+        self.assertFalse(df_ch.empty)
+        self.assertIn("data_abertura", df_ch.columns)
+        self.assertEqual(df_ch.iloc[0]["data_abertura"], "2025-09-11")
+        self.assertEqual(df_ch.iloc[0]["patrimonio"], "077674")
+
+        # Teste de consulta via get_garantia_agendamentos_df
+        df_ag = get_garantia_agendamentos_df()
+        self.assertFalse(df_ag.empty)
+        self.assertIn("tecnico", df_ag.columns)
+        self.assertIn("data_prevista", df_ag.columns)
+        self.assertEqual(df_ag.iloc[0]["tecnico"], "Técnico Dell")
+        self.assertEqual(df_ag.iloc[0]["data_prevista"], "2026-10-15")
+        self.assertEqual(df_ag.iloc[0]["hora_prevista"], "14:00")
+        self.assertEqual(df_ag.iloc[0]["chamado_a_atender"], "41236")
 
 if __name__ == "__main__":
     unittest.main()

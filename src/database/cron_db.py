@@ -186,6 +186,30 @@ DEFAULT_TASKS = [
         "horario_fixo": "07:30",
         "apenas_dias_uteis": 0,
         "descricao": "Atualiza o arquivo .ics unificado para que o Microsoft Outlook (Web/Desktop) sincronize automaticamente todos os eventos."
+    },
+    {
+        "task_id": "sync_ad_catalog",
+        "nome": "🌳 Catálogo do Active Directory (LDAP)",
+        "categoria": "Diretório & Identidades",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 6,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "06:00",
+        "apenas_dias_uteis": 0,
+        "descricao": "Sincroniza a árvore completa de OUs, contas de usuários, grupos corporativos e computadores do Active Directory via LDAP."
+    },
+    {
+        "task_id": "sync_sccm",
+        "nome": "💻 Inventário do SCCM / MECM",
+        "categoria": "Hardware & Infraestrutura",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 12,
+        "intervalo_unidade": "horas",
+        "horario_fixo": "07:00",
+        "apenas_dias_uteis": 0,
+        "descricao": "Atualiza o inventário de estações, usuários e coleções do SCCM importando os dados coletados mais recentes ou via consultas WMI/CIM."
     }
 ]
 

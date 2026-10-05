@@ -262,17 +262,70 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
          * Implementados testes unitários em [`tests/unit/test_ferias.py`](automated-OTRS-and-CitSmart/tests/unit/test_ferias.py).
          * Suíte completa agora com **50 testes automatizados passando com 100% de sucesso** (`python3 tests/run_all.py`).
 
+    11. **Implementação Concluída: Evolução do Módulo de Garantia (Agendamentos & Abertura de Chamados) ([`src/tabs/garantia.py`](automated-OTRS-and-CitSmart/src/tabs/garantia.py)):**
+        - **Banco de Dados & Persistência Relacional ([`src/database/garantia_db.py`](automated-OTRS-and-CitSmart/src/database/garantia_db.py)):**
+          * Criada a tabela SQLite `garantia_agendamentos` (`id`, `tecnico`, `data_prevista`, `hora_prevista`, `chamado_a_atender`, `data_atualizacao`).
+          * Adicionada a coluna `data_abertura` na tabela `garantia_chamados` com migração defensiva via `PRAGMA table_info` e `ALTER TABLE`.
+          * Parser `sync_garantia_from_excel()` atualizado com suporte a conversão de números seriais de data do Excel (ex: `45911` -> `2025-09-11`), strings BR e ISO para a coluna `Abertura` na aba `Chamados` e para a nova aba `Agendamento`.
+          * Implementada e exportada a função `get_garantia_agendamentos_df()`.
+        - **Nova Sub-aba Streamlit (`🕒 Agendamentos de Atendimento`):**
+          * Adicionada ao dicionário `GARANTIA_SUBTAB_MAP` (slug: `agendamentos`).
+          * Cards KPI dinâmicos: Total de agendamentos, agendados para hoje, agendamentos futuros e total de técnicos escalados.
+          * Tabela paginada (`paginate_items` e `render_pagination_controls`), busca textual global por técnico/chamado/horário, filtros por técnico e data prevista e exportação em Excel.
+        - **Exibição do Campo "Abertura" na Sub-aba `🛠️ Chamados de Garantia`:**
+          * Coluna `Abertura` formatada em padrão brasileiro (`DD/MM/AAAA`) usando `st.column_config.DateColumn`.
+        - **Integração com os Calendários (FullCalendar):**
+          * **Calendário de Garantias ([`src/tabs/garantia.py`](automated-OTRS-and-CitSmart/src/tabs/garantia.py)):**
+            - Eventos de Agendamentos Técnicos integrados (cor roxa `#a855f7` com horário e chamado).
+            - Eventos de Abertura de Chamados de Garantia integrados (cor azul clara `#0ea5e9` com patrimônio/chamado).
+            - Sidebar atualizado com seletor de tipo de evento: *Todos*, *Início de Garantia*, *Fim / Vencimento*, *Agendamento de Atendimento* e *Abertura de Chamado*.
+          * **Calendário Geral ([`src/tabs/calendario_geral.py`](automated-OTRS-and-CitSmart/src/tabs/calendario_geral.py)):**
+            - Agendamentos e Aberturas incorporados à camada de Garantias com cores temáticas.
+            - Modal inteligente ([`src/components/calendar.py`](automated-OTRS-and-CitSmart/src/components/calendar.py)) atualizado para apresentar condicionalmente campos de técnico, horário previsto, chamado a atender, defeito e patrimônio.
+        - **Suíte de Testes 100% Verde (51 testes aprovados):**
+          * Adicionado teste unitário `test_garantia_tables_and_agendamentos_crud` em [`tests/unit/test_database.py`](automated-OTRS-and-CitSmart/tests/unit/test_database.py).
+          * Validação unificada via `python3 tests/run_all.py` rodando em **51 testes 100% aprovados** sem falhas.
+
+---
+
+    12. **Implementação Concluída: Módulo Gerenciador de Senhas (Cofre da Bancada) ([`src/tabs/senhas.py`](automated-OTRS-and-CitSmart/src/tabs/senhas.py)):**
+        - **Criptografia & Persistência Relacional ([`src/database/senhas_db.py`](automated-OTRS-and-CitSmart/src/database/senhas_db.py)):**
+          * Tabela SQLite `senhas_cofre` (`id`, `titulo`, `categoria`, `url_sistema`, `usuario`, `senha_cifrada`, `observacoes`, `data_criacao`, `data_atualizacao`).
+          * Criptografia em repouso AES-128-CBC + HMAC-SHA256 via Fernet ([`src/crypto_utils.py`](automated-OTRS-and-CitSmart/src/crypto_utils.py)).
+          * Operações seguras de CRUD: `salvar_senha`, `listar_senhas` (com mascaramento `••••••••`), `obter_senha_decifrada`, `obter_credencial_por_id`, `atualizar_senha`, `excluir_senha` e `get_senhas_stats`.
+        - **Mecanismo de Desbloqueio e Revelação ("Estilo Browser"):**
+          * Autenticação com credencial do operador via Active Directory/LDAP ([`src/services/ad_ldap_service.py`](automated-OTRS-and-CitSmart/src/services/ad_ldap_service.py)) com fallback seguro.
+          * Timeout de sessão (`st.session_state`) de 5 minutos com bloqueio manual imediato ou expiração automática.
+          * Mascaramento padrão de senhas com botões rápidos de revelação (`👁️`), ocultação (`🙈`), cópia para área de transferência (`📋`) e edição (`✏️`).
+        - **Interface & UX Streamlit ([`src/tabs/senhas.py`](automated-OTRS-and-CitSmart/src/tabs/senhas.py)):**
+          * Cards KPI no topo: Total de credenciais, categorias ativas, sistemas com link/IP e status do cofre.
+          * Tabela interativa com busca instantânea, filtro por categoria e paginação padronizada.
+          * Modais nativos `@st.dialog`: Inclusão com gerador de senhas seguras integrado, edição/exclusão e diálogo de autenticação.
+        - **Roteamento & Navegação:**
+          * Integrado ao menu hambúrguer [`src/components/header.py`](automated-OTRS-and-CitSmart/src/components/header.py) (`"🔐 Cofre de Senhas": "senhas"`) com navegação interna e abertura em nova aba (`?tab=senhas`).
+          * Rota adicionada ao [`dashboard.py`](automated-OTRS-and-CitSmart/dashboard.py).
+        - **Suíte de Testes 100% Verde (58 testes aprovados):**
+          * Implementado [`tests/unit/test_senhas.py`](automated-OTRS-and-CitSmart/tests/unit/test_senhas.py) cobrindo gerador de senhas, CRUD, mascaramento, decifração e autenticação.
+          * Suíte de testes automatizados executando **58 testes com 100% de sucesso**.
+
+    13. **Implementação Concluída: Agendamento Automático de Active Directory e SCCM via Cron Daemon ([`src/services/cron_scheduler.py`](automated-OTRS-and-CitSmart/src/services/cron_scheduler.py)):**
+        - **Tarefas Integradas ao Agendador Oficial (`DEFAULT_TASKS` em [`src/database/cron_db.py`](automated-OTRS-and-CitSmart/src/database/cron_db.py)):**
+          * `sync_ad_catalog` (`🌳 Catálogo do Active Directory (LDAP)`): intervalo padrão de 6 horas (ou horário fixo), mantendo OUs, usuários, computadores e grupos corporativos sempre atualizados no cache local SQLite.
+          * `sync_sccm` (`💻 Inventário do SCCM / MECM`): intervalo padrão de 12 horas, importando os dados coletados mais recentes de computadores, coleções e usuários ou executando consultas WMI/CIM.
+        - **Mapeamento de Logs e Monitoramento em Tempo Real:**
+          * Adicionado suporte a lock files e redirecionamento de logs em [`src/tabs/configuracoes.py`](automated-OTRS-and-CitSmart/src/tabs/configuracoes.py) (`subtab=schedules`), permitindo disparo sob demanda (`🚀 Executar Agora`), ajuste de periodicidade e visualização ao vivo do log de execução.
+        - **Testes Unitários:**
+          * Teste automatizado `test_cron_tasks_ad_and_sccm_registered` adicionado em [`tests/services/test_services.py`](automated-OTRS-and-CitSmart/tests/services/test_services.py), garantindo 100% de integridade nos agendamentos.
+
 ---
 
 ## 📋 5. Próximas Etapas e Melhorias Planejadas
 
----
-
-### 5.2 Outras Melhorias Planejadas
-1. **Sincronização Periódica Automática do Cache do SCCM:**
-   - Agendamento da rotina via daemon interno de cron (`cron_scheduler.py`).
-2. **Métricas de Acurácia de Localização:**
+### 🎯 5.1 Próximo Foco: Métricas de Acurácia de Localização
+1. **Métricas de Acurácia de Localização:**
    - Painel de taxa de correspondência de chamados direcionados por IP vs. NLP textual.
+
+
 
 
 
