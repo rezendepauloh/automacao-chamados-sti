@@ -1705,6 +1705,13 @@ def render_ad_page():
     selected_subtab_title = render_subtabs(TAB_MAP, default_slug="arvore", key="ad_subtabs_radio")
     current_slug = [k for k, v in TAB_MAP.items() if v == selected_subtab_title][0]
 
+    with st.sidebar:
+        st.markdown("## 🏢 Relatórios Especiais")
+        from src.components.dmp_patrimonio_report import modal_dmp_patrimonio_report
+        if st.button("📋 Localizar Patrimônios (DMP)", key="btn_dmp_report_ad", use_container_width=True, help="Cruza em lote números de patrimônio com dados de usuário, modelo e localização no AD e SCCM."):
+            modal_dmp_patrimonio_report()
+        st.markdown("---")
+
     # -------------------------------------------------------------------------
     # SUBTAB 1: ÁRVORE HIERÁRQUICA INTERATIVA (GOJS)
     # -------------------------------------------------------------------------

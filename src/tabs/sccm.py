@@ -683,6 +683,12 @@ def render_sccm_page():
         )
 
     st.sidebar.markdown("---")
+    st.sidebar.markdown("## 🏢 Relatórios Especiais")
+    from src.components.dmp_patrimonio_report import modal_dmp_patrimonio_report
+    if st.sidebar.button("📋 Localizar Patrimônios (DMP)", use_container_width=True, help="Cruza em lote números de patrimônio com dados de usuário, modelo e localização no SCCM e AD."):
+        modal_dmp_patrimonio_report()
+
+    st.sidebar.markdown("---")
     st.sidebar.markdown("## 🔄 Sincronização SCCM")
 
     # Disparo de sincronização direta via bancada:// (executa com privilégios nativos no Windows)
