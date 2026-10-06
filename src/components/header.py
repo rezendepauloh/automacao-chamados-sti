@@ -1,5 +1,6 @@
 import streamlit as st
 from src.database import get_unread_notifications_count, get_notifications
+from src.auth import get_current_user, is_admin, logout_user
 
 PAGE_TO_SLUG = {
     "📋 Painel de Chamados": "chamados",
@@ -23,8 +24,6 @@ PAGE_TO_SLUG = {
     "🔔 Central de Notificações": "notificacoes",
     "⚙️ Configurações": "configuracoes",
 }
-
-
 
 SLUG_TO_PAGE = {v: k for k, v in PAGE_TO_SLUG.items()}
 
@@ -75,6 +74,9 @@ def render_header_navigation() -> str:
     def get_btn_type(page_name: str) -> str:
         return "primary" if st.session_state.get("current_page") == page_name else "secondary"
 
+    # Filtra menus de acordo com privilégios RBAC (Cofre restrito para admins)
+    user_is_admin = is_admin()
+
     MENU_ITEMS = [
         ("📋 Painel de Chamados", "hdr_btn_chamados"),
         ("🏢 Catálogo de Unidades", "hdr_btn_unidades"),
@@ -93,15 +95,36 @@ def render_header_navigation() -> str:
         ("💻 Inventário SCCM", "hdr_btn_sccm"),
         ("⚡ Scripts de Automação", "hdr_btn_scripts_automacao"),
         ("📚 FAQ & Tutoriais", "hdr_btn_faq"),
-        ("🔐 Cofre de Senhas", "hdr_btn_senhas"),
     ]
+
+    # Somente administradores têm acesso ao Cofre de Senhas
+    if user_is_admin:
+        MENU_ITEMS.append(("🔐 Cofre de Senhas", "hdr_btn_senhas"))
 
     FOOTER_ITEMS = [
         ("⚙️ Configurações", "hdr_btn_configuracoes", "⚙️ Configurações"),
         (notif_btn_label, "hdr_btn_notificacoes", "🔔 Central de Notificações")
     ]
 
+    current_user = get_current_user()
+
     with st.popover("☰ Menu"):
+        # Identificação do usuário logado
+        if current_user:
+            d_name = current_user.get("display_name", current_user.get("username", "Operador"))
+            u_role = "🛡️ Administrador" if user_is_admin else "👁️ Consulta"
+            st.markdown(f"**👤 {d_name}**")
+            st.caption(f"Perfil: `{u_role}` | Login: `{current_user.get('username')}`")
+
+            # Exibe contas administrativas associadas se for admin
+            if user_is_admin and current_user.get("admin_sys"):
+                st.caption(f"🔑 Admin Sys: `{current_user.get('admin_sys')}` | Admin AD: `{current_user.get('admin_ad')}`")
+
+            if st.button("🚪 Sair / Logout", key="btn_logout_header", use_container_width=True, type="secondary"):
+                logout_user()
+
+            st.markdown("---")
+
         st.markdown("### 📌 Sistemas / Páginas")
 
         for page_name, btn_key in MENU_ITEMS:

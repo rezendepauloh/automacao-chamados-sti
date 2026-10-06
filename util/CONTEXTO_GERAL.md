@@ -239,8 +239,6 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
           - Estilização refinada em [`assets/css/styles.css`](automated-OTRS-and-CitSmart/assets/css/styles.css) com largura equilibrada e microinterações de hover.
         * **Suíte Completa de 46 Testes Automatizados 100% Verde (`python3 tests/run_all.py`).**
 
----
-
     10. **Implementação Concluída: Módulo de Férias da Bancada ([`src/tabs/ferias.py`](automated-OTRS-and-CitSmart/src/tabs/ferias.py)):**
        - **Fonte de Dados & Extração da Planilha do SharePoint:**
          * Integrada a planilha oficial `Previsão de Férias-Manutencao.xlsx` mantida na biblioteca `Shared Documents/DIT-Manutenção` do SharePoint.
@@ -286,8 +284,6 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
           * Adicionado teste unitário `test_garantia_tables_and_agendamentos_crud` em [`tests/unit/test_database.py`](automated-OTRS-and-CitSmart/tests/unit/test_database.py).
           * Validação unificada via `python3 tests/run_all.py` rodando em **51 testes 100% aprovados** sem falhas.
 
----
-
     12. **Implementação Concluída: Módulo Gerenciador de Senhas (Cofre da Bancada) ([`src/tabs/senhas.py`](automated-OTRS-and-CitSmart/src/tabs/senhas.py)):**
         - **Criptografia & Persistência Relacional ([`src/database/senhas_db.py`](automated-OTRS-and-CitSmart/src/database/senhas_db.py)):**
           * Tabela SQLite `senhas_cofre` (`id`, `titulo`, `categoria`, `url_sistema`, `usuario`, `senha_cifrada`, `observacoes`, `data_criacao`, `data_atualizacao`).
@@ -317,12 +313,47 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
         - **Testes Unitários:**
           * Teste automatizado `test_cron_tasks_ad_and_sccm_registered` adicionado em [`tests/services/test_services.py`](automated-OTRS-and-CitSmart/tests/services/test_services.py), garantindo 100% de integridade nos agendamentos.
 
+    14. **Implementação Concluída: Relatório Unificado de Localização de Patrimônios para o DMP ([`src/components/dmp_patrimonio_report.py`](automated-OTRS-and-CitSmart/src/components/dmp_patrimonio_report.py)):**
+        - **Cruzamento Multi-Origem em Lote:**
+          * Permite entrada em lote (texto colado linha por linha do Teams/Excel ou upload de arquivo `.xlsx`/`.csv`).
+          * Cruza números de patrimônio com dados de máquinas no Active Directory (`ad_cache_computers`), inventário de hardware do SCCM (`sccm_cache_devices`), usuários corporativos (`ad_cache_users`) e histórico de baixas/doações (`equipamentos_doados`).
+          * Extrai e correlaciona: Patrimônio, Hostname, Modelo comercial normalizado, Serial Number (BIOS/Tombamento), Último Usuário (Login e Nome Completo), Setor/Departamento, Localidade/Lotação física, Status de Auditoria do Bem e Última Atividade formatada no padrão brasileiro (`DD/MM/AAAA HH:MM:SS`).
+        - **Exportações e Integrações:**
+          * Geração de planilha Excel (`.xlsx`) estilizada via `openpyxl` com cabeçalho azul marinho institucional (`#2F5597`), linhas zebradas, auto-ajuste de largura de colunas, bordas e congelamento da primeira linha.
+          * Tabela HTML formatada com botão para copiar diretamente para chamados do OTRS ou comunicados internos.
+        - **Acesso Integrado nas Telas:**
+    15. **Implementação Concluída: Autenticação Unificada, Controle de Acesso (RBAC) e Persistência de Sessão no Navegador ([`src/auth.py`](automated-OTRS-and-CitSmart/src/auth.py)):**
+        - **Autenticação Direta via Active Directory (LDAP):**
+          * Login integrado no front-end utilizando as credenciais corporativas do domínio (`sAmAccountName` e senha do AD) sem senhas locais separadas, validado diretamente via `authenticate_user_credentials` ([`src/services/ad_ldap_service.py`](automated-OTRS-and-CitSmart/src/services/ad_ldap_service.py)).
+        - **Persistência Duradoura de Sessão (Cookies & LocalStorage):**
+          * Token assinado criptograficamente com HMAC e timestamp (`URLSafeTimedSerializer`) gravado em cookie seguro com validade de 30 dias.
+          * Leitura e restauração automática e silenciosa de sessão em novas abas ou recarregamentos de página (F5) via `st.context.cookies` e `restore_session_from_cookie()`.
+          * Botão de "🚪 Sair / Logout" no cabeçalho do sistema que limpa instantaneamente a sessão e os cookies no navegador.
+        - **Controle de Acesso por Funções (RBAC) & Contas Administrativas Individuais:**
+          * Mapeamento dos 3 analistas da Bancada como Administradores com privilégios totais e contas de auditoria:
+            - **Paulo Henrique Gonçalves Rezende (`paulogoncalves`):** Admin Sistema: `paulo_admin` | Admin AD: `paulo_admin_ad`
+            - **Reginaldo da Silva Bandeira (`reginaldosb`):** Admin Sistema: `reginaldo_admin` | Admin AD: `reginaldo_admin_ad`
+            - **Luiz Leonardo Villalba (`luizvillalba`):** Admin Sistema: `villalba_admin` | Admin AD: `villalba_admin_ad`
+          * Usuários colaboradores e terceirizados recebem perfil `viewer` (somente leitura), com ocultação automática do **Cofre de Senhas** e restrição em rotas confidenciais.
+        - **Proteção do Dashboard & Navegação ([`dashboard.py`](automated-OTRS-and-CitSmart/dashboard.py) e [`src/components/header.py`](automated-OTRS-and-CitSmart/src/components/header.py)):**
+          * Interceptação de autenticação pré-renderização com tela de login institucional moderna.
+          * Exibição da identidade do técnico logado, perfil RBAC e contas administrativas vinculadas no popover do menu.
+        - **Suíte de Testes 100% Verde (64 testes aprovados):**
+          * Implementado [`tests/unit/test_auth.py`](automated-OTRS-and-CitSmart/tests/unit/test_auth.py) cobrindo criação, decodificação, rejeição de tokens expirados/adulterados e helpers de permissão `is_admin()` / `can_edit()`.
+          * Validação unificada via `python3 tests/run_all.py` rodando em **64 testes 100% aprovados**.
+
 ---
 
 ## 📋 5. Próximas Etapas e Melhorias Planejadas
 
-### 🎯 5.1 Próximo Foco: Métricas de Acurácia de Localização
-1. **Métricas de Acurácia de Localização:**
+### 🎯 5.1 Migração Definitiva de SQLite para PostgreSQL no Docker (Prontidão para Deploy MPMS)
+1. **Transição de Banco de Dados para Produção:**
+   - O projeto já possui container `postgres:15-alpine` ativo no `docker-compose.yml` e suporte a `DB_TYPE="postgres"` em [`src/database/connection.py`](automated-OTRS-and-CitSmart/src/database/connection.py).
+   - Execução de script unificado de migração de dados e esquemas para transferir todo o histórico e caches locais do SQLite para o PostgreSQL.
+   - Ajustes finais de queries e conexões para garantir que 100% dos módulos (chamados, AD, SCCM, plantões, garantia, doações, cofre de senhas, cron) operem com alta performance em PostgreSQL no ambiente de deploy corporativo do MPMS.
+
+### 🎯 5.3 Métricas de Acurácia de Localização
+1. **Acurácia de Localização de Chamados:**
    - Painel de taxa de correspondência de chamados direcionados por IP vs. NLP textual.
 
 

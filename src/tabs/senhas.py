@@ -100,7 +100,9 @@ def modal_autenticar_operador():
         "Para revelar ou copiar credenciais confidenciais, confirme sua identidade com sua senha de rede (AD/Windows)."
     )
 
-    padrao_user = USERNAME or "operador"
+    from src.auth import get_current_user
+    cur_u = get_current_user()
+    padrao_user = (cur_u.get("username") if cur_u else None) or USERNAME or "operador"
     auth_user = st.text_input("Usuário de Rede", value=padrao_user, key="dlg_auth_user")
     auth_pass = st.text_input("Senha de Rede / AD", type="password", key="dlg_auth_pass")
 

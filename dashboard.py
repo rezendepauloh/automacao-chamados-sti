@@ -72,6 +72,22 @@ if css_path.exists():
     with open(css_path, "r", encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
+# Importa autenticação e controle de acesso
+from src.auth import restore_session_from_cookie, is_authenticated, render_login_page, inject_cookie_setter, is_admin
+
+# 1. Verifica ou restaura a sessão ativa a partir do cookie/token duradouro
+restore_session_from_cookie()
+
+# 2. Se não estiver autenticado, exibe a tela de login corporativo do AD e interrompe a execução
+if not is_authenticated():
+    render_login_page()
+    st.stop()
+
+# 3. Se acabou de logar, injeta o script para gravar o cookie seguro duradouro no navegador
+if st.session_state.get("just_logged_in") and st.session_state.get("auth_token"):
+    inject_cookie_setter(st.session_state["auth_token"])
+    st.session_state["just_logged_in"] = False
+
 # Importa o componente de navegação no header
 import src.components.header
 importlib.reload(src.components.header)
@@ -159,9 +175,13 @@ elif selected_page == "⚡ Scripts de Automação":
     src.tabs.scripts_automacao.render_scripts_automacao_page()
 
 elif selected_page == "🔐 Cofre de Senhas":
-    import src.tabs.senhas
-    importlib.reload(src.tabs.senhas)
-    src.tabs.senhas.render_senhas_page()
+    if not is_admin():
+        st.error("🚫 Acesso restrito aos administradores da Bancada.")
+        st.info("O Cofre de Senhas armazena credenciais confidenciais de infraestrutura.")
+    else:
+        import src.tabs.senhas
+        importlib.reload(src.tabs.senhas)
+        src.tabs.senhas.render_senhas_page()
 
 elif selected_page == "🔔 Central de Notificações":
 
