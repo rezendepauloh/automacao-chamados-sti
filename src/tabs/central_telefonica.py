@@ -19,6 +19,11 @@ from src.components.pagination import (
 from src.components.metric_cards import render_metric_cards
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_central_telefonica_df() -> pd.DataFrame:
+    return get_central_telefonica_df()
+
+
 def get_val(row, *keys, default="-"):
     """Busca insensível a maiúsculas/minúsculas e formato snake_case em dicionário/Series."""
     row_dict = {str(k).lower().replace(" ", "_").replace("/", "_").replace(".", "").replace("-", "_"): v for k, v in row.items()}
@@ -62,6 +67,17 @@ def render_central_telefonica_page():
 
     oxe_ativo = check_oxe_sync_running()
 
+    # Controle de término de sincronização para invalidação de cache
+    was_oxe_syncing = st.session_state.get("was_oxe_syncing", False)
+    if was_oxe_syncing and not oxe_ativo:
+        st.cache_data.clear()
+        st.session_state["was_oxe_syncing"] = False
+        st.toast("🎉 Sincronização do OXE concluída com sucesso!", icon="📞")
+        st.rerun()
+
+    if oxe_ativo:
+        st.session_state["was_oxe_syncing"] = True
+
     render_log_expander(
         "🤖 Robô do OXE Rodando em Segundo Plano – Acompanhar Progresso",
         oxe_ativo,
@@ -70,8 +86,8 @@ def render_central_telefonica_page():
         "O robô está conectando à central Alcatel e pré-processando os dados neste momento. O painel permanece livre para uso!"
     )
 
-    # Carrega dados do banco de dados SQLite / Tratados
-    df = get_central_telefonica_df()
+    # Carrega dados do banco de dados SQLite / Tratados (com Cache)
+    df = _cached_get_central_telefonica_df()
 
     # -----------------------------------------------------------------------------
     # FILTROS LATERAIS (SIDEBAR) & AÇÕES DE COLETA

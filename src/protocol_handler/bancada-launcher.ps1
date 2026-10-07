@@ -372,13 +372,24 @@ try {
         } elseif ($tool -eq "perfis") {
             $scriptFiles = @("RemoverUsuarios.ps1", "cred_admin.xml")
             $mainScript = Join-Path $tempFolder "RemoverUsuarios.ps1"
+        } elseif ($tool -eq "remover_ad_sccm" -or $tool -eq "remover_computador" -or $tool -eq "limpar_ad_sccm") {
+            $scriptFiles = @("remover_computador_ad_sccm.ps1", "cred_admin.xml")
+            $mainScript = Join-Path $tempFolder "remover_computador_ad_sccm.ps1"
         } else {
             Write-Host " [ERRO] Ferramenta desconhecida: '$tool'" -ForegroundColor Red
             return
         }
 
         # Primeiro tenta localizar e copiar diretamente dos repositórios locais do WSL (se estiver no ambiente do desenvolvedor)
-        $subfolder = if ($tool -eq "analisador") { "analisador" } elseif ($tool -eq "manutencao") { "manutencao" } else { "perfis" }
+        $subfolder = if ($tool -eq "analisador") { 
+            "analisador" 
+        } elseif ($tool -eq "manutencao") { 
+            "manutencao" 
+        } elseif ($tool -eq "perfis") { 
+            "perfis" 
+        } else { 
+            "remover_ad_sccm" 
+        }
         $localScriptDirs = @(
             "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
             "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
@@ -461,6 +472,13 @@ try {
             & $mainScript -ComputerName $targetHost -Verbose
         } elseif ($tool -eq "perfis") {
             & $mainScript -ComputerName $targetHost -UsersToPurge $usersPurge
+        } elseif ($tool -eq "remover_ad_sccm" -or $tool -eq "remover_computador" -or $tool -eq "limpar_ad_sccm") {
+            $forceFlag = $params['force'] -eq 'true'
+            if ($forceFlag) {
+                & $mainScript -ComputerName $targetHost -Force
+            } else {
+                & $mainScript -ComputerName $targetHost
+            }
         }
 
         Write-Host ""

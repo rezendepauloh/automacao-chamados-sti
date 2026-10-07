@@ -42,6 +42,42 @@ from src.syncs.sync_ad_catalog import (
 from src.config import DOMINIO
 
 
+# -----------------------------------------------------------------------------
+# CACHE INTELIGENTE DE DADOS DO ACTIVE DIRECTORY (TTL = 5 min)
+# -----------------------------------------------------------------------------
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_ous():
+    return get_ad_ous()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_ou_stats():
+    return get_ad_ou_stats()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_all_ou_entities_compact():
+    return get_all_ou_entities_compact()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_users_df(status_filter: str = "Todos", department: str = "Todos", search: str = ""):
+    return get_ad_users_df(status_filter=status_filter, department=department, search=search)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_computers_df(status_filter: str = "Todos", os_filter: list = None, search: str = "", machine_type: str = "Todos", stale_days: str = "Todos"):
+    return get_ad_computers_df(status_filter=status_filter, os_filter=os_filter, search=search, machine_type=machine_type, stale_days=stale_days)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_groups_df(search: str = ""):
+    return get_ad_groups_df(search=search)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_departments():
+    return get_ad_departments()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_operating_systems():
+    return get_ad_operating_systems()
+
+
 def _sanitize_df_for_excel(df: pd.DataFrame) -> pd.DataFrame:
     """Remove caracteres de controle invisíveis de todas as colunas de texto para compatibilidade com openpyxl."""
     clean_df = df.copy()
@@ -1587,7 +1623,7 @@ def show_computer_details_dialog(comp_row):
     # Ações Rápidas de Suporte / Infraestrutura via Protocolo Bancada
     st.markdown("#### ⚡ Ações Rápidas na Estação / Servidor")
     st.caption("Disparo nativo no Windows via protocolo `bancada://`. Requer instalação única do disparador na máquina do técnico ([⚙️ Baixar em Configurações](?tab=configuracoes&subtab=protocol_handler)).")
-    b_col1, b_col2, b_col3 = st.columns(3)
+    b_col1, b_col2, b_col3, b_col4 = st.columns(4)
     target_addr = dns_host if dns_host and dns_host != "-" else name
 
     with b_col1:
@@ -1625,6 +1661,18 @@ def show_computer_details_dialog(comp_row):
             unsafe_allow_html=True
         )
         st.caption("Ping contínuo no console")
+
+    with b_col4:
+        limpar_uri = f"bancada://run?tool=remover_ad_sccm&host={target_addr}"
+        st.markdown(
+            f"""<a href="{limpar_uri}" style="text-decoration: none;">
+                <div style="background: #1e293b; border: 1px solid #ef4444; border-radius: 8px; padding: 10px; text-align: center; color: #f87171; font-weight: 600; font-size: 0.85rem; cursor: pointer;">
+                    🗑️ Limpar AD / SCCM
+                </div>
+            </a>""",
+            unsafe_allow_html=True
+        )
+        st.caption("Exclui p/ formatação PXE")
 
     # Atalho cruzado para o inventário de hardware e agente SCCM
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1718,7 +1766,7 @@ def render_ad_page():
     # SUBTAB 1: ÁRVORE HIERÁRQUICA INTERATIVA (GOJS)
     # -------------------------------------------------------------------------
     if current_slug == "arvore":
-        df_ous = get_ad_ous()
+        df_ous = _cached_get_ad_ous()
         if df_ous.empty:
             st.warning("⚠️ Nenhuma Unidade Organizacional (OU) encontrada no cache local.")
             st.info("💡 Acesse a aba **'⚙️ Sincronização & Diagnóstico'** e execute a primeira sincronização com o Domain Controller corporativo.")
@@ -1726,8 +1774,8 @@ def render_ad_page():
             st.markdown(
                 "Navegue interativamente pela estrutura de OUs, usuários e computadores. Utilize a barra superior para buscar nós, expandir/recolher níveis ou reposicionar a visualização."
             )
-            ou_stats = get_ad_ou_stats()
-            ou_entities = get_all_ou_entities_compact()
+            ou_stats = _cached_get_ad_ou_stats()
+            ou_entities = _cached_get_all_ou_entities_compact()
             nodes = _build_gojs_tree_data(df_ous, ou_stats=ou_stats)
             render_gojs_tree_component(nodes, ou_entities=ou_entities, height=750)
 
@@ -1735,7 +1783,7 @@ def render_ad_page():
     # SUBTAB 2: USUÁRIOS & CONTAS
     # -------------------------------------------------------------------------
     elif current_slug == "usuarios":
-        df_all_users = get_ad_users_df(status_filter="Todos")
+        df_all_users = _cached_get_ad_users_df(status_filter="Todos")
         total_users = len(df_all_users)
         active_users = len(df_all_users[df_all_users["is_active"] == 1]) if not df_all_users.empty else 0
         disabled_users = total_users - active_users
@@ -1773,7 +1821,7 @@ def render_ad_page():
                 index=0,
                 key="ad_user_status"
             )
-            ad_dept_options = ["Todos"] + get_ad_departments()
+            ad_dept_options = ["Todos"] + _cached_get_ad_departments()
             ad_dept_selected = st.selectbox(
                 "Filtrar por Departamento:",
                 ad_dept_options,
@@ -1781,7 +1829,7 @@ def render_ad_page():
                 key="ad_user_dept"
             )
 
-        df_users = get_ad_users_df(
+        df_users = _cached_get_ad_users_df(
             status_filter=ad_status,
             department=ad_dept_selected,
             search=ad_search
@@ -1900,7 +1948,7 @@ def render_ad_page():
     # SUBTAB 3: COMPUTADORES & SERVIDORES
     # -------------------------------------------------------------------------
     elif current_slug == "computadores":
-        df_all_comps = get_ad_computers_df(status_filter="Todos")
+        df_all_comps = _cached_get_ad_computers_df(status_filter="Todos")
         total_comps = len(df_all_comps)
         active_comps = len(df_all_comps[df_all_comps["is_active"] == 1]) if not df_all_comps.empty else 0
         disabled_comps = total_comps - active_comps
@@ -1960,7 +2008,7 @@ def render_ad_page():
                 index=0,
                 key="ad_comp_stale"
             )
-            os_options = get_ad_operating_systems()
+            os_options = _cached_get_ad_operating_systems()
             comp_os_selected = st.multiselect(
                 "Sistemas Operacionais:",
                 options=os_options,
@@ -1969,7 +2017,7 @@ def render_ad_page():
                 key="ad_comp_os"
             )
 
-        df_comps = get_ad_computers_df(
+        df_comps = _cached_get_ad_computers_df(
             status_filter=comp_status,
             os_filter=comp_os_selected,
             search=comp_search,
@@ -2107,7 +2155,7 @@ def render_ad_page():
                 key="ad_group_search"
             )
 
-        df_groups = get_ad_groups_df(search=g_search)
+        df_groups = _cached_get_ad_groups_df(search=g_search)
 
         if df_groups.empty:
             st.warning("Nenhum grupo de segurança encontrado para a busca informada.")

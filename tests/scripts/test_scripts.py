@@ -26,6 +26,7 @@ class TestScriptsAndIntegrity(unittest.TestCase):
             ROOT_DIR / "src" / "scripts_powershell" / "analisador" / "Analisador.ps1",
             ROOT_DIR / "src" / "scripts_powershell" / "analisador" / "GeradorHtml.ps1",
             ROOT_DIR / "src" / "scripts_powershell" / "perfis" / "RemoverUsuarios.ps1",
+            ROOT_DIR / "src" / "scripts_powershell" / "remover_ad_sccm" / "remover_computador_ad_sccm.ps1",
         ]
 
         for script_path in expected_scripts:
@@ -37,7 +38,7 @@ class TestScriptsAndIntegrity(unittest.TestCase):
         launcher_file = ROOT_DIR / "src" / "protocol_handler" / "bancada-launcher.ps1"
         content = launcher_file.read_text(encoding="utf-8", errors="ignore").lower()
         
-        required_tools = ["cmrc", "rdp", "explorer", "ping", "sccm_sync", "manutencao", "analisador", "perfis", "vlc"]
+        required_tools = ["cmrc", "rdp", "explorer", "ping", "sccm_sync", "manutencao", "analisador", "perfis", "vlc", "remover_ad_sccm"]
         for tool in required_tools:
             self.assertIn(tool, content, f"Ferramenta '{tool}' não mapeada no bancada-launcher.ps1")
 

@@ -88,6 +88,9 @@ def setup_database():
     conn.commit()
     conn.close()
 
+    from .connection import ensure_database_indexes
+    ensure_database_indexes()
+
 def save_tickets_to_db(df: pd.DataFrame):
     """
     Insere novos chamados ou atualiza os existentes.

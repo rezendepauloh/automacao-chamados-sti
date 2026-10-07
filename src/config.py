@@ -61,6 +61,7 @@ PS_SCRIPTS_DIR = BASE_DIR / "src" / "scripts_powershell"
 PS_SCRIPT_ANALISADOR = PS_SCRIPTS_DIR / "analisador" / "Analisador.ps1"
 PS_SCRIPT_MANUTENCAO = PS_SCRIPTS_DIR / "manutencao" / "Manutencao.ps1"
 PS_SCRIPT_REMOVER_USUARIOS = PS_SCRIPTS_DIR / "perfis" / "RemoverUsuarios.ps1"
+PS_SCRIPT_REMOVER_COMPUTADOR = PS_SCRIPTS_DIR / "remover_ad_sccm" / "remover_computador_ad_sccm.ps1"
 
 
 def _get_username() -> str:
@@ -399,6 +400,49 @@ def setup_logging(log_file: Path, name: str = __name__) -> logging.Logger:
     logger.propagate = False
     
     return logger
+
+
+def purge_old_temporary_files(max_age_days: int = 7) -> dict:
+    """
+    Remove arquivos temporários, logs antigos e uploads obsoletos com mais de `max_age_days` dias.
+    Preserva a estrutura de pastas e evita vazamentos de armazenamento em disco.
+    """
+    import time
+    now_ts = time.time()
+    cutoff_ts = now_ts - (max_age_days * 86400)
+    stats = {"purged_files": 0, "freed_bytes": 0}
+
+    target_dirs = [
+        BASE_DIR / "debug_logs",
+        DEBUG_DIR_ORQUESTRADOR,
+        DEBUG_DIR_SYNC,
+        DEBUG_DIR_FAQ,
+        DEBUG_DIR_LEAFLET,
+        BASE_DIR / "uploads" / "temp"
+    ]
+
+    for d in target_dirs:
+        if not d.exists():
+            continue
+        try:
+            for item in d.glob("**/*"):
+                if item.is_file():
+                    # Não apaga os arquivos de configuração modelo nem arquivos ativos
+                    if item.name.endswith("_TEMPLATE.json") or item.name == ".gitkeep":
+                        continue
+                    try:
+                        mtime = item.stat().st_mtime
+                        if mtime < cutoff_ts:
+                            size = item.stat().st_size
+                            item.unlink(missing_ok=True)
+                            stats["purged_files"] += 1
+                            stats["freed_bytes"] += size
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    return stats
 
 
 def save_df_to_excel_formatted(

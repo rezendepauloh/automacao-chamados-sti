@@ -146,6 +146,32 @@ class TestServices(unittest.TestCase):
             msg_sccm = execute_task_by_id("sync_sccm")
             self.assertIn("Inventário SCCM sincronizado com sucesso", msg_sccm)
 
+    def test_purge_old_temporary_files(self):
+        """Valida que a purga remove arquivos antigos e ignora arquivos recentes e templates."""
+        from src.config import purge_old_temporary_files, DEBUG_DIR_ORQUESTRADOR
+        import time
+
+        # Cria arquivo temporário antigo no diretório de debug
+        old_file = DEBUG_DIR_ORQUESTRADOR / "teste_purga_antigo.log"
+        old_file.write_text("log antigo para teste de purga")
+        # Altera data de modificação para 15 dias atrás
+        old_time = time.time() - (15 * 86400)
+        os.utime(old_file, (old_time, old_time))
+
+        # Cria arquivo recente
+        recent_file = DEBUG_DIR_ORQUESTRADOR / "teste_purga_recente.log"
+        recent_file.write_text("log recente")
+
+        # Executa a purga de 7 dias
+        stats = purge_old_temporary_files(max_age_days=7)
+
+        self.assertGreaterEqual(stats["purged_files"], 1)
+        self.assertFalse(old_file.exists())
+        self.assertTrue(recent_file.exists())
+
+        # Limpeza
+        recent_file.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()

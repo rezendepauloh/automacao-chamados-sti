@@ -19,6 +19,7 @@ from src.config import (
     PS_SCRIPT_ANALISADOR,
     PS_SCRIPT_MANUTENCAO,
     PS_SCRIPT_REMOVER_USUARIOS,
+    PS_SCRIPT_REMOVER_COMPUTADOR,
     USER_HOME,
     DEBUG_DIR_SCRIPTS,
     setup_logging
@@ -38,7 +39,8 @@ _BACKGROUND_JOBS = sys._ps_background_jobs
 SUBTAB_MAP = {
     "analisador": "📊 Analisador de Dispositivos",
     "manutencao": "🧹 Manutenção e Limpeza Remota",
-    "perfis": "👥 Remoção de Perfis de Usuário"
+    "perfis": "👥 Remoção de Perfis de Usuário",
+    "remover_ad_sccm": "🗑️ Limpeza de Máquina (AD & SCCM)"
 }
 SUBTAB_REVERSE = {v: k for k, v in SUBTAB_MAP.items()}
 
@@ -144,7 +146,7 @@ def _ensure_cred_admin_xml():
     if not admin_user:
         return
 
-    script_paths = [PS_SCRIPT_ANALISADOR, PS_SCRIPT_MANUTENCAO, PS_SCRIPT_REMOVER_USUARIOS]
+    script_paths = [PS_SCRIPT_ANALISADOR, PS_SCRIPT_MANUTENCAO, PS_SCRIPT_REMOVER_USUARIOS, PS_SCRIPT_REMOVER_COMPUTADOR]
     target_xmls = set()
     # Adiciona explicitamente o cred_admin.xml da pasta raiz interna de scripts
     if PS_SCRIPTS_DIR:
@@ -650,3 +652,41 @@ def render_scripts_automacao_page():
                     👉 <a href="{b_url}" style="font-weight: bold; color: #1E90FF; text-decoration: underline;">Clique aqui para abrir manualmente no Windows</a>
                 </div>
                 """, unsafe_allow_html=True)
+
+    # =========================================================================
+    # TAB 4: Limpeza de Máquina (AD & SCCM)
+    # =========================================================================
+    elif selected_subtab_title == "🗑️ Limpeza de Máquina (AD & SCCM)":
+        st.markdown("### 🗑️ Remoção e Limpeza de Máquina (Active Directory & SCCM)")
+        st.caption("Remove o registro do computador tanto do Active Directory quanto do SCCM/MECM para permitir formatação limpa via PXE sem conflitos de conta pré-existente.")
+
+        st.info("💡 **Uso Típico:** Antes de formatar uma estação de trabalho via PXE, execute esta rotina para excluir a máquina do domínio e do banco do SCCM. O script desativa a proteção contra exclusão acidental e remove o objeto no AD e no Configuration Manager.")
+
+        col_rem1, col_rem2 = st.columns([2, 1])
+        with col_rem1:
+            comp_remover = st.text_input("💻 Nome do Computador", key="input_remover_host", placeholder="Ex: MPE-80600 ou PGJ-58099")
+        with col_rem2:
+            force_confirm = st.checkbox("⚡ Modo Não-Interativo (-Force)", value=False, help="Executa a exclusão direta sem pedir confirmação interativa 'S/N' na janela do PowerShell.")
+
+        st.markdown("---")
+        if st.button("🚀 Executar Limpeza no AD e SCCM", type="primary", key="btn_run_remover_ad_sccm", width='stretch'):
+            if not comp_remover.strip():
+                st.warning("⚠️ Por favor, informe o Nome do computador a ser removido.")
+            else:
+                engine_param = "pwsh" if "pwsh" in selected_ps_version.lower() else ("powershell" if "5.1" in selected_ps_version else "auto")
+                b_url = dispatch_bancada_uri(
+                    tool="remover_ad_sccm",
+                    host=comp_remover.strip(),
+                    extra_params={
+                        "force": "true" if force_confirm else "false",
+                        "ps_engine": engine_param
+                    }
+                )
+                st.success(f"🗑️ **Comando enviado para o seu Windows!** O PowerShell local executará a limpeza de **{comp_remover.strip().upper()}** no Active Directory e no SCCM.")
+                st.markdown(f"""
+                <div style="background-color: rgba(30, 144, 255, 0.1); border: 1px solid #1E90FF; border-radius: 6px; padding: 10px; margin-top: 8px;">
+                    <span style="font-size: 0.9rem;">💡 <em>Se a janela do PowerShell não tiver aberto automaticamente:</em></span><br>
+                    👉 <a href="{b_url}" style="font-weight: bold; color: #1E90FF; text-decoration: underline;">Clique aqui para abrir manualmente no Windows</a>
+                </div>
+                """, unsafe_allow_html=True)
+

@@ -427,5 +427,56 @@ class TestDatabaseModule(unittest.TestCase):
         self.assertEqual(df_ag.iloc[0]["hora_prevista"], "14:00")
         self.assertEqual(df_ag.iloc[0]["chamado_a_atender"], "41236")
 
+    def test_ensure_database_indexes(self):
+        """Valida a criação automática de índices nas tabelas sem erros de sintaxe ou colisão."""
+        from src.database.connection import ensure_database_indexes, get_connection
+        # Prepara tabelas básicas
+        setup_database()
+        setup_sccm_tables()
+        
+        # Executa a criação de índices
+        ensure_database_indexes()
+
+        # Verifica se os índices foram registrados no sqlite_master
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
+        indexes_found = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        self.assertIn("idx_chamados_id", indexes_found)
+        self.assertIn("idx_chamados_status", indexes_found)
+        self.assertIn("idx_sccm_devices_res_id", indexes_found)
+        self.assertIn("idx_sccm_devices_name", indexes_found)
+
+    def test_ramais_cleaning_and_smart_title(self):
+        """Valida higienização de ramais, título inteligente, separação de números e remoção de ruídos de cabeçalho."""
+        import pandas as pd
+        from src.database.ramais_db import smart_title, format_ramal_num, clean_ramais_dataframe, save_ramais_to_db, get_ramais_df
+        
+        # 1. smart_title preservando siglas e preposições
+        self.assertEqual(smart_title("PROMOTORIA DE JUSTIÇA DE ÁGUA CLARA"), "Promotoria de Justiça de Água Clara")
+        self.assertEqual(smart_title("DIVISÃO DE SUPORTE DE TI"), "Divisão de Suporte de TI")
+        self.assertEqual(smart_title("GABINETE DO PGJ"), "Gabinete do PGJ")
+        self.assertEqual(smart_title("CASA DA MULHER BRASILEIRA ............. 33"), "Casa da Mulher Brasileira")
+
+        # 2. format_ramal_num
+        self.assertEqual(format_ramal_num("5702 5700 5701"), "5702 • 5700 • 5701")
+        self.assertEqual(format_ramal_num("2020-9311"), "2020-9311")
+
+        # 3. clean_ramais_dataframe propagando localidade anterior sobre cabeçalhos
+        raw_data = pd.DataFrame([
+            {"localidade": "PROMOTORIA DE JUSTIÇA DE AMAMBAI", "setor_nome": "PROMOTORIA DE JUSTIÇA DE AMAMBAI", "telefone_ramal": "2020-9312", "tipo": "Interior"},
+            {"localidade": "PJ MEMBRO GABINETE ASSESSORIA APOIO ESTAGIÁRIO", "setor_nome": "1ª Laura Assagra", "telefone_ramal": "5702 5700", "tipo": "Interior"},
+            {"localidade": "PJ MEMBRO GABINETE ASSESSORIA APOIO ESTAGIÁRIO", "setor_nome": "PJ MEMBRO GABINETE ASSESSORIA APOIO ESTAGIÁRIO", "telefone_ramal": "5750 5759", "tipo": "Interior"}
+        ])
+        cleaned = clean_ramais_dataframe(raw_data)
+        self.assertEqual(cleaned.iloc[0]["localidade"], "Promotoria de Justiça de Amambai")
+        self.assertEqual(cleaned.iloc[0]["setor_nome"], "Atendimento Geral / Recepção")
+        self.assertEqual(cleaned.iloc[1]["localidade"], "Promotoria de Justiça de Amambai")
+        self.assertEqual(cleaned.iloc[1]["telefone_ramal"], "5702 • 5700")
+        self.assertEqual(cleaned.iloc[2]["setor_nome"], "Recepção / Apoio Administrativo")
+
+
 if __name__ == "__main__":
     unittest.main()

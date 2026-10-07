@@ -12,6 +12,7 @@ from src.config import DEBUG_DIR_LEAFLET, setup_logging
 
 logger = setup_logging(DEBUG_DIR_LEAFLET / "leaflet.log", "leaflet")
 
+@st.cache_data(show_spinner=False)
 def get_image_dimensions(image_path: Path):
     """Retorna largura e altura da imagem, ou fallback caso falhe."""
     try:
@@ -22,6 +23,7 @@ def get_image_dimensions(image_path: Path):
         return 1000, 1000
 
 
+@st.cache_data(show_spinner=False)
 def get_image_base64(image_path: Path) -> str:
     """Carrega a imagem física e retorna como Data URI base64."""
     import base64

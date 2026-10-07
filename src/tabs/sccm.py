@@ -25,6 +25,21 @@ from src.services.sccm_service import (
     sync_all_sccm
 )
 
+# -----------------------------------------------------------------------------
+# CACHE INTELIGENTE DE DADOS DO SCCM (TTL = 5 min)
+# -----------------------------------------------------------------------------
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_sccm_devices_df() -> pd.DataFrame:
+    return get_sccm_devices_df()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_sccm_users_df() -> pd.DataFrame:
+    return get_sccm_users_df()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_sccm_collections_df(col_type: str = "Dispositivos") -> pd.DataFrame:
+    return get_sccm_collections_df(col_type=col_type)
+
 # Mapeamento de sub-abas idêntico à hierarquia de Ativos e Conformidade do Console SCCM
 SCCM_SUBTABS = {
     "dispositivos": "💻 Dispositivos",
@@ -180,7 +195,7 @@ def modal_device_details(device_row: dict):
 
     # --- PAINEL DE DISPARO RÁPIDO VIA BANCADA:// ---
     st.markdown("##### ⚡ Ações Remotas Instantâneas")
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
         cmrc_url = f"bancada://run?tool=cmrc&host={name}"
@@ -201,6 +216,10 @@ def modal_device_details(device_row: dict):
     with col5:
         analisador_url = f"bancada://run?tool=analisador&host={name}"
         st.link_button("🛠️ Analisador", url=analisador_url, use_container_width=True, help="Executa o diagnóstico profundo da Bancada STI na máquina.")
+
+    with col6:
+        limpar_url = f"bancada://run?tool=remover_ad_sccm&host={name}"
+        st.link_button("🗑️ Limpar AD/SCCM", url=limpar_url, use_container_width=True, help="Remove o computador do AD e do SCCM para formatação limpa via PXE.")
 
     st.markdown("---")
 
@@ -273,7 +292,7 @@ def render_subtab_dispositivos(
     items_per_page: int = 50
 ):
     """Renderiza a listagem de computadores com filtros da barra lateral, paginação e métricas."""
-    df = get_sccm_devices_df()
+    df = _cached_get_sccm_devices_df()
 
     # Métricas KPI no topo com SOs normalizados
     total = len(df)
@@ -367,7 +386,7 @@ def render_subtab_dispositivos(
 
 def render_subtab_usuarios(search_txt: str = "", items_per_page: int = 50):
     """Renderiza a listagem de usuários catalogados no SCCM com filtros da barra lateral e paginação."""
-    df = get_sccm_users_df()
+    df = _cached_get_sccm_users_df()
     total_users = len(df)
 
     render_metric_cards([
@@ -416,7 +435,7 @@ def render_subtab_colecoes(
     items_per_page: int = 50
 ):
     """Renderiza a listagem de coleções com filtros da barra lateral e paginação."""
-    df = get_sccm_collections_df(col_type=col_type)
+    df = _cached_get_sccm_collections_df(col_type=col_type)
     total_cols = len(df)
     total_membros = int(df["member_count"].sum()) if not df.empty and "member_count" in df.columns else 0
 
@@ -480,7 +499,7 @@ def render_subtab_colecoes(
 
 def render_subtab_conformidade(filtro_status: str = "Todos", items_per_page: int = 50):
     """Exibe painel de integridade dos agentes SCCM e políticas de conformidade com paginação."""
-    df_dev = get_sccm_devices_df()
+    df_dev = _cached_get_sccm_devices_df()
 
     if df_dev.empty:
         st.info("Sincronize o inventário do SCCM para carregar o diagnóstico de conformidade.")
@@ -603,7 +622,7 @@ def render_sccm_page():
 
         # Carrega lista dinâmica de modelos existentes no cache do SCCM
         try:
-            df_devs_all = get_sccm_devices_df()
+            df_devs_all = _cached_get_sccm_devices_df()
             if not df_devs_all.empty and "model" in df_devs_all.columns:
                 raw_models = df_devs_all["model"].dropna().astype(str).str.strip()
                 valid_models = sorted(list(set([m for m in raw_models if m and m.lower() not in ["none", "nan", "null", ""]])))
@@ -708,6 +727,7 @@ def render_sccm_page():
                 from src.services.sccm_service import import_sccm_inventory_json
                 res = import_sccm_inventory_json()
                 if res["devices"] > 0 or res["collections"] > 0:
+                    st.cache_data.clear()
                     st.toast(f"✅ Sucesso: {res['devices']} computadores, {res['users']} usuários e {res['collections']} coleções importados!", icon="🎉")
                     st.rerun()
                 else:

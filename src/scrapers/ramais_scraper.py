@@ -144,14 +144,18 @@ def extract_ramais_from_pdf(pdf_bytes: bytes, tipo_ramal: str) -> list[dict]:
                     continue
 
                 is_title = False
-                if any(kw in line_clean.upper() for kw in [
-                    "PROMOTORIA DE JUSTIÇA", "PROCURADORIA", "UNIDADE", "SECRETARIA",
-                    "DEPARTAMENTO", "GAECO", "OUVIDORIA", "CENTRO DE APOIO", "TÉRREO",
-                    "1º ANDAR", "2º ANDAR", "3º ANDAR", "4º ANDAR"
-                ]):
-                    is_title = True
-                elif line_clean.isupper() and not re.search(r'\d{4,}', line_clean) and len(line_clean) > 4:
-                    is_title = True
+                header_table_blacklist = ["PJ MEMBRO", "GABINETE ASSESSORIA", "GABIN ASSESSORIA", "CHEFE DO DEPARTAMENTO"]
+                is_table_header_noise = any(noise in line_clean.upper() for noise in header_table_blacklist)
+
+                if not is_table_header_noise and not re.search(r'\.{3,}', line_clean):
+                    if any(kw in line_clean.upper() for kw in [
+                        "PROMOTORIA DE JUSTIÇA", "PROCURADORIA", "UNIDADE", "SECRETARIA",
+                        "DEPARTAMENTO", "GAECO", "OUVIDORIA", "CENTRO DE APOIO", "TÉRREO",
+                        "1º ANDAR", "2º ANDAR", "3º ANDAR", "4º ANDAR"
+                    ]):
+                        is_title = True
+                    elif line_clean.isupper() and not re.search(r'\d{4,}', line_clean) and len(line_clean) > 4:
+                        is_title = True
 
                 if is_title:
                     current_localidade = line_clean

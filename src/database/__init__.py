@@ -1,4 +1,4 @@
-from .connection import DB_PATH, get_connection
+from .connection import DB_PATH, get_connection, ensure_database_indexes
 
 from .ramais_db import (
     setup_ramais_table,

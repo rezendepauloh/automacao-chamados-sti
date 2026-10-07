@@ -38,8 +38,92 @@ def save_ramais_to_db(df: pd.DataFrame):
         conn.commit()
     conn.close()
 
-def get_ramais_df() -> pd.DataFrame:
-    """Retorna os dados da tabela ramais_mpms em um DataFrame."""
+SIGLAS_INSTITUCIONAIS = {
+    'MPMS', 'PJ', 'PGJ', 'GAECO', 'CAO', 'CAOMA', 'STI', 'STIC', 'DTI', 'SECOM', 
+    'NAEP', 'GACEP', 'CEAF', 'CGMP', 'CPJ', 'CSMP', 'EIA', 'RIMA', 'TAC',
+    'AD', 'SCCM', 'PXE', 'TI', 'RH', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'
+}
+PREPOSICOES_PORTUGUES = {'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas', 'a', 'o', 'e', 'ao', 'aos', 'com', 'por', 'para'}
+
+def clean_dots_and_page_numbers(text: str) -> str:
+    """Remove sequências de pontilhados de sumário e números de página (ex: '... 33')."""
+    import re
+    t = re.sub(r'\.{2,}\s*\d*', '', str(text))
+    return re.sub(r'\s+', ' ', t).strip()
+
+def smart_title(text: str) -> str:
+    """Converte texto para Title Case preservando siglas conhecidas e preposições."""
+    import re
+    if not text:
+        return ""
+    t = clean_dots_and_page_numbers(text)
+    words = t.split(" ")
+    result = []
+    for i, w in enumerate(words):
+        w_clean = re.sub(r'^[^\w]+|[^\w]+$', '', w)
+        w_upper = w_clean.upper()
+        if w_upper in SIGLAS_INSTITUCIONAIS:
+            result.append(w.replace(w_clean, w_upper))
+        elif w_clean.lower() in PREPOSICOES_PORTUGUES and 0 < i < len(words) - 1:
+            result.append(w.replace(w_clean, w_clean.lower()))
+        else:
+            result.append(w.replace(w_clean, w_clean.capitalize()))
+    return " ".join(result)
+
+def format_ramal_num(num_str: str) -> str:
+    """Formata sequências de números de ramal separados por espaço usando separador visual elegante."""
+    import re
+    s = re.sub(r'\s+', ' ', str(num_str)).strip()
+    tokens = s.split(' ')
+    if len(tokens) > 1 and all(len(t) == 4 and t.isdigit() for t in tokens):
+        return ' • '.join(tokens)
+    return s
+
+def clean_ramais_dataframe(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Higieniza os dados de ramais, propagando a localidade correta e limpando cabeçalhos."""
+    import re
+    if df_raw.empty:
+        return df_raw
+    df = df_raw.copy()
+    cleaned_rows = []
+    last_valid_loc = "MPMS - Geral"
+    header_regex = re.compile(r'PJ MEMBRO|GABINETE ASSESSORIA|GABIN ASSESSORIA|Chefe do Departamento|REMOTA|RECEPÇÃO', re.IGNORECASE)
+
+    for _, row in df.iterrows():
+        loc_raw = str(row.get('localidade', '')).strip()
+        setor_raw = str(row.get('setor_nome', '')).strip()
+        ramal_raw = str(row.get('telefone_ramal', '')).strip()
+
+        is_loc_header = bool(header_regex.search(loc_raw))
+        if not is_loc_header and not re.search(r'^\.{3,}', loc_raw) and loc_raw not in ['Geral', 'INTERIOR DO ESTADO']:
+            last_valid_loc = loc_raw
+        elif loc_raw in ['INTERIOR DO ESTADO']:
+            last_valid_loc = loc_raw
+
+        final_loc = last_valid_loc if is_loc_header else loc_raw
+
+        # Normaliza setor_nome se for repetição da localidade ou cabeçalho residual
+        if header_regex.search(setor_raw):
+            final_setor = "Recepção / Apoio Administrativo"
+        elif setor_raw == loc_raw or setor_raw == final_loc:
+            final_setor = "Atendimento Geral / Recepção"
+        else:
+            final_setor = setor_raw
+
+        final_loc = smart_title(final_loc)
+        final_setor = smart_title(final_setor)
+        final_ramal = format_ramal_num(ramal_raw)
+
+        r_dict = row.to_dict()
+        r_dict['localidade'] = final_loc
+        r_dict['setor_nome'] = final_setor
+        r_dict['telefone_ramal'] = final_ramal
+        cleaned_rows.append(r_dict)
+
+    return pd.DataFrame(cleaned_rows)
+
+def get_ramais_df(clean: bool = True) -> pd.DataFrame:
+    """Retorna os dados da tabela ramais_mpms em um DataFrame, com higienização inteligente por padrão."""
     setup_ramais_table()
     conn = get_connection()
     try:
@@ -47,6 +131,9 @@ def get_ramais_df() -> pd.DataFrame:
     except Exception:
         df = pd.DataFrame(columns=["id", "localidade", "setor_nome", "telefone_ramal", "tipo", "data_atualizacao"])
     conn.close()
+    
+    if clean and not df.empty:
+        return clean_ramais_dataframe(df)
     return df
 
 

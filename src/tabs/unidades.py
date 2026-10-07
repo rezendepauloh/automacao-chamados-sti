@@ -31,6 +31,18 @@ from src.components.pagination import (
 UNIDADES_EXCEL_PATH = OUTPUT_DIR_PRONTO / "Unidades_MPMS.xlsx"
 
 
+# -----------------------------------------------------------------------------
+# CACHE INTELIGENTE DE DADOS DE UNIDADES E RAMAIS (TTL = 5 min)
+# -----------------------------------------------------------------------------
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_unidades_df() -> pd.DataFrame:
+    return get_unidades_df()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ramais_df() -> pd.DataFrame:
+    return get_ramais_df()
+
+
 @st.dialog("📋 Detalhes e Gestão da Unidade", width="large")
 def modal_detalhes_unidade(row_data: dict):
     """Exibe um modal interativo com detalhes da unidade. Se for manual, permite editar ou excluir."""
@@ -256,15 +268,16 @@ def render_unidades_page():
 
     selected_tab = render_subtabs(UNIDADES_SUBTAB_MAP, default_slug="geral", key="unidades_subtab_radio")
 
-    # --- CARREGA DADOS DIRETO DO SQLite ---
-    df_unidades = get_unidades_df()
+    # --- CARREGA DADOS DIRETO DO SQLite (com cache) ---
+    df_unidades = _cached_get_unidades_df()
     if df_unidades.empty and UNIDADES_EXCEL_PATH.exists():
         try:
             df_excel = pd.read_excel(UNIDADES_EXCEL_PATH)
             df_excel.fillna("", inplace=True)
             from src.database import save_unidades_to_db
             save_unidades_to_db(df_excel)
-            df_unidades = get_unidades_df()
+            st.cache_data.clear()
+            df_unidades = _cached_get_unidades_df()
         except Exception:
             pass
 
@@ -343,7 +356,7 @@ def render_unidades_page():
         )
 
     elif selected_tab == "📞 Lista de Ramais (Telefonia)":
-        df_ramais_sb = get_ramais_df()
+        df_ramais_sb = _cached_get_ramais_df()
 
         localidade_opts = ["Todas"]
         setor_opts = ["Todos"]
@@ -460,7 +473,7 @@ def render_unidades_page():
         st.markdown("### 📞 Lista Oficial de Ramais Telefônicos do MPMS")
         st.caption("Dados extraídos dos documentos oficiais de telefonia da Intranet do MPMS. Clique em qualquer linha para abrir a ficha de detalhes.")
 
-        df_ramais = get_ramais_df()
+        df_ramais = _cached_get_ramais_df()
 
         if df_ramais.empty:
             st.info("Nenhum ramal cadastrado no banco de dados local. Clique no botão '🔄 Atualizar Ramais (Intranet)' na barra lateral para sincronizar.")
@@ -497,10 +510,10 @@ def render_unidades_page():
                 items_per_page=items_per_page
             )
 
+            cols_to_show_r = ["localidade", "setor_nome", "telefone_ramal", "tipo", "data_atualizacao"]
             selection_r = st.dataframe(
-                df_page_r,
+                df_page_r[cols_to_show_r] if all(c in df_page_r.columns for c in cols_to_show_r) else df_page_r,
                 column_config={
-                    "id": st.column_config.NumberColumn("ID"),
                     "localidade": st.column_config.TextColumn("Localidade / Prédio / Comarca"),
                     "setor_nome": st.column_config.TextColumn("Setor / Cargo / Membro"),
                     "telefone_ramal": st.column_config.TextColumn("Telefone / Ramal"),

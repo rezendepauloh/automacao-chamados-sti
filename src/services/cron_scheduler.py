@@ -174,6 +174,11 @@ def execute_task_by_id(task_id: str) -> str:
                 raise RuntimeError(f"Orquestrador finalizou com código {proc.returncode}: {proc.stderr[:300] if proc.stderr else proc.stdout[:300]}")
             return "Orquestrador de chamados executado com sucesso."
 
+        elif task_id == "purge_temp_files":
+            from src.config import purge_old_temporary_files
+            res = purge_old_temporary_files(max_age_days=7)
+            return f"Purga de logs concluída: {res['purged_files']} arquivos removidos, {res['freed_bytes'] / (1024*1024):.2f} MB liberados."
+
         else:
             raise ValueError(f"Rotina desconhecida: {task_id}")
     finally:
