@@ -77,19 +77,21 @@ def render_central_telefonica_page():
     # FILTROS LATERAIS (SIDEBAR) & AÇÕES DE COLETA
     # -----------------------------------------------------------------------------
     with st.sidebar:
-        st.markdown("## ⚙️ Ações e Coleta")
-        if oxe_ativo:
-            st.button("🤖 Sincronizando OXE...", width='stretch', disabled=True)
-        else:
-            if st.button("🔄 Sincronizar Ramais (OXE)", type="primary", width='stretch', help="Executa o scraper e o pré-processamento em segundo plano."):
-                import subprocess, time
-                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-                subprocess.Popen([sys.executable, "src/scrapers/oxe_scraper.py"], **popen_kwargs)
-                time.sleep(1.0)
-                st.toast("🚀 Scraper do OXE iniciado em segundo plano!", icon="🤖")
-                st.rerun()
+        from src.auth import is_admin
+        if is_admin():
+            st.markdown("## ⚙️ Ações e Coleta")
+            if oxe_ativo:
+                st.button("🤖 Sincronizando OXE...", width='stretch', disabled=True)
+            else:
+                if st.button("🔄 Sincronizar Ramais (OXE)", type="primary", width='stretch', help="Executa o scraper e o pré-processamento em segundo plano."):
+                    import subprocess, time
+                    popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                    subprocess.Popen([sys.executable, "src/scrapers/oxe_scraper.py"], **popen_kwargs)
+                    time.sleep(1.0)
+                    st.toast("🚀 Scraper do OXE iniciado em segundo plano!", icon="🤖")
+                    st.rerun()
 
-        st.markdown("---")
+            st.markdown("---")
         st.header("🔍 Filtros de Busca")
 
     total_ramais = len(df)

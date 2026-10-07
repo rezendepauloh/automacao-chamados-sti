@@ -688,28 +688,30 @@ def render_sccm_page():
     if st.sidebar.button("📋 Localizar Patrimônios (DMP)", use_container_width=True, help="Cruza em lote números de patrimônio com dados de usuário, modelo e localização no SCCM e AD."):
         modal_dmp_patrimonio_report()
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("## 🔄 Sincronização SCCM")
+    from src.auth import is_admin
+    if is_admin():
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("## 🔄 Sincronização SCCM")
 
-    # Disparo de sincronização direta via bancada:// (executa com privilégios nativos no Windows)
-    bancada_sync_url = "bancada://run?tool=sccm_sync&host=srv-1046.in.mpe.ms.gov.br"
-    st.sidebar.link_button(
-        "⚡ Sincronizar via Bancada (Windows)",
-        url=bancada_sync_url,
-        type="primary",
-        use_container_width=True,
-        help="Dispara a coleta do inventário SCCM via WMI/CIM com privilégios locais do Windows."
-    )
+        # Disparo de sincronização direta via bancada:// (executa com privilégios nativos no Windows)
+        bancada_sync_url = "bancada://run?tool=sccm_sync&host=srv-1046.in.mpe.ms.gov.br"
+        st.sidebar.link_button(
+            "⚡ Sincronizar via Bancada (Windows)",
+            url=bancada_sync_url,
+            type="primary",
+            use_container_width=True,
+            help="Dispara a coleta do inventário SCCM via WMI/CIM com privilégios locais do Windows."
+        )
 
-    if st.sidebar.button("📥 Importar Dados Coletados", use_container_width=True):
-        with st.spinner("Importando arquivo de inventário sccm_inventory.json..."):
-            from src.services.sccm_service import import_sccm_inventory_json
-            res = import_sccm_inventory_json()
-            if res["devices"] > 0 or res["collections"] > 0:
-                st.toast(f"✅ Sucesso: {res['devices']} computadores, {res['users']} usuários e {res['collections']} coleções importados!", icon="🎉")
-                st.rerun()
-            else:
-                st.sidebar.warning("⚠️ Nenhum arquivo novo encontrado. Dispare a sincronização acima primeiro.")
+        if st.sidebar.button("📥 Importar Dados Coletados", use_container_width=True):
+            with st.spinner("Importando arquivo de inventário sccm_inventory.json..."):
+                from src.services.sccm_service import import_sccm_inventory_json
+                res = import_sccm_inventory_json()
+                if res["devices"] > 0 or res["collections"] > 0:
+                    st.toast(f"✅ Sucesso: {res['devices']} computadores, {res['users']} usuários e {res['collections']} coleções importados!", icon="🎉")
+                    st.rerun()
+                else:
+                    st.sidebar.warning("⚠️ Nenhum arquivo novo encontrado. Dispare a sincronização acima primeiro.")
 
     st.markdown("<br>", unsafe_allow_html=True)
 

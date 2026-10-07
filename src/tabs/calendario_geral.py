@@ -164,10 +164,11 @@ def render_calendario_geral_page():
     st.caption("Visão centralizada de registros manuais, plantões da bancada, vigências de contratos de garantia, portarias e chamados técnicos.")
 
     # --- BOTÃO DE DESTAQUE NO TOPO DA SIDEBAR ---
-    if st.sidebar.button("➕ Novo Evento Manual", type="primary", width='stretch'):
-        modal_novo_evento_manual()
-
-    st.sidebar.markdown("---")
+    from src.auth import is_admin
+    if is_admin():
+        if st.sidebar.button("➕ Novo Evento Manual", type="primary", width='stretch'):
+            modal_novo_evento_manual()
+        st.sidebar.markdown("---")
 
     # --- FILTROS SIDEBAR (Categorias Desagrupadas) ---
     st.sidebar.markdown("## 📅 Agendas Visíveis")

@@ -92,21 +92,23 @@ def render_viagens_page():
         "O robô está atualizando a planilha de viagens do SharePoint. O painel permanece livre para uso!"
     )
 
-    st.sidebar.markdown("## ⚙️ Ações e Sincronização")
-    if viagens_ativo:
-        st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
-    else:
-        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha de viagens em segundo plano."):
-            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-            subprocess.Popen([sys.executable, "src/syncs/sync_viagens.py"], **popen_kwargs)
-            time.sleep(0.5)
-            st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
-            st.rerun()
+    from src.auth import is_admin
+    if is_admin():
+        st.sidebar.markdown("## ⚙️ Ações e Sincronização")
+        if viagens_ativo:
+            st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
+        else:
+            if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha de viagens em segundo plano."):
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/syncs/sync_viagens.py"], **popen_kwargs)
+                time.sleep(0.5)
+                st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+                st.rerun()
 
-    if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de viagens manualmente."):
-        modal_config_viagens()
+        if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de viagens manualmente."):
+            modal_config_viagens()
 
-    st.sidebar.markdown("---")
+        st.sidebar.markdown("---")
 
     df_viagens = get_viagens_df()
 

@@ -615,9 +615,15 @@ def scrape_otrs():
         logger.error(f"❌ ERRO CRÍTICO no OTRS: {str(e)}")
         print(f"ERRO CRÍTICO: {str(e)}")
         if driver:
-            driver.save_screenshot(str(error_dir / f'erro_final_{timestamp}.png'))
-            with open(error_dir / f'pagina_final_{timestamp}.html', 'w', encoding='utf-8') as f:
-                f.write(driver.page_source)
+            try:
+                driver.save_screenshot(str(error_dir / f'erro_final_{timestamp}.png'))
+            except Exception as ss_err:
+                logger.warning(f"⚠️ Não foi possível salvar screenshot de erro: {ss_err}")
+            try:
+                with open(error_dir / f'pagina_final_{timestamp}.html', 'w', encoding='utf-8') as f:
+                    f.write(driver.page_source)
+            except Exception as html_err:
+                logger.warning(f"⚠️ Não foi possível salvar HTML de erro: {html_err}")
         return False
         
     finally:

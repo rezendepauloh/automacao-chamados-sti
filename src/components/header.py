@@ -34,12 +34,37 @@ def render_header_navigation() -> str:
     Sincroniza o estado da página ativa com os Query Parameters da URL (?tab=slug).
     Exibe notificações em toast para novos alertas e retorna a página atualmente selecionada.
     """
+    # Páginas com acesso restrito exclusivo a administradores
+    ADMIN_ONLY_PAGES = {
+        "🔐 Cofre de Senhas",
+        "⚙️ Configurações",
+        "⚡ Scripts de Automação"
+    }
+
     # 1. Sincroniza estado inicial a partir do GET parameter na URL (?tab=slug)
     url_tab = st.query_params.get("tab")
     if url_tab and url_tab in SLUG_TO_PAGE:
-        st.session_state["current_page"] = SLUG_TO_PAGE[url_tab]
+        desired_page = SLUG_TO_PAGE[url_tab]
+        # Se for uma página restrita e o usuário não for administrador, redireciona para chamados
+        if desired_page in ADMIN_ONLY_PAGES and not is_admin():
+            st.query_params["tab"] = "chamados"
+            if "subtab" in st.query_params:
+                del st.query_params["subtab"]
+            st.session_state["current_page"] = "📋 Painel de Chamados"
+            st.toast("🚫 Acesso restrito aos administradores da Bancada.", icon="🔒")
+            st.rerun()
+        else:
+            st.session_state["current_page"] = desired_page
     elif "current_page" not in st.session_state:
         st.session_state["current_page"] = "📋 Painel de Chamados"
+
+    # Verificação defensiva se a página ativa atual for restrita para não-admin
+    if st.session_state.get("current_page") in ADMIN_ONLY_PAGES and not is_admin():
+        st.query_params["tab"] = "chamados"
+        if "subtab" in st.query_params:
+            del st.query_params["subtab"]
+        st.session_state["current_page"] = "📋 Painel de Chamados"
+        st.rerun()
 
     # Garante que a URL reflita o slug da página atual
     current_slug = PAGE_TO_SLUG.get(st.session_state["current_page"], "chamados")
@@ -47,6 +72,8 @@ def render_header_navigation() -> str:
         st.query_params["tab"] = current_slug
 
     def set_page(page_name: str):
+        if page_name in ADMIN_ONLY_PAGES and not is_admin():
+            page_name = "📋 Painel de Chamados"
         st.session_state["current_page"] = page_name
         st.query_params["tab"] = PAGE_TO_SLUG.get(page_name, "chamados")
         if "subtab" in st.query_params:
@@ -93,18 +120,21 @@ def render_header_navigation() -> str:
         ("🖨️ Impressoras (PaperCut)", "hdr_btn_impressoras"),
         ("🌳 Active Directory (AD)", "hdr_btn_ad"),
         ("💻 Inventário SCCM", "hdr_btn_sccm"),
-        ("⚡ Scripts de Automação", "hdr_btn_scripts_automacao"),
         ("📚 FAQ & Tutoriais", "hdr_btn_faq"),
     ]
 
-    # Somente administradores têm acesso ao Cofre de Senhas
+    # Recursos exclusivos para administradores da Bancada
     if user_is_admin:
+        MENU_ITEMS.append(("⚡ Scripts de Automação", "hdr_btn_scripts_automacao"))
         MENU_ITEMS.append(("🔐 Cofre de Senhas", "hdr_btn_senhas"))
 
     FOOTER_ITEMS = [
-        ("⚙️ Configurações", "hdr_btn_configuracoes", "⚙️ Configurações"),
         (notif_btn_label, "hdr_btn_notificacoes", "🔔 Central de Notificações")
     ]
+
+    # Somente administradores têm acesso à página de Configurações
+    if user_is_admin:
+        FOOTER_ITEMS.insert(0, ("⚙️ Configurações", "hdr_btn_configuracoes", "⚙️ Configurações"))
 
     current_user = get_current_user()
 

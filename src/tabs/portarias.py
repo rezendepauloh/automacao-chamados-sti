@@ -187,17 +187,19 @@ def render_portarias_page():
         )
         items_per_page = render_items_per_page_selector("portarias", options=[6, 10, 20, 50, 100, "Todos"], default_index=1)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        if portarias_ativo:
-            st.button("🤖 Atualizando...", width='stretch', disabled=True)
-        else:
-            if st.button("🔄 Atualizar Dados (API)", width='stretch', help="Busca novas portarias em segundo plano."):
-                import sys, subprocess, time
-                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-                subprocess.Popen([sys.executable, "src/syncs/sync_portarias.py"], **popen_kwargs)
-                time.sleep(0.8)
-                st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
-                st.rerun()
+        from src.auth import is_admin
+        if is_admin():
+            st.markdown("<br>", unsafe_allow_html=True)
+            if portarias_ativo:
+                st.button("🤖 Atualizando...", width='stretch', disabled=True)
+            else:
+                if st.button("🔄 Atualizar Dados (API)", width='stretch', help="Busca novas portarias em segundo plano."):
+                    import sys, subprocess, time
+                    popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                    subprocess.Popen([sys.executable, "src/syncs/sync_portarias.py"], **popen_kwargs)
+                    time.sleep(0.8)
+                    st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+                    st.rerun()
 
     # Aplicação dos filtros
     filtered_portarias = all_portarias.copy()

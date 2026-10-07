@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: bancada_streamlit_app
+    init: true
+    shm_size: '1gb'
     env_file:
       - .env
     ports:

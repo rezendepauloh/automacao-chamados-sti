@@ -115,22 +115,24 @@ def render_garantia_page():
         "O robô está lendo a planilha de garantias do OneDrive. O painel permanece livre para uso!"
     )
 
-    st.sidebar.markdown("## ⚙️ Ações e Sincronização")
-    if garantia_ativo:
-        st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
-    else:
-        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha de garantia em segundo plano."):
-            import sys, subprocess, time
-            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-            subprocess.Popen([sys.executable, "src/syncs/sync_garantia.py"], **popen_kwargs)
-            time.sleep(0.5)
-            st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
-            st.rerun()
+    from src.auth import is_admin
+    if is_admin():
+        st.sidebar.markdown("## ⚙️ Ações e Sincronização")
+        if garantia_ativo:
+            st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
+        else:
+            if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha de garantia em segundo plano."):
+                import sys, subprocess, time
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/syncs/sync_garantia.py"], **popen_kwargs)
+                time.sleep(0.5)
+                st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+                st.rerun()
 
-    if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de garantia manualmente."):
-        modal_config_garantia()
+        if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de garantia manualmente."):
+            modal_config_garantia()
 
-    st.sidebar.markdown("---")
+        st.sidebar.markdown("---")
 
     df_contratos = get_garantia_contratos_df()
     df_chamados = get_garantia_chamados_df()

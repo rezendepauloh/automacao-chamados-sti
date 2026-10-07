@@ -92,20 +92,23 @@ def render_donations_page():
                     
     df = get_donations_data()
     
-    st.sidebar.title("🖥️ Painel de Controle")
+    from src.auth import is_admin
+    if is_admin():
+        st.sidebar.title("🖥️ Painel de Controle")
 
-    if donations_ativo:
-        st.sidebar.button("🤖 Atualizando...", type="primary", width='stretch', disabled=True)
-    else:
-        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
-            import sys, subprocess
-            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-            subprocess.Popen([sys.executable, "src/syncs/sync_donations.py"], **popen_kwargs)
-            st.toast("🚀 Sincronização de doações iniciada em segundo plano!", icon="🤖")
-            st.rerun()
+        if donations_ativo:
+            st.sidebar.button("🤖 Atualizando...", type="primary", width='stretch', disabled=True)
+        else:
+            if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
+                import sys, subprocess
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/syncs/sync_donations.py"], **popen_kwargs)
+                st.toast("🚀 Sincronização de doações iniciada em segundo plano!", icon="🤖")
+                st.rerun()
 
-    if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de doações manualmente."):
-        modal_config_donations()
+        if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de doações manualmente."):
+            modal_config_donations()
+        st.sidebar.markdown("---")
 
     if df.empty:
         st.warning("⚠️ Nenhum dado encontrado no cache local. Por favor, clique em 'Sincronizar Planilha' ou use 'Configurar / Enviar Planilha' para carregar os registros.")

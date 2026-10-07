@@ -467,7 +467,10 @@ def render_mapa_page():
     route_coords_json_str = json.dumps(route_coords)
     config_json_str = json.dumps(config)
     active_pin_ids_json_str = json.dumps(active_pin_ids)
-    
+    from src.auth import is_admin
+    can_edit_maps = is_admin()
+    can_edit_maps_json_str = "true" if can_edit_maps else "false"
+
     leaflet_html = f"""
     <!DOCTYPE html>
     <html>
@@ -633,6 +636,7 @@ def render_mapa_page():
           setInterval(updateThemeFromParent, 1000);
         }});
 
+        var canEditMaps = {can_edit_maps_json_str};
         var devMode = false;
         var devState = {{
           lastNodeId: sessionStorage.getItem('dev_lastNodeId') || null,
@@ -752,7 +756,7 @@ def render_mapa_page():
 
             marker.on('click', function(e) {{
               L.DomEvent.stopPropagation(e);
-              if (devMode) {{
+              if (canEditMaps && devMode) {{
                 var connectBtnHtml = "";
                 if (devState.lastNodeId && devState.lastNodeId !== node.id) {{
                   connectBtnHtml = '<button class="dev-btn" onclick="window.connectToLastNode(\\\'' + node.id + '\\\')" style="background-color:#2ecc71; color:#fff; font-size:10px;">Ligar a ' + devState.lastNodeId + '</button>';
@@ -811,7 +815,7 @@ def render_mapa_page():
             }}).addTo(pinsLayer);
 
             var popupContent = "<b>📌 " + pin.sala + "</b><br>" + pin.descricao;
-            if (!devMode) {{
+            if (!canEditMaps || !devMode) {{
               popupContent += "<br><br><div class='dev-btn-group' style='justify-content:center; gap:6px;'>" +
                               "<button class='dev-btn' style='background-color:#3498db; color:#fff; font-size:10px; padding:4px 8px; margin:0;' onclick='window.setRouteOrigin(\\\"" + pin.id + "\\\")'>Definir Origem</button>" +
                               "<button class='dev-btn' style='background-color:#2ecc71; color:#fff; font-size:10px; padding:4px 8px; margin:0;' onclick='window.setRouteDestination(\\\"" + pin.id + "\\\")'>Definir Destino</button>" +
@@ -1130,11 +1134,13 @@ def render_mapa_page():
           }}
         }});
 
-        var devModeCtrl = new DevModeControl();
-        var exportCtrl = new SaveControl();
-        map.addControl(devModeCtrl);
-        map.addControl(exportCtrl);
-        exportCtrlInstance = exportCtrl;
+        if (canEditMaps) {{
+          var devModeCtrl = new DevModeControl();
+          var exportCtrl = new SaveControl();
+          map.addControl(devModeCtrl);
+          map.addControl(exportCtrl);
+          exportCtrlInstance = exportCtrl;
+        }}
 
         // Callback para salvar elementos criados ao clicar no mapa no Modo Dev
         window.saveDevElement = function(x, y) {{
@@ -1228,7 +1234,7 @@ def render_mapa_page():
           var y = Math.round(coord.lat);
           
           if (x >= 0 && x <= w && y >= 0 && y <= h) {{
-            if (devMode) {{
+            if (canEditMaps && devMode) {{
               var tempIdNode = "no_" + Date.now();
               var tempIdPin = "pin_" + Date.now();
               

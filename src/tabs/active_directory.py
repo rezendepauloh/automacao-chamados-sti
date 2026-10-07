@@ -1694,13 +1694,15 @@ def render_ad_page():
     )
 
     # Sub-Navegação Sincronizada por URL (?subtab=arvore|usuarios|computadores|grupos|sync)
+    from src.auth import is_admin
     TAB_MAP = {
         "arvore": "🌳 Árvore Hierárquica (GoJS)",
         "usuarios": "👥 Usuários & Contas",
         "computadores": "💻 Computadores & Servidores",
         "grupos": "🛡️ Grupos de Segurança",
-        "sync": "⚙️ Sincronização & Diagnóstico"
     }
+    if is_admin():
+        TAB_MAP["sync"] = "⚙️ Sincronização & Diagnóstico"
 
     selected_subtab_title = render_subtabs(TAB_MAP, default_slug="arvore", key="ad_subtabs_radio")
     current_slug = [k for k, v in TAB_MAP.items() if v == selected_subtab_title][0]

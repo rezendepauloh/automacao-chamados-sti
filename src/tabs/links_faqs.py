@@ -1300,11 +1300,13 @@ def render_faq_page():
                     st.rerun()
 
         st.sidebar.markdown("---")
-        st.sidebar.markdown("## ⚙️ Ações e SharePoint")
-        if VIDEO_FAQ_URL:
-            st.sidebar.link_button("🌐 Abrir Pasta no SharePoint ↗", VIDEO_FAQ_URL, width='stretch', help="Abre a pasta oficial de vídeos no SharePoint em nova aba.")
-        if st.sidebar.button("📤 Enviar Vídeo (.mp4)", width='stretch', help="Fazer upload de vídeo para a biblioteca local."):
-            modal_upload_video()
+        from src.auth import is_admin
+        if is_admin():
+            st.sidebar.markdown("## ⚙️ Ações e SharePoint")
+            if VIDEO_FAQ_URL:
+                st.sidebar.link_button("🌐 Abrir Pasta no SharePoint ↗", VIDEO_FAQ_URL, width='stretch', help="Abre a pasta oficial de vídeos no SharePoint em nova aba.")
+            if st.sidebar.button("📤 Enviar Vídeo (.mp4)", width='stretch', help="Fazer upload de vídeo para a biblioteca local."):
+                modal_upload_video()
 
         col_head1, col_head2 = st.columns([3, 1])
         with col_head1:
@@ -1572,11 +1574,13 @@ def render_faq_page():
                     st.rerun()
 
         st.sidebar.markdown("---")
-        st.sidebar.markdown("## ⚙️ Ações e SharePoint")
-        if IMAGE_FAQ_URL:
-            st.sidebar.link_button("🌐 Abrir Pasta no SharePoint ↗", IMAGE_FAQ_URL, width='stretch', help="Abre a pasta oficial de imagens no SharePoint em nova aba.")
-        if st.sidebar.button("📤 Enviar Imagens", width='stretch', help="Fazer upload de imagens para a galeria local."):
-            modal_upload_imagem()
+        from src.auth import is_admin
+        if is_admin():
+            st.sidebar.markdown("## ⚙️ Ações e SharePoint")
+            if IMAGE_FAQ_URL:
+                st.sidebar.link_button("🌐 Abrir Pasta no SharePoint ↗", IMAGE_FAQ_URL, width='stretch', help="Abre a pasta oficial de imagens no SharePoint em nova aba.")
+            if st.sidebar.button("📤 Enviar Imagens", width='stretch', help="Fazer upload de imagens para a galeria local."):
+                modal_upload_imagem()
 
         # Constrói pastas de imagens unificando imagens locais com o catálogo oficial do SQLite
         folders_dict = {}

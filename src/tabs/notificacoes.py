@@ -24,6 +24,7 @@ def render_notificacoes_page():
     # Contagem não lidas
     unread_count = get_unread_notifications_count()
 
+    from src.auth import is_admin
     c_title, c_act1, c_act2 = st.columns([2, 1, 1])
     with c_title:
         if unread_count > 0:
@@ -31,17 +32,18 @@ def render_notificacoes_page():
         else:
             st.success("🎉 Todas as notificações estão em dia!")
     with c_act1:
-        if st.button("🔄 Verificar Alertas Agora", width='stretch', help="Varre portarias e escalas de plantão em busca de novos alertas para a bancada."):
-            with st.spinner("Verificando portarias e escalas de plantão..."):
-                try:
-                    from src.syncs.sync_plantoes_alerts import check_and_generate_plantao_alerts
-                    from src.syncs.sync_portarias import sync_portarias_and_generate_alerts
-                    sync_portarias_and_generate_alerts()
-                    check_and_generate_plantao_alerts()
-                    st.toast("Alertas de portarias e plantões verificados com sucesso!", icon="🔔")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao verificar alertas: {e}")
+        if is_admin():
+            if st.button("🔄 Verificar Alertas Agora", width='stretch', help="Varre portarias e escalas de plantão em busca de novos alertas para a bancada."):
+                with st.spinner("Verificando portarias e escalas de plantão..."):
+                    try:
+                        from src.syncs.sync_plantoes_alerts import check_and_generate_plantao_alerts
+                        from src.syncs.sync_portarias import sync_portarias_and_generate_alerts
+                        sync_portarias_and_generate_alerts()
+                        check_and_generate_plantao_alerts()
+                        st.toast("Alertas de portarias e plantões verificados com sucesso!", icon="🔔")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao verificar alertas: {e}")
     with c_act2:
         if st.button("✅ Marcar Todas como Lidas", width='stretch', disabled=(unread_count == 0)):
             mark_all_notifications_as_read()

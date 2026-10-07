@@ -170,9 +170,13 @@ elif selected_page == "💻 Inventário SCCM":
     src.tabs.sccm.render_sccm_page()
 
 elif selected_page == "⚡ Scripts de Automação":
-    import src.tabs.scripts_automacao
-    importlib.reload(src.tabs.scripts_automacao)
-    src.tabs.scripts_automacao.render_scripts_automacao_page()
+    if not is_admin():
+        st.error("🚫 Acesso restrito aos administradores da Bancada.")
+        st.info("A execução de scripts remotos é restrita à equipe técnica autorizada.")
+    else:
+        import src.tabs.scripts_automacao
+        importlib.reload(src.tabs.scripts_automacao)
+        src.tabs.scripts_automacao.render_scripts_automacao_page()
 
 elif selected_page == "🔐 Cofre de Senhas":
     if not is_admin():
@@ -190,9 +194,13 @@ elif selected_page == "🔔 Central de Notificações":
     src.tabs.notificacoes.render_notificacoes_page()
 
 elif selected_page == "⚙️ Configurações":
-    import src.tabs.configuracoes
-    importlib.reload(src.tabs.configuracoes)
-    src.tabs.configuracoes.render_configuracoes_page()
+    if not is_admin():
+        st.error("🚫 Acesso restrito aos administradores da Bancada.")
+        st.info("A página de Configurações contém parâmetros de infraestrutura, agendamentos e integrações sensíveis.")
+    else:
+        import src.tabs.configuracoes
+        importlib.reload(src.tabs.configuracoes)
+        src.tabs.configuracoes.render_configuracoes_page()
 
 else:
     import src.tabs.chamados

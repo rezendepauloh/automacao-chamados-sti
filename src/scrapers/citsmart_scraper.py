@@ -308,10 +308,17 @@ def process_page(driver, wait, filtro_grupo=None, ad_conn=None, cache=None):
         if captured and isinstance(captured, list) and len(captured) > 0:
             # Se identificamos os IDs reais renderizados na tela, filtramos estritamente por eles!
             if dom_cids:
-                captured = [t for t in captured if str(t.get("ticket_id", "") or t.get("id", "")) in dom_cids]
-                logger.info(f"⚡ [PROCESSO ULTRA-RÁPIDO] Filtrado para {len(captured)} chamados que correspondem exatamente à tabela da fila!")
+                filtered_captured = [t for t in captured if str(t.get("ticket_id", "") or t.get("id", "")) in dom_cids]
+                if filtered_captured:
+                    captured = filtered_captured
+                    logger.info(f"⚡ [PROCESSO ULTRA-RÁPIDO] Filtrado para {len(captured)} chamados que correspondem exatamente à tabela da fila!")
+                else:
+                    logger.warning(f"⚠️ [AVISO XHR] Nenhum chamado do lote JSON interceptado deu match com os IDs do DOM ({len(dom_cids)}). Recorrendo à extração direta pelo DOM...")
+                    captured = None
             else:
                 logger.info(f"⚡ [PROCESSO ULTRA-RÁPIDO] Processando {len(captured)} chamados capturados diretamente via JSON de rede!")
+        
+        if captured and isinstance(captured, list) and len(captured) > 0:
             collected = []
             for idx, ticket in enumerate(captured):
                 try:

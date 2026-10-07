@@ -177,18 +177,20 @@ def render_ferias_page():
     if ferias_ativo:
         st.session_state["was_ferias_syncing"] = True
 
-    with col_b:
-        st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        if ferias_ativo:
-            st.button("🤖 Sincronizando...", width='stretch', disabled=True)
-        else:
-            if st.button("🔄 Sincronizar Tudo", type="primary", width='stretch', help="Executa a sincronização completa da planilha de férias em segundo plano."):
-                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-                subprocess.Popen([sys.executable, "src/syncs/sync_ferias.py"], **popen_kwargs)
-                time.sleep(0.5)
-                st.session_state["was_ferias_syncing"] = True
-                st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
-                st.rerun()
+    from src.auth import is_admin
+    if is_admin():
+        with col_b:
+            st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
+            if ferias_ativo:
+                st.button("🤖 Sincronizando...", width='stretch', disabled=True)
+            else:
+                if st.button("🔄 Sincronizar Tudo", type="primary", width='stretch', help="Executa a sincronização completa da planilha de férias em segundo plano."):
+                    popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                    subprocess.Popen([sys.executable, "src/syncs/sync_ferias.py"], **popen_kwargs)
+                    time.sleep(0.5)
+                    st.session_state["was_ferias_syncing"] = True
+                    st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+                    st.rerun()
 
     render_log_expander(
         "🤖 Sincronização de Férias em Segundo Plano",
@@ -216,7 +218,7 @@ def render_ferias_page():
 
     if df_total.empty:
         st.info("Nenhum registro de férias encontrado no banco relacional local.")
-        if st.button("⚙️ Configurar ou Importar Planilha de Férias"):
+        if is_admin() and st.button("⚙️ Configurar ou Importar Planilha de Férias"):
             modal_config_ferias()
         return
 
@@ -224,11 +226,12 @@ def render_ferias_page():
     # ABA 1: 📊 PLANILHA & ESCALA
     # -------------------------------------------------------------------------
     if selected_subtab == "📊 Planilha & Escala":
-        st.sidebar.markdown("## ⚙️ Ações")
-        if st.sidebar.button("📥 Importar / Configurar Planilha", width='stretch', help="Fazer upload manual ou configurar link do SharePoint."):
-            modal_config_ferias()
+        if is_admin():
+            st.sidebar.markdown("## ⚙️ Ações")
+            if st.sidebar.button("📥 Importar / Configurar Planilha", width='stretch', help="Fazer upload manual ou configurar link do SharePoint."):
+                modal_config_ferias()
 
-        st.sidebar.markdown("---")
+            st.sidebar.markdown("---")
         st.sidebar.markdown("## 🔍 Filtros da Tabela")
 
         filtro_ano = st.sidebar.selectbox("📅 Exercício / Ano:", ["Todos"] + anos_disponiveis, index=1 if len(anos_disponiveis) > 1 else 0, key="f_ano_escala")

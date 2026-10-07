@@ -296,23 +296,24 @@ def render_contracts_page():
     
     search_text = st.sidebar.text_input("🔍 Buscar por Nº SAJ, Objeto ou Contrato:", "")
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("## ⚙️ Ações e Sincronização")
-    if fiscalizacao_ativo:
-        st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
-    else:
-        if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
-            import sys, subprocess, time
-            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-            subprocess.Popen([sys.executable, "src/syncs/sync_fiscalizacao.py"], **popen_kwargs)
-            time.sleep(0.5)
-            st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
-            st.rerun()
+    from src.auth import is_admin
+    if is_admin():
+        st.sidebar.markdown("## ⚙️ Ações e Sincronização")
+        if fiscalizacao_ativo:
+            st.sidebar.button("🤖 Sincronizando...", width='stretch', disabled=True)
+        else:
+            if st.sidebar.button("🔄 Sincronizar Planilha", type="primary", width='stretch', help="Busca atualizações na planilha do SharePoint em segundo plano."):
+                import sys, subprocess, time
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                subprocess.Popen([sys.executable, "src/syncs/sync_fiscalizacao.py"], **popen_kwargs)
+                time.sleep(0.5)
+                st.toast("🚀 Sincronização iniciada em segundo plano!", icon="🤖")
+                st.rerun()
 
-    if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de fiscais manualmente."):
-        modal_config_fiscalizacao()
+        if st.sidebar.button("⚙️ Configurar / Enviar Planilha", width='stretch', help="Gerenciar link do SharePoint ou enviar a planilha de fiscais manualmente."):
+            modal_config_fiscalizacao()
 
-    st.sidebar.markdown("---")
+        st.sidebar.markdown("---")
 
     items_per_page = render_items_per_page_selector(
         key_prefix="fiscalizacao",

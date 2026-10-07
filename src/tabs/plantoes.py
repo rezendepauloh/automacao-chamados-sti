@@ -116,18 +116,20 @@ def render_plantoes_page():
 
     with col_b:
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        if plantoes_ativo:
-            st.button("🤖 Sincronizando...", width='stretch', disabled=True)
-        else:
-            if st.button("🔄 Sincronizar Tudo", type="primary", width='stretch', help="Executa sincronização completa do Matutino e SIMP em segundo plano."):
-                import time
-                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-                subprocess.Popen([sys.executable, "src/scrapers/plantoes_scraper.py"], **popen_kwargs)
-                time.sleep(0.8)
-                st.session_state["was_plantoes_syncing"] = True
-                st.toast("🚀 Robô de plantões iniciado em segundo plano!", icon="🤖")
-                st.cache_data.clear()
-                st.rerun()
+        from src.auth import is_admin
+        if is_admin():
+            if plantoes_ativo:
+                st.button("🤖 Sincronizando...", width='stretch', disabled=True)
+            else:
+                if st.button("🔄 Sincronizar Tudo", type="primary", width='stretch', help="Executa sincronização completa do Matutino e SIMP em segundo plano."):
+                    import time
+                    popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                    subprocess.Popen([sys.executable, "src/scrapers/plantoes_scraper.py"], **popen_kwargs)
+                    time.sleep(0.8)
+                    st.session_state["was_plantoes_syncing"] = True
+                    st.toast("🚀 Robô de plantões iniciado em segundo plano!", icon="🤖")
+                    st.cache_data.clear()
+                    st.rerun()
 
     render_log_expander(
         "🤖 Robô de Plantões em Segundo Plano – Acompanhar Progresso",
@@ -140,9 +142,11 @@ def render_plantoes_page():
     st.markdown("---")
 
     # --- AÇÕES E FILTROS SIDEBAR ---
-    st.sidebar.markdown("## ⚙️ Ações")
-    if st.sidebar.button("📥 Importar Planilha Matutino", width='stretch', help="Fazer upload manual de arquivo Excel da escala matutina."):
-        modal_importar_matutino()
+    if is_admin():
+        st.sidebar.markdown("## ⚙️ Ações")
+        if st.sidebar.button("📥 Importar Planilha Matutino", width='stretch', help="Fazer upload manual de arquivo Excel da escala matutina."):
+            modal_importar_matutino()
+        st.sidebar.markdown("---")
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("## 🔍 Filtros de Plantão")

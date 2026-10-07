@@ -80,9 +80,19 @@ def read_last_log_lines(n: int = 15) -> str:
 
 
 def render_log_expander(title: str, is_running: bool, read_log_func, check_func, info_text: str):
-    """Renderiza um accordion de log que se atualiza sozinho a cada 3 segundos e auto-encerra quando a checagem retorna False."""
+    """
+    Renderiza um accordion de log que se atualiza sozinho a cada 3 segundos e auto-encerra quando a checagem retorna False.
+    Exibido exclusivamente para administradores da bancada para proteger dados sensíveis.
+    """
     if not is_running:
         return
+
+    try:
+        from src.auth import is_admin
+        if not is_admin():
+            return
+    except Exception:
+        pass
 
     with st.expander(title, expanded=False):
         st.info(info_text)

@@ -244,26 +244,28 @@ def render_chamados_page():
 
     with col_btn:
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        if robo_ativo:
-            st.button("🤖 Robô em Execução...", width='stretch', disabled=True)
-        else:
-            run_orquestrador = st.button(
-                "🔄 Atualizar Chamados", 
-                width='stretch', 
-                help="Executa o orquestrador completo em segundo plano.",
-                type="primary"
-            )
-            if run_orquestrador:
-                import time
-                from src.services.cron_scheduler import get_cron_daemon
-                cron_daemon = get_cron_daemon()
-                if cron_daemon.trigger_task_now("orquestrador_chamados"):
-                    time.sleep(0.8)
-                    st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.warning("O robô já está em execução neste momento.")
+        from src.auth import is_admin
+        if is_admin():
+            if robo_ativo:
+                st.button("🤖 Robô em Execução...", width='stretch', disabled=True)
+            else:
+                run_orquestrador = st.button(
+                    "🔄 Atualizar Chamados", 
+                    width='stretch', 
+                    help="Executa o orquestrador completo em segundo plano.",
+                    type="primary"
+                )
+                if run_orquestrador:
+                    import time
+                    from src.services.cron_scheduler import get_cron_daemon
+                    cron_daemon = get_cron_daemon()
+                    if cron_daemon.trigger_task_now("orquestrador_chamados"):
+                        time.sleep(0.8)
+                        st.toast("🚀 Robô iniciado em segundo plano!", icon="🤖")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.warning("O robô já está em execução neste momento.")
 
     render_log_expander(
         "🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso",
@@ -772,31 +774,33 @@ def render_chamados_page():
                             rdp_url = f"bancada://run?tool=rdp&host={target_host}"
                             st.link_button("🖥️ MSTSC (RDP)", url=rdp_url, width="stretch", help="Conecta via Área de Trabalho Remota.")
                     
-                    with st.expander("✏️ Editar Título do Chamado", expanded=False):
-                        curr_title = str(row.get('titulo', '')).strip()
-                        if curr_title.lower() in ["none", "nan", "null", "sem título"]:
-                            curr_title = ""
-                        new_titulo = st.text_input("Título do Chamado:", value=curr_title, key=f"edit_titulo_{row['id']}")
-                        if st.button("💾 Salvar Título", key=f"save_title_btn_{row['id']}"):
-                            update_ticket_title(row['id'], new_titulo)
-                            st.success("Título do chamado atualizado com sucesso! (Fechar para atualizar a tabela)")
-                            st.cache_data.clear()
+                    from src.auth import is_admin
+                    if is_admin():
+                        with st.expander("✏️ Editar Título do Chamado", expanded=False):
+                            curr_title = str(row.get('titulo', '')).strip()
+                            if curr_title.lower() in ["none", "nan", "null", "sem título"]:
+                                curr_title = ""
+                            new_titulo = st.text_input("Título do Chamado:", value=curr_title, key=f"edit_titulo_{row['id']}")
+                            if st.button("💾 Salvar Título", key=f"save_title_btn_{row['id']}"):
+                                update_ticket_title(row['id'], new_titulo)
+                                st.success("Título do chamado atualizado com sucesso! (Fechar para atualizar a tabela)")
+                                st.cache_data.clear()
 
-                    with st.expander("📍 Editar Localização Manual", expanded=False):
-                        curr_cp = _sanitize_val(row.get('cidade_predio'))
-                        curr_un = _sanitize_val(row.get('unidade'))
-                        if "não encontrad" in curr_un.lower() or "nao encontrad" in curr_un.lower():
-                            curr_un = ""
-                        curr_loc = _sanitize_val(row.get('localidade_fisica'))
-                        if "nan" in curr_loc.lower() or "não encontrad" in curr_loc.lower():
-                            curr_loc = ""
-                        new_cidade = st.text_input("Cidade - Prédio", value=curr_cp, key=f"edit_cidade_{row['id']}")
-                        new_unidade = st.text_input("Unidade", value=curr_un, key=f"edit_unidade_{row['id']}")
-                        new_localidade = st.text_input("Localidade Física", value=curr_loc, key=f"edit_localidade_{row['id']}")
-                        if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row['id']}"):
-                            update_ticket_location_details(row['id'], new_localidade, new_cidade, new_unidade)
-                            st.success("Localização salva! (Fechar para atualizar a tabela)")
-                            st.cache_data.clear()
+                        with st.expander("📍 Editar Localização Manual", expanded=False):
+                            curr_cp = _sanitize_val(row.get('cidade_predio'))
+                            curr_un = _sanitize_val(row.get('unidade'))
+                            if "não encontrad" in curr_un.lower() or "nao encontrad" in curr_un.lower():
+                                curr_un = ""
+                            curr_loc = _sanitize_val(row.get('localidade_fisica'))
+                            if "nan" in curr_loc.lower() or "não encontrad" in curr_loc.lower():
+                                curr_loc = ""
+                            new_cidade = st.text_input("Cidade - Prédio", value=curr_cp, key=f"edit_cidade_{row['id']}")
+                            new_unidade = st.text_input("Unidade", value=curr_un, key=f"edit_unidade_{row['id']}")
+                            new_localidade = st.text_input("Localidade Física", value=curr_loc, key=f"edit_localidade_{row['id']}")
+                            if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row['id']}"):
+                                update_ticket_location_details(row['id'], new_localidade, new_cidade, new_unidade)
+                                st.success("Localização salva! (Fechar para atualizar a tabela)")
+                                st.cache_data.clear()
                     
                 with col2:
                     st.markdown("### ⚙️ Classificação & Status")
@@ -814,18 +818,19 @@ def render_chamados_page():
                     tag_html = f'<span style="background-color: {bg_color}; color: {text_color}; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-family: inherit; font-size: 13px;">{row["tag"]}</span>'
                     st.markdown(f"**TAG Atual:** {tag_html}", unsafe_allow_html=True)
                     
-                    tag_options = sorted(list(TAG_COLORS.keys()))
-                    try:
-                        default_idx = tag_options.index(tag_name)
-                    except ValueError:
-                        default_idx = 0
-                        
-                    new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row['id']}")
-                    if new_tag != tag_name:
-                        if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row['id']}"):
-                            update_ticket_tag(row['id'], new_tag)
-                            st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
-                            st.cache_data.clear()
+                    if is_admin():
+                        tag_options = sorted(list(TAG_COLORS.keys()))
+                        try:
+                            default_idx = tag_options.index(tag_name)
+                        except ValueError:
+                            default_idx = 0
+                            
+                        new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row['id']}")
+                        if new_tag != tag_name:
+                            if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row['id']}"):
+                                update_ticket_tag(row['id'], new_tag)
+                                st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
+                                st.cache_data.clear()
                     
                     link_url = row.get('link')
                     if link_url:
@@ -836,11 +841,14 @@ def render_chamados_page():
                 current_andamento = str(row.get('andamento', '')).strip()
                 if current_andamento.lower() in ["none", "nan", "null", ""]:
                     current_andamento = ""
-                new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
-                if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
-                    update_ticket_andamento(row['id'], new_andamento)
-                    st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
-                    st.cache_data.clear()
+                if is_admin():
+                    new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
+                    if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
+                        update_ticket_andamento(row['id'], new_andamento)
+                        st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
+                        st.cache_data.clear()
+                else:
+                    st.write(current_andamento if current_andamento else "*(Nenhuma nota de andamento registrada)*")
             
             with st.expander(f"📝 #1 - {row['Data Formatada']} (Descrição)", expanded=True):
                 st.text(row['descricao'])

@@ -885,8 +885,9 @@ def get_chrome_driver(
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-software-rasterizer")
+    opts.add_argument("--disable-crash-reporter")
 
-    # Localiza binário do Chromium no Linux (incluindo o cache do Playwright)
+    # Localiza binário do Chromium no Linux
     if sys.platform != "win32":
         possible_binaries = [
             "/usr/bin/chromium",
@@ -896,8 +897,8 @@ def get_chrome_driver(
         ]
         playwright_cache = Path.home() / ".cache" / "ms-playwright"
         if playwright_cache.exists():
-            for p in sorted(playwright_cache.glob("chromium-*/chrome-linux/chrome"), reverse=True):
-                possible_binaries.insert(0, str(p))
+            for p in sorted(playwright_cache.glob("chromium-*/chrome-linux*/chrome"), reverse=True):
+                possible_binaries.append(str(p))
 
         for binary in possible_binaries:
             if Path(binary).exists():

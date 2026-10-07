@@ -143,18 +143,20 @@ def render_impressoras_page():
     # FILTROS SIDEBAR & AÇÕES
     # -----------------------------------------------------------------------------
     with st.sidebar:
-        st.markdown("## ⚙️ Ações e Coleta")
-        if papercut_ativo:
-            st.sidebar.button("🤖 Sincronizando PaperCut...", width='stretch', disabled=True)
-        else:
-            if st.sidebar.button("🔄 Sincronizar Impressoras", type="primary", width='stretch', help="Executa a coleta e unificação de dados do PaperCut em segundo plano."):
-                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-                subprocess.Popen([sys.executable, "src/scrapers/papercut_scraper.py"], **popen_kwargs)
-                time.sleep(1.0)
-                st.toast("🚀 Sincronização do PaperCut iniciada em segundo plano!", icon="🤖")
-                st.rerun()
+        from src.auth import is_admin
+        if is_admin():
+            st.markdown("## ⚙️ Ações e Coleta")
+            if papercut_ativo:
+                st.sidebar.button("🤖 Sincronizando PaperCut...", width='stretch', disabled=True)
+            else:
+                if st.sidebar.button("🔄 Sincronizar Impressoras", type="primary", width='stretch', help="Executa a coleta e unificação de dados do PaperCut em segundo plano."):
+                    popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                    subprocess.Popen([sys.executable, "src/scrapers/papercut_scraper.py"], **popen_kwargs)
+                    time.sleep(1.0)
+                    st.toast("🚀 Sincronização do PaperCut iniciada em segundo plano!", icon="🤖")
+                    st.rerun()
 
-        st.markdown("---")
+            st.markdown("---")
         st.markdown("## 🔍 Filtros de Impressoras")
         
         search_query = st.text_input("🔎 Buscar (Nome, Servidor, Modelo, IP)", "").strip().lower()

@@ -269,50 +269,52 @@ def render_unidades_page():
             pass
 
     # --- 2. SIDEBAR: SEGREGAÇÃO DO MENU "AÇÕES E GESTÃO" ---
-    st.sidebar.markdown("## ⚙️ Ações e Gestão")
+    from src.auth import is_admin
+    if is_admin():
+        st.sidebar.markdown("## ⚙️ Ações e Gestão")
 
-    if selected_tab == "🏢 Relação Unificada de Unidades":
-        if st.sidebar.button("➕ Novo Setor Interno", type="primary", width='stretch'):
-            modal_novo_setor_manual()
+        if selected_tab == "🏢 Relação Unificada de Unidades":
+            if st.sidebar.button("➕ Novo Setor Interno", type="primary", width='stretch'):
+                modal_novo_setor_manual()
 
-        st.sidebar.markdown("<br>", unsafe_allow_html=True)
+            st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
-        if unidades_ativo:
-            st.sidebar.button("🤖 Unidades em Atualização...", width='stretch', disabled=True)
-        else:
-            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-            if st.sidebar.button("🔄 Rodar Scraper Completo (Web)", width='stretch', help="Executa o scraper completo buscando dados atualizados no portal do MPMS em segundo plano."):
-                import time
-                subprocess.Popen([sys.executable, "src/scrapers/unidades_scraper.py"], **popen_kwargs)
-                time.sleep(0.8)
-                st.toast("🚀 Scraper Completo de Unidades iniciado em segundo plano!", icon="🤖")
-                st.rerun()
+            if unidades_ativo:
+                st.sidebar.button("🤖 Unidades em Atualização...", width='stretch', disabled=True)
+            else:
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                if st.sidebar.button("🔄 Rodar Scraper Completo (Web)", width='stretch', help="Executa o scraper completo buscando dados atualizados no portal do MPMS em segundo plano."):
+                    import time
+                    subprocess.Popen([sys.executable, "src/scrapers/unidades_scraper.py"], **popen_kwargs)
+                    time.sleep(0.8)
+                    st.toast("🚀 Scraper Completo de Unidades iniciado em segundo plano!", icon="🤖")
+                    st.rerun()
 
-            if st.sidebar.button("⚡ Atualização Rápida (Só Manuais)", width='stretch', help="Atualiza a base unificada de unidades com as unidades manuais do banco."):
-                import time
-                subprocess.Popen([sys.executable, "src/scrapers/unidades_scraper.py", "--only-manual"], **popen_kwargs)
-                time.sleep(0.8)
-                st.toast("⚡ Sincronização rápida de manuais iniciada!", icon="⚡")
-                st.rerun()
+                if st.sidebar.button("⚡ Atualização Rápida (Só Manuais)", width='stretch', help="Atualiza a base unificada de unidades com as unidades manuais do banco."):
+                    import time
+                    subprocess.Popen([sys.executable, "src/scrapers/unidades_scraper.py", "--only-manual"], **popen_kwargs)
+                    time.sleep(0.8)
+                    st.toast("⚡ Sincronização rápida de manuais iniciada!", icon="⚡")
+                    st.rerun()
 
-    elif selected_tab == "📞 Lista de Ramais (Telefonia)":
-        if st.sidebar.button("⚙️ Configurar / Enviar PDFs", type="primary", width='stretch', help="Atualizar links dos PDFs ou fazer upload direto de arquivos de ramais."):
-            modal_config_ramais()
+        elif selected_tab == "📞 Lista de Ramais (Telefonia)":
+            if st.sidebar.button("⚙️ Configurar / Enviar PDFs", type="primary", width='stretch', help="Atualizar links dos PDFs ou fazer upload direto de arquivos de ramais."):
+                modal_config_ramais()
 
-        st.sidebar.markdown("<br>", unsafe_allow_html=True)
+            st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
-        if ramais_ativo:
-            st.sidebar.button("🤖 Ramais em Sincronização...", width='stretch', disabled=True)
-        else:
-            popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-            if st.sidebar.button("🔄 Atualizar Ramais (Intranet)", width='stretch', help="Executa o robô de extração de ramais em PDF da Intranet do MPMS em segundo plano."):
-                import time
-                subprocess.Popen([sys.executable, "src/scrapers/ramais_scraper.py"], **popen_kwargs)
-                time.sleep(0.5)
-                st.toast("🚀 Sincronização de ramais iniciada em segundo plano!", icon="📞")
-                st.rerun()
+            if ramais_ativo:
+                st.sidebar.button("🤖 Ramais em Sincronização...", width='stretch', disabled=True)
+            else:
+                popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+                if st.sidebar.button("🔄 Atualizar Ramais (Intranet)", width='stretch', help="Executa o robô de extração de ramais em PDF da Intranet do MPMS em segundo plano."):
+                    import time
+                    subprocess.Popen([sys.executable, "src/scrapers/ramais_scraper.py"], **popen_kwargs)
+                    time.sleep(0.5)
+                    st.toast("🚀 Sincronização de ramais iniciada em segundo plano!", icon="📞")
+                    st.rerun()
 
-    st.sidebar.markdown("---")
+        st.sidebar.markdown("---")
 
     # --- 3 & 4. SIDEBAR: SEGREGAÇÃO DE FILTROS DE BUSCA E PAGINAÇÃO ---
     st.sidebar.markdown("## 🔍 Filtros de Busca")
