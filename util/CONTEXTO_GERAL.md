@@ -342,6 +342,18 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
           * Implementado [`tests/unit/test_auth.py`](automated-OTRS-and-CitSmart/tests/unit/test_auth.py) cobrindo criação, decodificação, rejeição de tokens expirados/adulterados e helpers de permissão `is_admin()` / `can_edit()`.
           * Validação unificada via `python3 tests/run_all.py` rodando em **64 testes 100% aprovados**.
 
+    16. **Implementação Concluída: Localização de Trabalho (Office) e Organograma de Pessoas GoJS ([`src/tabs/active_directory.py`](automated-OTRS-and-CitSmart/src/tabs/active_directory.py)):**
+        - **Localização de Trabalho / Prédio (`physicalDeliveryOfficeName` / `office`):**
+          * Incorporada a coluna *"Localização / Prédio"* na tabela principal de usuários do Active Directory, permitindo identificar instantaneamente lotações corporativas (ex: `Assep2`, `STI`, `PGJ`, `11ª Promotoria de Justiça de Dourados`).
+          * Adicionado seletor de filtro dedicado por Localização/Prédio na barra lateral do AD integrado a [`get_ad_offices()`](automated-OTRS-and-CitSmart/src/database/ad_db.py) com ordenação natural e tratamento de ordinais.
+        - **Organograma Hierárquico de Lideranças & Equipes (Estilo Microsoft Teams):**
+          * Criada a sub-aba **"👥 Organograma de Pessoas (Teams)"** dentro do Active Directory utilizando a engine gráfica do **GoJS**.
+          * Construção automática da árvore hierárquica institucional baseada nos atributos `manager` do AD, conectando Procurador-Geral, Diretores, Chefes de Departamento, Chefes de Divisão/Setor e analistas/residentes.
+          * Busca instantânea por servidor, cargo ou prédio com navegação cíclica (X de N), destaque luminoso âmbar, auto-expansão de nós pais e centralização na tela.
+          * Ficha detalhada do usuário ao clicar no card, espelhando a experiência do perfil do Teams.
+        - **Suíte de Testes 100% Verde (75 testes aprovados):**
+          * Teste unitário `test_ad_offices_and_orgchart_data` integrado à suíte unificada `tests/run_all.py`.
+
 ---
 
 ## 📋 5. Próximas Etapas e Melhorias Planejadas
@@ -351,6 +363,12 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
    - O projeto já possui container `postgres:15-alpine` ativo no `docker-compose.yml` e suporte a `DB_TYPE="postgres"` em [`src/database/connection.py`](automated-OTRS-and-CitSmart/src/database/connection.py).
    - Execução de script unificado de migração de dados e esquemas para transferir todo o histórico e caches locais do SQLite para o PostgreSQL.
    - Ajustes finais de queries e conexões para garantir que 100% dos módulos (chamados, AD, SCCM, plantões, garantia, doações, cofre de senhas, cron) operem com alta performance em PostgreSQL no ambiente de deploy corporativo do MPMS.
+
+### 🎯 5.2 Estabilidade de Paginação e Modais no Streamlit (Issue Registrada)
+1. **Comportamento Residual de Seleção de Linhas ao Trocar de Página:**
+   - **Descrição do Problema:** Ao abrir um modal de detalhes (ex: chamado, usuário AD ou máquina) via seleção de linha no `st.dataframe`, fechar o modal e avançar/retroceder página nos controles de paginação, o componente `st.dataframe` ocasionalmente retém o índice de seleção prévio do estado interno do Streamlit (`selection["selection"]["rows"]`), disparando novamente o modal do último item.
+   - **Solução Parcial Aplicada:** Implementado reset counter com chaves dinâmicas baseadas no número da página (`key=f"grid_p{current_page}_v{reset_counter}"`) e botão explícito de fechamento limpando os identificadores (`st.session_state["ad_selected_user_id"] = None`).
+   - **Melhoria Planejada:** Unificar o padrão de desacoplamento do `on_select="rerun"` em todas as tabelas paginadas através de um helper de grid reativo ou transicionar para botões de ação dedicados por linha ou diálogo isolado para evitar qualquer reabertura indesejada.
 
 ### 🎯 5.3 Métricas de Acurácia de Localização
 1. **Acurácia de Localização de Chamados:**

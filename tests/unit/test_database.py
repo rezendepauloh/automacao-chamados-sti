@@ -71,6 +71,7 @@ class TestDatabaseModule(unittest.TestCase):
             patch("src.database.plantoes_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.viagens_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.garantia_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
+            patch("src.database.ad_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
         ]
         for p in self.patchers:
             p.start()
@@ -478,5 +479,70 @@ class TestDatabaseModule(unittest.TestCase):
         self.assertEqual(cleaned.iloc[2]["setor_nome"], "Recepção / Apoio Administrativo")
 
 
+    def test_pad_single_digit_ordinal(self):
+        """Valida a padronização de ordinais simples com zero à esquerda (1ª -> 01ª, 10ª inalterado)."""
+        from src.database.ad_db import pad_single_digit_ordinal
+
+        # Casos com ª e º
+        self.assertEqual(pad_single_digit_ordinal("1ª Promotoria de Justiça"), "01ª Promotoria de Justiça")
+        self.assertEqual(pad_single_digit_ordinal("9ª Promotoria de Justiça"), "09ª Promotoria de Justiça")
+        self.assertEqual(pad_single_digit_ordinal("10ª Promotoria de Justiça"), "10ª Promotoria de Justiça")
+        self.assertEqual(pad_single_digit_ordinal("25ª Promotoria de Justiça"), "25ª Promotoria de Justiça")
+        self.assertEqual(pad_single_digit_ordinal("1º Cartório"), "01º Cartório")
+        self.assertEqual(pad_single_digit_ordinal("12º Cartório"), "12º Cartório")
+
+        # Casos com números soltos
+        self.assertEqual(pad_single_digit_ordinal("GAECO 1"), "GAECO 01")
+        self.assertEqual(pad_single_digit_ordinal("GAECO 10"), "GAECO 10")
+
+        # Não deve alterar valores nulos ou vazios
+        self.assertEqual(pad_single_digit_ordinal(""), "")
+        self.assertEqual(pad_single_digit_ordinal(None), "")
+
+
+    def test_ad_offices_and_orgchart_data(self):
+        """Valida a listagem de localidades distintas e geração da estrutura do organograma."""
+        from src.database.ad_db import get_ad_offices, get_ad_orgchart_data, save_ad_cache, setup_ad_tables
+
+        setup_ad_tables()
+        mock_users = [
+            {
+                "sam_account_name": "gestor1",
+                "display_name": "Gestor Superior",
+                "mail": "gestor@mpms.mp.br",
+                "department": "1ª Procuradoria",
+                "office": "PGJ - Sede",
+                "title": "Chefe de Departamento",
+                "manager": "",
+                "is_active": True,
+                "user_account_control": 512
+            },
+            {
+                "sam_account_name": "subordinado1",
+                "display_name": "Subordinado Direto",
+                "mail": "sub@mpms.mp.br",
+                "department": "1ª Procuradoria",
+                "office": "PGJ - Sede",
+                "title": "Analista de Sistemas",
+                "manager": "Gestor Superior",
+                "is_active": True,
+                "user_account_control": 512
+            }
+        ]
+        save_ad_cache(ous=[], users=mock_users, groups=[], memberships=[], computers=[])
+
+        offices = get_ad_offices()
+        self.assertIn("PGJ - Sede", offices)
+
+        org_nodes = get_ad_orgchart_data()
+        self.assertGreater(len(org_nodes), 0)
+        node_keys = [n["key"] for n in org_nodes]
+        self.assertIn("ROOT_PGJ", node_keys)
+        self.assertIn("gestor1", node_keys)
+        self.assertIn("subordinado1", node_keys)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+

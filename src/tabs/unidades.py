@@ -337,11 +337,12 @@ def render_unidades_page():
         tipos_opts = ["Todos"]
         origem_opts = ["Todas", "📌 Manual", "🌐 Portal Web"]
 
+        from src.database.ad_db import pad_single_digit_ordinal
         if not df_unidades.empty:
             if "Cidade" in df_unidades.columns:
-                cidades_opts += sorted([str(c).strip() for c in df_unidades["Cidade"].unique() if str(c).strip()])
+                cidades_opts += sorted([pad_single_digit_ordinal(str(c).strip()) for c in df_unidades["Cidade"].unique() if str(c).strip()])
             if "Tipo" in df_unidades.columns:
-                tipos_opts += sorted([str(t).strip() for t in df_unidades["Tipo"].unique() if str(t).strip()])
+                tipos_opts += sorted([pad_single_digit_ordinal(str(t).strip()) for t in df_unidades["Tipo"].unique() if str(t).strip()])
 
         selected_cidade = st.sidebar.selectbox("🏙️ Filtrar por Cidade:", cidades_opts)
         selected_tipo = st.sidebar.selectbox("🏷️ Filtrar por Tipo de Unidade:", tipos_opts)
@@ -363,10 +364,11 @@ def render_unidades_page():
         abrangencia_opts = ["Todas"]
 
         if not df_ramais_sb.empty:
+            from src.database.ad_db import pad_single_digit_ordinal
             if "localidade" in df_ramais_sb.columns:
-                localidade_opts += sorted([str(x).strip() for x in df_ramais_sb['localidade'].dropna().unique() if str(x).strip()])
+                localidade_opts += sorted(list(set(pad_single_digit_ordinal(str(x).strip()) for x in df_ramais_sb['localidade'].dropna().unique() if str(x).strip())))
             if "setor_nome" in df_ramais_sb.columns:
-                setor_opts += sorted([str(x).strip() for x in df_ramais_sb['setor_nome'].dropna().unique() if str(x).strip()])
+                setor_opts += sorted(list(set(pad_single_digit_ordinal(str(x).strip()) for x in df_ramais_sb['setor_nome'].dropna().unique() if str(x).strip())))
             if "tipo" in df_ramais_sb.columns:
                 abrangencia_opts += sorted([str(x).strip() for x in df_ramais_sb['tipo'].dropna().unique() if str(x).strip()])
 
@@ -405,6 +407,10 @@ def render_unidades_page():
             st.warning("⚠️ Nenhuma unidade cadastrada no banco SQLite. Clique em 'Rodar Scraper Completo (Web)' ou 'Atualização Rápida (Só Manuais)' na barra lateral para gerar.")
         else:
             df_filtered = df_unidades.copy()
+            if "Cidade" in df_filtered.columns:
+                df_filtered["Cidade"] = df_filtered["Cidade"].astype(str).map(pad_single_digit_ordinal)
+            if "Tipo" in df_filtered.columns:
+                df_filtered["Tipo"] = df_filtered["Tipo"].astype(str).map(pad_single_digit_ordinal)
 
             if selected_cidade != "Todas":
                 df_filtered = df_filtered[df_filtered["Cidade"] == selected_cidade]
@@ -481,6 +487,10 @@ def render_unidades_page():
             search_ramal = st.session_state.get("search_ramais_input", "").strip().lower()
 
             df_filtered_r = df_ramais.copy()
+            if "localidade" in df_filtered_r.columns:
+                df_filtered_r["localidade"] = df_filtered_r["localidade"].astype(str).map(pad_single_digit_ordinal)
+            if "setor_nome" in df_filtered_r.columns:
+                df_filtered_r["setor_nome"] = df_filtered_r["setor_nome"].astype(str).map(pad_single_digit_ordinal)
 
             if 'selected_localidade_r' in locals() and selected_localidade_r != "Todas":
                 df_filtered_r = df_filtered_r[df_filtered_r["localidade"] == selected_localidade_r]

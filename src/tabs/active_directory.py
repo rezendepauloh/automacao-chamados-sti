@@ -15,6 +15,7 @@ from src.database.ad_db import (
     get_ad_ous,
     get_ad_users_df,
     get_ad_departments,
+    get_ad_offices,
     get_ad_groups_df,
     get_group_members,
     get_user_groups,
@@ -24,7 +25,8 @@ from src.database.ad_db import (
     get_ad_ou_stats,
     get_ou_members,
     get_ou_computers,
-    get_all_ou_entities_compact
+    get_all_ou_entities_compact,
+    get_ad_orgchart_data
 )
 from src.services.ad_ldap_service import test_ad_connection, sync_active_directory_cache
 from src.components.subtabs import render_subtabs
@@ -58,8 +60,8 @@ def _cached_get_all_ou_entities_compact():
     return get_all_ou_entities_compact()
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _cached_get_ad_users_df(status_filter: str = "Todos", department: str = "Todos", search: str = ""):
-    return get_ad_users_df(status_filter=status_filter, department=department, search=search)
+def _cached_get_ad_users_df(status_filter: str = "Todos", department: str = "Todos", office: str = "Todos", search: str = ""):
+    return get_ad_users_df(status_filter=status_filter, department=department, office=office, search=search)
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _cached_get_ad_computers_df(status_filter: str = "Todos", os_filter: list = None, search: str = "", machine_type: str = "Todos", stale_days: str = "Todos"):
@@ -72,6 +74,14 @@ def _cached_get_ad_groups_df(search: str = ""):
 @st.cache_data(ttl=300, show_spinner=False)
 def _cached_get_ad_departments():
     return get_ad_departments()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_offices():
+    return get_ad_offices()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_get_ad_orgchart_data():
+    return get_ad_orgchart_data()
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _cached_get_ad_operating_systems():
@@ -1413,6 +1423,506 @@ def render_gojs_tree_component(nodes: list, ou_entities: dict = None, height: in
     components.html(html_code, height=height, scrolling=False)
 
 
+def render_gojs_orgchart_component(org_nodes: list, height: int = 750):
+    """
+    Renderiza um organograma interativo (OrgChart de Usuários / Lideranças / Equipes)
+    com a biblioteca GoJS, busca instantânea por nome/cargo/lotação, zoom e ficha detalhada estilo Teams.
+    """
+    local_gojs_path = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "js", "go.js")
+    inline_gojs_script = ""
+    if os.path.exists(local_gojs_path):
+        try:
+            with open(local_gojs_path, "r", encoding="utf-8") as f:
+                inline_gojs_script = f"<script>{f.read()}</script>"
+        except Exception:
+            pass
+
+    json_nodes = json.dumps(org_nodes)
+
+    html_code = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8">
+      {inline_gojs_script}
+      <script>
+        if (typeof go === 'undefined') {{
+          document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/gojs/2.3.17/go.js"><\\/script>');
+        }}
+      </script>
+      <script>
+        if (typeof go === 'undefined') {{
+          document.write('<script src="https://cdn.jsdelivr.net/npm/gojs@2.3.17/release/go.js"><\\/script>');
+        }}
+      </script>
+      <style>
+        * {{
+          box-sizing: border-box;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }}
+        html, body {{
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          height: {height}px;
+          background-color: #0b0f19;
+          color: #f1f5f9;
+          overflow: hidden;
+          position: relative;
+        }}
+        #toolbar {{
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 14px;
+          background: #111827;
+          border-bottom: 1px solid #1f2937;
+          height: 54px;
+          z-index: 10;
+          position: relative;
+        }}
+        .search-container {{
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex: 1;
+          max-width: 440px;
+        }}
+        #searchBox {{
+          width: 100%;
+          padding: 7px 12px 7px 32px;
+          border-radius: 8px;
+          border: 1px solid #374151;
+          background: #1f2937;
+          color: #ffffff;
+          font-size: 13px;
+          outline: none;
+          transition: all 0.2s;
+        }}
+        #searchBox:focus {{
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }}
+        .search-icon {{
+          position: absolute;
+          left: 10px;
+          font-size: 13px;
+          color: #9ca3af;
+        }}
+        .btn-tool {{
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 500;
+          border: 1px solid #374151;
+          background: #1f2937;
+          color: #e5e7eb;
+          cursor: pointer;
+          transition: background 0.15s;
+        }}
+        .btn-tool:hover {{
+          background: #374151;
+          color: #ffffff;
+        }}
+        .match-badge {{
+          font-size: 11px;
+          padding: 3px 8px;
+          border-radius: 12px;
+          background: #374151;
+          color: #93c5fd;
+          font-weight: 600;
+          display: none;
+        }}
+        #diagramDiv {{
+          width: 100%;
+          height: calc({height}px - 54px);
+          position: absolute;
+          top: 54px;
+          left: 0;
+          background: #0b0f19;
+        }}
+        /* MODAL FICHAS */
+        .org-modal-backdrop {{
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(0, 0, 0, 0.75);
+          backdrop-filter: blur(4px);
+          z-index: 1000;
+          align-items: center;
+          justify-content: center;
+        }}
+        .org-modal-backdrop.open {{
+          display: flex;
+        }}
+        .org-modal-card {{
+          background: #1e293b;
+          border: 1px solid #334155;
+          border-radius: 12px;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+          width: 90%;
+          max-width: 580px;
+          overflow: hidden;
+          animation: popIn 0.2s ease-out;
+        }}
+        @keyframes popIn {{
+          from {{ transform: scale(0.95); opacity: 0; }}
+          to {{ transform: scale(1); opacity: 1; }}
+        }}
+        .org-modal-header {{
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 18px;
+          background: #0f172a;
+          border-bottom: 1px solid #334155;
+        }}
+        .org-modal-title {{
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 15px;
+          font-weight: 600;
+          color: #f8fafc;
+        }}
+        .org-modal-close {{
+          background: transparent;
+          border: none;
+          color: #94a3b8;
+          font-size: 18px;
+          cursor: pointer;
+        }}
+        .org-modal-close:hover {{ color: #ffffff; }}
+        .org-modal-body {{
+          padding: 18px;
+          color: #cbd5e1;
+          font-size: 13px;
+        }}
+        .org-detail-row {{
+          display: flex;
+          margin-bottom: 8px;
+        }}
+        .org-detail-label {{
+          width: 130px;
+          font-weight: 600;
+          color: #94a3b8;
+        }}
+        .org-detail-val {{
+          flex: 1;
+          color: #f1f5f9;
+        }}
+      </style>
+    </head>
+    <body>
+      <div id="toolbar">
+        <div class="search-container">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchBox" placeholder="Buscar por Nome, Cargo, Lotação ou Prédio..." autocomplete="off">
+          <span class="match-badge" id="matchBadge">0 de 0</span>
+        </div>
+        <button class="btn-tool" id="btnPrev" title="Anterior">▲</button>
+        <button class="btn-tool" id="btnNext" title="Próximo">▼</button>
+        <button class="btn-tool" onclick="zoomIn()" title="Aumentar Zoom">🔍 +</button>
+        <button class="btn-tool" onclick="zoomOut()" title="Diminuir Zoom">🔍 -</button>
+        <button class="btn-tool" onclick="resetZoom()" title="Ajustar à Tela">🔲 Centralizar</button>
+        <span style="font-size: 11px; color: #64748b; margin-left: auto;">💡 Clique em qualquer card para ver a ficha completa</span>
+      </div>
+
+      <div id="diagramDiv"></div>
+
+      <!-- MODAL DETALHE DE USUÁRIO -->
+      <div class="org-modal-backdrop" id="orgUserModalBackdrop">
+        <div class="org-modal-card">
+          <div class="org-modal-header">
+            <div class="org-modal-title">
+              <span id="orgUserAvatar">👤</span>
+              <span id="orgUserName">Ficha do Usuário</span>
+            </div>
+            <button class="org-modal-close" onclick="closeOrgModal()">✕</button>
+          </div>
+          <div class="org-modal-body" id="orgUserContent"></div>
+        </div>
+      </div>
+
+      <script>
+        const nodeData = {json_nodes};
+        let currentMatches = [];
+        let currentMatchIndex = -1;
+
+        if (typeof go === 'undefined') {{
+          document.getElementById('diagramDiv').innerHTML = '<div style="padding: 40px; color: #f87171; text-align: center;"><h3>⚠️ Não foi possível carregar a biblioteca GoJS</h3></div>';
+        }} else {{
+          initOrgChart();
+        }}
+
+        function initOrgChart() {{
+          const $ = go.GraphObject.make;
+
+          window.myOrgDiagram = $(go.Diagram, "diagramDiv", {{
+            "undoManager.isEnabled": false,
+            initialContentAlignment: go.Spot.TopCenter,
+            initialScale: 0.90,
+            minScale: 0.15,
+            maxScale: 2.0,
+            allowCopy: false,
+            allowDelete: false,
+            layout: $(go.TreeLayout, {{
+              angle: 90,
+              layerSpacing: 45,
+              nodeSpacing: 25,
+              alignment: go.TreeLayout.AlignmentCenterChildren,
+              compaction: go.TreeLayout.CompactionBlock
+            }}),
+            "animationManager.isEnabled": false
+          }});
+
+          // Template de Nó do Organograma
+          window.myOrgDiagram.nodeTemplate =
+            $(go.Node, "Auto",
+              {{
+                selectionAdorned: false,
+                cursor: "pointer",
+                click: (e, node) => {{
+                  openOrgUserDetail(node.data);
+                }}
+              }},
+              // Borda e Fundo do Card
+              $(go.Shape, "RoundedRectangle", {{
+                parameter1: 8,
+                strokeWidth: 1.5,
+                fill: "#1e293b",
+                stroke: "#334155"
+              }},
+              new go.Binding("fill", "isRoot", isR => isR ? "#0c4a6e" : "#1e293b"),
+              new go.Binding("stroke", "isRoot", isR => isR ? "#38bdf8" : "#475569"),
+              new go.Binding("stroke", "isHighlighted", h => h ? "#f59e0b" : "#475569").ofObject(),
+              new go.Binding("strokeWidth", "isHighlighted", h => h ? 3 : 1.5).ofObject()
+              ),
+              $(go.Panel, "Vertical",
+                {{ margin: 0, defaultStretch: go.GraphObject.Horizontal, width: 240 }},
+                // Cabeçalho do Card (Faixa Superior)
+                $(go.Panel, "Auto",
+                  {{ stretch: go.GraphObject.Horizontal }},
+                  $(go.Shape, "RoundedRectangle", {{
+                    parameter1: 7,
+                    strokeWidth: 0
+                  }},
+                  new go.Binding("fill", "isRoot", isR => isR ? "#0284c7" : "#334155"),
+                  new go.Binding("fill", "isManager", isM => isM ? "#1e40af" : "#334155")
+                  ),
+                  $(go.Panel, "Horizontal",
+                    {{
+                      margin: new go.Margin(6, 10, 6, 10),
+                      alignment: go.Spot.Center,
+                      defaultAlignment: go.Spot.Center
+                    }},
+                    $(go.TextBlock, {{
+                      font: "13px sans-serif",
+                      margin: new go.Margin(0, 5, 0, 0)
+                    }},
+                    new go.Binding("text", "isRoot", isR => isR ? "🏛️ " : "👤 ")),
+                    $(go.TextBlock, {{
+                      font: "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                      stroke: "#ffffff",
+                      isMultiline: false,
+                      maxSize: new go.Size(190, NaN),
+                      overflow: go.TextBlock.OverflowEllipsis
+                    }},
+                    new go.Binding("text", "name"))
+                  )
+                ),
+                // Corpo do Card
+                $(go.Panel, "Vertical", {{ margin: new go.Margin(6, 10, 8, 10), alignment: go.Spot.Left }},
+                  // Cargo
+                  $(go.TextBlock, {{
+                    font: "bold 11px -apple-system, BlinkMacSystemFont, sans-serif",
+                    stroke: "#38bdf8",
+                    maxSize: new go.Size(220, NaN),
+                    overflow: go.TextBlock.OverflowEllipsis,
+                    margin: new go.Margin(0, 0, 2, 0)
+                  }},
+                  new go.Binding("text", "title")),
+                  // Departamento / Setor
+                  $(go.TextBlock, {{
+                    font: "10px sans-serif",
+                    stroke: "#94a3b8",
+                    maxSize: new go.Size(220, NaN),
+                    overflow: go.TextBlock.OverflowEllipsis,
+                    margin: new go.Margin(0, 0, 2, 0)
+                  }},
+                  new go.Binding("text", "dept", d => d ? "🏢 " + d : "")),
+                  // Prédio / Localização de Trabalho (Office)
+                  $(go.TextBlock, {{
+                    font: "10px sans-serif",
+                    stroke: "#10b981",
+                    maxSize: new go.Size(220, NaN),
+                    overflow: go.TextBlock.OverflowEllipsis
+                  }},
+                  new go.Binding("text", "office", off => off ? "📍 " + off : "")),
+                  // Ramal se houver
+                  $(go.TextBlock, {{
+                    font: "10px sans-serif",
+                    stroke: "#cbd5e1",
+                    visible: false,
+                    margin: new go.Margin(2, 0, 0, 0)
+                  }},
+                  new go.Binding("text", "phone", p => p ? "📞 Ramal: " + p : ""),
+                  new go.Binding("visible", "phone", p => Boolean(p)))
+                )
+              )
+            );
+
+          // Template de Link
+          window.myOrgDiagram.linkTemplate =
+            $(go.Link,
+              {{
+                routing: go.Link.Orthogonal,
+                corner: 6,
+                selectable: false
+              }},
+              $(go.Shape, {{ strokeWidth: 1.5, stroke: "#475569" }})
+            );
+
+          window.myOrgDiagram.model = $(go.TreeModel, {{
+            nodeDataArray: nodeData
+          }});
+
+          setupOrgSearch();
+        }}
+
+        function setupOrgSearch() {{
+          const searchBox = document.getElementById('searchBox');
+          const btnPrev = document.getElementById('btnPrev');
+          const btnNext = document.getElementById('btnNext');
+
+          searchBox.addEventListener('input', (e) => {{
+            executeOrgSearch(e.target.value);
+          }});
+
+          searchBox.addEventListener('keydown', (e) => {{
+            if (e.key === 'Enter') {{
+              e.preventDefault();
+              navigateOrgMatch(e.shiftKey ? -1 : 1);
+            }}
+          }});
+
+          btnPrev.addEventListener('click', () => navigateOrgMatch(-1));
+          btnNext.addEventListener('click', () => navigateOrgMatch(1));
+        }}
+
+        function executeOrgSearch(term) {{
+          const badge = document.getElementById('matchBadge');
+          term = (term || '').trim().toLowerCase();
+
+          window.myOrgDiagram.clearHighlighteds();
+          currentMatches = [];
+          currentMatchIndex = -1;
+
+          if (!term) {{
+            badge.style.display = 'none';
+            return;
+          }}
+
+          window.myOrgDiagram.nodes.each(node => {{
+            const d = node.data;
+            const matchName = d.name && d.name.toLowerCase().includes(term);
+            const matchTitle = d.title && d.title.toLowerCase().includes(term);
+            const matchDept = d.dept && d.dept.toLowerCase().includes(term);
+            const matchOffice = d.office && d.office.toLowerCase().includes(term);
+            const matchSam = d.sam && d.sam.toLowerCase().includes(term);
+
+            if (matchName || matchTitle || matchDept || matchOffice || matchSam) {{
+              currentMatches.push(node);
+              node.isHighlighted = true;
+            }}
+          }});
+
+          if (currentMatches.length > 0) {{
+            badge.style.display = 'inline-block';
+            navigateOrgMatch(1);
+          }} else {{
+            badge.style.display = 'inline-block';
+            badge.textContent = '0 de 0';
+          }}
+        }}
+
+        function navigateOrgMatch(delta) {{
+          if (currentMatches.length === 0) return;
+
+          currentMatchIndex = (currentMatchIndex + delta + currentMatches.length) % currentMatches.length;
+          const targetNode = currentMatches[currentMatchIndex];
+
+          const badge = document.getElementById('matchBadge');
+          badge.textContent = `${{currentMatchIndex + 1}} de ${{currentMatches.length}}`;
+
+          // Garante pais expandidos
+          let p = targetNode.findTreeParentNode();
+          while (p) {{
+            p.isTreeExpanded = true;
+            p = p.findTreeParentNode();
+          }}
+
+          window.myOrgDiagram.centerRect(targetNode.actualBounds);
+          window.myOrgDiagram.select(targetNode);
+        }}
+
+        function openOrgUserDetail(data) {{
+          if (data.isRoot) return;
+          document.getElementById('orgUserName').textContent = data.name;
+          const mailLink = data.mail ? `<a href="mailto:${{data.mail}}" style="color: #38bdf8;">${{data.mail}}</a>` : '-';
+
+          const loginSam = data.sam || (data.key && data.key !== 'ROOT_PGJ' ? data.key : '-');
+
+          const content = `
+            <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; margin-bottom: 14px;">
+              <div style="font-size: 14px; font-weight: 700; color: #38bdf8;">${{data.name}}</div>
+              <div style="font-size: 12px; color: #94a3b8;">${{data.title || 'Colaborador'}}</div>
+            </div>
+            <div class="org-detail-row"><span class="org-detail-label">Login de Rede (sAM):</span><span class="org-detail-val"><code>${{loginSam}}</code></span></div>
+            <div class="org-detail-row"><span class="org-detail-label">Departamento:</span><span class="org-detail-val">${{data.dept || '-'}}</span></div>
+            <div class="org-detail-row"><span class="org-detail-label">Localização/Prédio:</span><span class="org-detail-val"><b>${{data.office || '-'}}</b></span></div>
+            <div class="org-detail-row"><span class="org-detail-label">E-mail:</span><span class="org-detail-val">${{mailLink}}</span></div>
+            <div class="org-detail-row"><span class="org-detail-label">Telefone / Ramal:</span><span class="org-detail-val">${{data.phone || '-'}}</span></div>
+            <div class="org-detail-row"><span class="org-detail-label">Gestor / Chefia:</span><span class="org-detail-val">${{data.manager || 'Diretoria / PGJ'}}</span></div>
+          `;
+
+          document.getElementById('orgUserContent').innerHTML = content;
+          document.getElementById('orgUserModalBackdrop').classList.add('open');
+        }}
+
+        function closeOrgModal() {{
+          document.getElementById('orgUserModalBackdrop').classList.remove('open');
+        }}
+
+        function zoomIn() {{
+          window.myOrgDiagram.commandHandler.increaseZoom(1.2);
+        }}
+        function zoomOut() {{
+          window.myOrgDiagram.commandHandler.decreaseZoom(0.8);
+        }}
+        function resetZoom() {{
+          window.myOrgDiagram.zoomToFit();
+        }}
+
+        document.getElementById('orgUserModalBackdrop').addEventListener('click', (e) => {{
+          if (e.target === document.getElementById('orgUserModalBackdrop')) {{
+            closeOrgModal();
+          }}
+        }});
+      </script>
+    </body>
+    </html>
+    """
+    components.html(html_code, height=height, scrolling=False)
+
+
 
 def format_ad_datetime(dt_val) -> str:
     """Formata timestamps do Active Directory no padrão DD/MM/AAAA HH:MM:SS."""
@@ -1544,6 +2054,7 @@ def show_user_details_dialog(user_row):
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Fechar Ficha do Usuário", key="close_user_dialog_btn", use_container_width=True):
+        st.session_state["ad_users_reset_counter"] = st.session_state.get("ad_users_reset_counter", 0) + 1
         st.rerun()
 
 
@@ -1699,6 +2210,7 @@ def show_computer_details_dialog(comp_row):
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Fechar Ficha da Máquina", key="close_comp_dialog_btn", use_container_width=True):
+        st.session_state["ad_comps_reset_counter"] = st.session_state.get("ad_comps_reset_counter", 0) + 1
         st.rerun()
 
 
@@ -1744,8 +2256,9 @@ def render_ad_page():
     # Sub-Navegação Sincronizada por URL (?subtab=arvore|usuarios|computadores|grupos|sync)
     from src.auth import is_admin
     TAB_MAP = {
-        "arvore": "🌳 Árvore Hierárquica (GoJS)",
-        "usuarios": "👥 Usuários & Contas",
+        "arvore": "🌳 Árvore de OUs (GoJS)",
+        "organograma": "👥 Organograma de Pessoas (Teams)",
+        "usuarios": "👤 Usuários & Contas",
         "computadores": "💻 Computadores & Servidores",
         "grupos": "🛡️ Grupos de Segurança",
     }
@@ -1780,7 +2293,21 @@ def render_ad_page():
             render_gojs_tree_component(nodes, ou_entities=ou_entities, height=750)
 
     # -------------------------------------------------------------------------
-    # SUBTAB 2: USUÁRIOS & CONTAS
+    # SUBTAB 2: ORGANOGRAMA DE PESSOAS & LIDERANÇAS (TEAMS / GOJS)
+    # -------------------------------------------------------------------------
+    elif current_slug == "organograma":
+        org_data = _cached_get_ad_orgchart_data()
+        if not org_data:
+            st.warning("⚠️ Nenhuma informação hierárquica (gestores/subordinados) encontrada no cache local do Active Directory.")
+            st.caption("Certifique-se de que o atributo 'manager' esteja sincronizado nos cadastros de usuários.")
+        else:
+            st.markdown(
+                "Navegue pela árvore de lideranças e equipes do MPMS com dados extraídos do Active Directory (mesma hierarquia exibida no Microsoft Teams). Utilize o campo de busca acima para localizar chefias, servidores ou prédios de lotação."
+            )
+            render_gojs_orgchart_component(org_data, height=750)
+
+    # -------------------------------------------------------------------------
+    # SUBTAB 3: USUÁRIOS & CONTAS
     # -------------------------------------------------------------------------
     elif current_slug == "usuarios":
         df_all_users = _cached_get_ad_users_df(status_filter="Todos")
@@ -1828,10 +2355,18 @@ def render_ad_page():
                 index=0,
                 key="ad_user_dept"
             )
+            ad_office_options = ["Todos"] + _cached_get_ad_offices()
+            ad_office_selected = st.selectbox(
+                "Filtrar por Localização / Prédio / Sala:",
+                ad_office_options,
+                index=0,
+                key="ad_user_office"
+            )
 
         df_users = _cached_get_ad_users_df(
             status_filter=ad_status,
             department=ad_dept_selected,
+            office=ad_office_selected,
             search=ad_search
         )
 
@@ -1898,6 +2433,7 @@ def render_ad_page():
                     "display_name",
                     "title",
                     "department",
+                    "office",
                     "mail",
                     "telephone_number",
                     "last_logon_fmt"
@@ -1907,13 +2443,16 @@ def render_ad_page():
                     "display_name": "Nome Completo",
                     "title": "Cargo",
                     "department": "Departamento",
+                    "office": "Localização / Prédio",
                     "mail": "E-mail",
                     "telephone_number": "Ramal / Tel",
                     "last_logon_fmt": "Último Logon"
                 })
 
-                if "last_selected_ad_user" not in st.session_state:
-                    st.session_state["last_selected_ad_user"] = None
+                if "ad_users_reset_counter" not in st.session_state:
+                    st.session_state["ad_users_reset_counter"] = 0
+
+                grid_user_key = f"ad_users_grid_p{curr_page}_v{st.session_state['ad_users_reset_counter']}"
 
                 user_selection = st.dataframe(
                     display_slice_renamed,
@@ -1921,18 +2460,15 @@ def render_ad_page():
                     hide_index=True,
                     on_select="rerun",
                     selection_mode="single-row",
-                    key="ad_users_datagrid"
+                    key=grid_user_key
                 )
 
                 selected_rows = user_selection.selection.rows if hasattr(user_selection, "selection") else []
                 if selected_rows:
                     selected_idx = selected_rows[0]
-                    if st.session_state["last_selected_ad_user"] != selected_idx:
-                        st.session_state["last_selected_ad_user"] = selected_idx
+                    if selected_idx < len(slice_df):
                         chosen_user_row = slice_df.iloc[selected_idx]
                         show_user_details_dialog(chosen_user_row)
-                else:
-                    st.session_state["last_selected_ad_user"] = None
 
                 render_pagination_controls(
                     page_key="ad_users_pag",
@@ -2111,8 +2647,10 @@ def render_ad_page():
                     "last_logon_fmt": "Última Atividade"
                 })
 
-                if "last_selected_ad_comp" not in st.session_state:
-                    st.session_state["last_selected_ad_comp"] = None
+                if "ad_comps_reset_counter" not in st.session_state:
+                    st.session_state["ad_comps_reset_counter"] = 0
+
+                grid_comp_key = f"ad_comps_grid_p{c_curr}_v{st.session_state['ad_comps_reset_counter']}"
 
                 comp_selection = st.dataframe(
                     display_c_slice_renamed,
@@ -2120,18 +2658,15 @@ def render_ad_page():
                     hide_index=True,
                     on_select="rerun",
                     selection_mode="single-row",
-                    key="ad_comps_datagrid"
+                    key=grid_comp_key
                 )
 
                 selected_rows = comp_selection.selection.rows if hasattr(comp_selection, "selection") else []
                 if selected_rows:
                     selected_idx = selected_rows[0]
-                    if st.session_state["last_selected_ad_comp"] != selected_idx:
-                        st.session_state["last_selected_ad_comp"] = selected_idx
+                    if selected_idx < len(c_slice):
                         chosen_comp_row = c_slice.iloc[selected_idx]
                         show_computer_details_dialog(chosen_comp_row)
-                else:
-                    st.session_state["last_selected_ad_comp"] = None
 
                 render_pagination_controls(
                     page_key="ad_comps_pag",
@@ -2265,6 +2800,7 @@ def render_ad_page():
                     import sys, subprocess, time
                     popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
                     subprocess.Popen([sys.executable, "src/syncs/sync_ad_catalog.py"], **popen_kwargs)
+                    st.cache_data.clear()
                     time.sleep(0.8)
                     st.toast("🚀 Sincronização do AD iniciada em segundo plano!", icon="🤖")
                     st.rerun()

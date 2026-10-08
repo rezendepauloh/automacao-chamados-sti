@@ -233,6 +233,171 @@ def summarize_ticket_locally(description: str, comments: str, max_sentences: int
     return summary
 
 
+@st.dialog("Detalhes do Chamado", width="large")
+def show_ticket_details(row: dict):
+    """Exibe o modal com todos os detalhes e ações rápidas do chamado."""
+    title = str(row.get('titulo', '')).strip()
+    if title and title.lower() not in ["none", "nan", "null", ""]:
+        header_text = f"🎫 Chamado #{row.get('id', '')} – {title}"
+    else:
+        header_text = f"🎫 Chamado #{row.get('id', '')}"
+    
+    with st.expander(header_text, expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 👤 Informações do Usuário")
+            user_display = str(row.get('usuario', 'N/A'))
+            client_id = str(row.get('id_cliente', '')).strip()
+            if client_id and client_id.lower() not in ["none", "nan", "null", ""]:
+                user_display += f" ({client_id})"
+            
+            def _sanitize_val(v):
+                if v is None or pd.isna(v):
+                    return ""
+                s = str(v).strip()
+                if s.lower() in ["nan", "none", "null", "<na>"]:
+                    return ""
+                return s
+
+            clean_loc = _sanitize_val(row.get('localidade_fisica'))
+            if not clean_loc or clean_loc.lower() in ["nan", "none", "null", "não identificada"]:
+                clean_loc = "Não identificada"
+            elif "nan -" in clean_loc.lower() or "- nan" in clean_loc.lower():
+                clean_loc = "Não identificada"
+
+            st.markdown(f"**Usuário:** {user_display}")
+            st.markdown(f"**Localidade:** {clean_loc}")
+            st.markdown(f"**Base de Origem:** `{row.get('base', 'N/A')}`")
+
+            curr_ip = _sanitize_val(row.get('ip_origem'))
+            curr_host = _sanitize_val(row.get('hostname'))
+            cid_str = str(row.get('id', '')).strip()
+
+            if (not curr_ip or not curr_host) and client_id and client_id.lower() not in ["none", "nan", "null", ""]:
+                dev_info = get_device_by_user(client_id)
+                if dev_info:
+                    updated_needed = False
+                    if not curr_ip and dev_info.get("ip"):
+                        curr_ip = dev_info["ip"]
+                        updated_needed = True
+                    if not curr_host and dev_info.get("hostname"):
+                        curr_host = dev_info["hostname"]
+                        updated_needed = True
+                    
+                    if updated_needed:
+                        try:
+                            update_ticket_device_info(cid_str, curr_ip, curr_host)
+                        except Exception as dev_err:
+                            logger.debug(f"Não foi possível atualizar device info do chamado {cid_str}: {dev_err}")
+
+            st.markdown(f"**IP de Origem:** `{curr_ip or 'N/A'}`")
+            st.markdown(f"**Hostname:** `{curr_host or 'N/A'}`")
+
+            target_host = curr_host or curr_ip
+            if target_host and target_host != "N/A":
+                col_act1, col_act2 = st.columns(2)
+                with col_act1:
+                    cmrc_url = f"bancada://run?tool=cmrc&host={target_host}"
+                    st.link_button("🎮 CmRcViewer", url=cmrc_url, width="stretch", help="Abre o Controle Remoto do SCCM.")
+                with col_act2:
+                    rdp_url = f"bancada://run?tool=rdp&host={target_host}"
+                    st.link_button("🖥️ MSTSC (RDP)", url=rdp_url, width="stretch", help="Conecta via Área de Trabalho Remota.")
+            
+            from src.auth import is_admin
+            if is_admin():
+                with st.expander("✏️ Editar Título do Chamado", expanded=False):
+                    curr_title = str(row.get('titulo', '')).strip()
+                    if curr_title.lower() in ["none", "nan", "null", "sem título"]:
+                        curr_title = ""
+                    new_titulo = st.text_input("Título do Chamado:", value=curr_title, key=f"edit_titulo_{row.get('id')}")
+                    if st.button("💾 Salvar Título", key=f"save_title_btn_{row.get('id')}"):
+                        update_ticket_title(row.get('id'), new_titulo)
+                        st.success("Título do chamado atualizado com sucesso! (Fechar para atualizar a tabela)")
+                        st.cache_data.clear()
+
+                with st.expander("📍 Editar Localização Manual", expanded=False):
+                    curr_cp = _sanitize_val(row.get('cidade_predio'))
+                    curr_un = _sanitize_val(row.get('unidade'))
+                    if "não encontrad" in curr_un.lower() or "nao encontrad" in curr_un.lower():
+                        curr_un = ""
+                    curr_loc = _sanitize_val(row.get('localidade_fisica'))
+                    if "nan" in curr_loc.lower() or "não encontrad" in curr_loc.lower():
+                        curr_loc = ""
+                    new_cidade = st.text_input("Cidade - Prédio", value=curr_cp, key=f"edit_cidade_{row.get('id')}")
+                    new_unidade = st.text_input("Unidade", value=curr_un, key=f"edit_unidade_{row.get('id')}")
+                    new_localidade = st.text_input("Localidade Física", value=curr_loc, key=f"edit_localidade_{row.get('id')}")
+                    if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row.get('id')}"):
+                        update_ticket_location_details(row.get('id'), new_localidade, new_cidade, new_unidade)
+                        st.success("Localização salva! (Fechar para atualizar a tabela)")
+                        st.cache_data.clear()
+            
+        with col2:
+            st.markdown("### ⚙️ Classificação & Status")
+            tag_name = str(row.get('tag', '')).upper().strip()
+            bg_color = TAG_COLORS.get(tag_name, "#262730")
+            
+            hex_color = bg_color.lstrip('#')
+            try:
+                r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+                luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+                text_color = "#ffffff" if luminance < 0.6 else "#212529"
+            except:
+                text_color = "#ffffff"
+                
+            tag_html = f'<span style="background-color: {bg_color}; color: {text_color}; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-family: inherit; font-size: 13px;">{row.get("tag", "")}</span>'
+            st.markdown(f"**TAG Atual:** {tag_html}", unsafe_allow_html=True)
+            
+            if is_admin():
+                tag_options = sorted(list(TAG_COLORS.keys()))
+                try:
+                    default_idx = tag_options.index(tag_name)
+                except ValueError:
+                    default_idx = 0
+                    
+                new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row.get('id')}")
+                if new_tag != tag_name:
+                    if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row.get('id')}"):
+                        update_ticket_tag(row.get('id'), new_tag)
+                        st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
+                        st.cache_data.clear()
+            
+            link_url = row.get('link')
+            if link_url:
+                st.markdown("---")
+                st.link_button("🔗 Abrir Chamado Original", link_url, width="stretch")
+    
+    with st.expander("📝 Andamento / Nota de Atendimento", expanded=True):
+        current_andamento = str(row.get('andamento', '')).strip()
+        if current_andamento.lower() in ["none", "nan", "null", ""]:
+            current_andamento = ""
+        if is_admin():
+            new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
+            if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
+                update_ticket_andamento(row.get('id'), new_andamento)
+                st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
+                st.cache_data.clear()
+        else:
+            st.write(current_andamento if current_andamento else "*(Nenhuma nota de andamento registrada)*")
+    
+    data_formatada = row.get('Data Formatada', row.get('datetime_obj', ''))
+    with st.expander(f"📝 #1 - {data_formatada} (Descrição)", expanded=True):
+        st.text(row.get('descricao', ''))
+        
+    comments = get_comments_by_ticket(row.get('id'))
+    if comments:
+        st.markdown("### 💬 Histórico de Notas e Acompanhamentos")
+        for i, c in enumerate(comments, start=2):
+            header = f"🕒 #{i} – {c.get('data', '')} – por {c.get('autor', '')}"
+            with st.expander(header):
+                st.text(c.get('texto', ''))
+        
+    if st.button("Fechar", key="close_modal_btn", width="stretch"):
+        st.session_state["active_ticket_modal"] = None
+        st.session_state["chamados_reset_counter"] = st.session_state.get("chamados_reset_counter", 0) + 1
+        st.rerun()
+
+
 def render_chamados_page():
     """Renderiza a página principal do Painel de Chamados."""
     col_title, col_btn = st.columns([3, 1])
@@ -701,168 +866,6 @@ def render_chamados_page():
             st.info("Sem chamados no filtro selecionado para renderizar gráficos.")
 
     else:
-        @st.dialog("Detalhes do Chamado", width="large")
-        def show_ticket_details(row):
-            title = str(row.get('titulo', '')).strip()
-            if title and title.lower() not in ["none", "nan", "null", ""]:
-                header_text = f"🎫 Chamado #{row['id']} – {title}"
-            else:
-                header_text = f"🎫 Chamado #{row['id']}"
-            
-            with st.expander(header_text, expanded=True):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("### 👤 Informações do Usuário")
-                    user_display = str(row['usuario'])
-                    client_id = str(row.get('id_cliente', '')).strip()
-                    if client_id and client_id.lower() not in ["none", "nan", "null", ""]:
-                        user_display += f" ({client_id})"
-                    # Helper para sanitizar strings e evitar 'nan', 'none', 'null'
-                    def _sanitize_val(v):
-                        if v is None or pd.isna(v):
-                            return ""
-                        s = str(v).strip()
-                        if s.lower() in ["nan", "none", "null", "<na>"]:
-                            return ""
-                        return s
-
-                    clean_loc = _sanitize_val(row.get('localidade_fisica'))
-                    if not clean_loc or clean_loc.lower() in ["nan", "none", "null", "não identificada"]:
-                        clean_loc = "Não identificada"
-                    elif "nan -" in clean_loc.lower() or "- nan" in clean_loc.lower():
-                        clean_loc = "Não identificada"
-
-                    st.markdown(f"**Usuário:** {user_display}")
-                    st.markdown(f"**Localidade:** {clean_loc}")
-                    st.markdown(f"**Base de Origem:** `{row['base']}`")
-
-                    curr_ip = _sanitize_val(row.get('ip_origem'))
-                    curr_host = _sanitize_val(row.get('hostname'))
-                    cid_str = str(row['id']).strip()
-
-                    # Fallback / Enriquecimento dinâmico via cache do SCCM (sccm_cache_devices)
-                    if (not curr_ip or not curr_host) and client_id and client_id.lower() not in ["none", "nan", "null", ""]:
-                        dev_info = get_device_by_user(client_id)
-                        if dev_info:
-                            updated_needed = False
-                            if not curr_ip and dev_info.get("ip"):
-                                curr_ip = dev_info["ip"]
-                                updated_needed = True
-                            if not curr_host and dev_info.get("hostname"):
-                                curr_host = dev_info["hostname"]
-                                updated_needed = True
-                            
-                            # Atualiza no banco para persistir o enriquecimento
-                            if updated_needed:
-                                try:
-                                    update_ticket_device_info(cid_str, curr_ip, curr_host)
-                                except Exception as dev_err:
-                                    logger.debug(f"Não foi possível atualizar device info do chamado {cid_str}: {dev_err}")
-
-                    st.markdown(f"**IP de Origem:** `{curr_ip or 'N/A'}`")
-                    st.markdown(f"**Hostname:** `{curr_host or 'N/A'}`")
-
-                    # Ações rápidas de conexão remota se o hostname ou IP estiverem disponíveis
-                    target_host = curr_host or curr_ip
-                    if target_host and target_host != "N/A":
-                        col_act1, col_act2 = st.columns(2)
-                        with col_act1:
-                            cmrc_url = f"bancada://run?tool=cmrc&host={target_host}"
-                            st.link_button("🎮 CmRcViewer", url=cmrc_url, width="stretch", help="Abre o Controle Remoto do SCCM.")
-                        with col_act2:
-                            rdp_url = f"bancada://run?tool=rdp&host={target_host}"
-                            st.link_button("🖥️ MSTSC (RDP)", url=rdp_url, width="stretch", help="Conecta via Área de Trabalho Remota.")
-                    
-                    from src.auth import is_admin
-                    if is_admin():
-                        with st.expander("✏️ Editar Título do Chamado", expanded=False):
-                            curr_title = str(row.get('titulo', '')).strip()
-                            if curr_title.lower() in ["none", "nan", "null", "sem título"]:
-                                curr_title = ""
-                            new_titulo = st.text_input("Título do Chamado:", value=curr_title, key=f"edit_titulo_{row['id']}")
-                            if st.button("💾 Salvar Título", key=f"save_title_btn_{row['id']}"):
-                                update_ticket_title(row['id'], new_titulo)
-                                st.success("Título do chamado atualizado com sucesso! (Fechar para atualizar a tabela)")
-                                st.cache_data.clear()
-
-                        with st.expander("📍 Editar Localização Manual", expanded=False):
-                            curr_cp = _sanitize_val(row.get('cidade_predio'))
-                            curr_un = _sanitize_val(row.get('unidade'))
-                            if "não encontrad" in curr_un.lower() or "nao encontrad" in curr_un.lower():
-                                curr_un = ""
-                            curr_loc = _sanitize_val(row.get('localidade_fisica'))
-                            if "nan" in curr_loc.lower() or "não encontrad" in curr_loc.lower():
-                                curr_loc = ""
-                            new_cidade = st.text_input("Cidade - Prédio", value=curr_cp, key=f"edit_cidade_{row['id']}")
-                            new_unidade = st.text_input("Unidade", value=curr_un, key=f"edit_unidade_{row['id']}")
-                            new_localidade = st.text_input("Localidade Física", value=curr_loc, key=f"edit_localidade_{row['id']}")
-                            if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row['id']}"):
-                                update_ticket_location_details(row['id'], new_localidade, new_cidade, new_unidade)
-                                st.success("Localização salva! (Fechar para atualizar a tabela)")
-                                st.cache_data.clear()
-                    
-                with col2:
-                    st.markdown("### ⚙️ Classificação & Status")
-                    tag_name = str(row['tag']).upper().strip()
-                    bg_color = TAG_COLORS.get(tag_name, "#262730")
-                    
-                    hex_color = bg_color.lstrip('#')
-                    try:
-                        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-                        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-                        text_color = "#ffffff" if luminance < 0.6 else "#212529"
-                    except:
-                        text_color = "#ffffff"
-                        
-                    tag_html = f'<span style="background-color: {bg_color}; color: {text_color}; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-family: inherit; font-size: 13px;">{row["tag"]}</span>'
-                    st.markdown(f"**TAG Atual:** {tag_html}", unsafe_allow_html=True)
-                    
-                    if is_admin():
-                        tag_options = sorted(list(TAG_COLORS.keys()))
-                        try:
-                            default_idx = tag_options.index(tag_name)
-                        except ValueError:
-                            default_idx = 0
-                            
-                        new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row['id']}")
-                        if new_tag != tag_name:
-                            if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row['id']}"):
-                                update_ticket_tag(row['id'], new_tag)
-                                st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
-                                st.cache_data.clear()
-                    
-                    link_url = row.get('link')
-                    if link_url:
-                        st.markdown("---")
-                        st.link_button("🔗 Abrir Chamado Original", link_url, width="stretch")
-            
-            with st.expander("📝 Andamento / Nota de Atendimento", expanded=True):
-                current_andamento = str(row.get('andamento', '')).strip()
-                if current_andamento.lower() in ["none", "nan", "null", ""]:
-                    current_andamento = ""
-                if is_admin():
-                    new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
-                    if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
-                        update_ticket_andamento(row['id'], new_andamento)
-                        st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
-                        st.cache_data.clear()
-                else:
-                    st.write(current_andamento if current_andamento else "*(Nenhuma nota de andamento registrada)*")
-            
-            with st.expander(f"📝 #1 - {row['Data Formatada']} (Descrição)", expanded=True):
-                st.text(row['descricao'])
-                
-            comments = get_comments_by_ticket(row['id'])
-            if comments:
-                st.markdown("### 💬 Histórico de Notas e Acompanhamentos")
-                for i, c in enumerate(comments, start=2):
-                    header = f"🕒 #{i} – {c['data']} – por {c['autor']}"
-                    with st.expander(header):
-                        st.text(c['texto'])
-                
-            if st.button("Fechar", key="close_modal_btn"):
-                st.rerun()
 
         cols_to_show = [
             'id', 'status', 'tag', 'andamento', 'localidade_fisica', 
@@ -1009,9 +1012,7 @@ def render_chamados_page():
             </script>
             """, height=65)
         
-        if "last_selected" not in st.session_state:
-            st.session_state["last_selected"] = None
-        
+
         def style_dataframe(row):
             tag = str(row.get('tag', '')).upper().strip()
             bg_color = TAG_COLORS.get(tag, "")
@@ -1026,6 +1027,9 @@ def render_chamados_page():
                 
             return [style] * len(row)
 
+        if "chamados_reset_counter" not in st.session_state:
+            st.session_state["chamados_reset_counter"] = 0
+
         df_page, current_page, total_pages, total_items = paginate_items(
             df_final_display,
             page_key="chamados",
@@ -1033,6 +1037,9 @@ def render_chamados_page():
         )
 
         table_height = "content" if items_per_page >= 999999 else 600
+
+        # Chave dinâmica por página e contador de reset para garantir que a seleção não vaze entre páginas ou reabra o chamado anterior
+        grid_key = f"tabela_chamados_p{current_page}_v{st.session_state['chamados_reset_counter']}"
 
         selection_event = st.dataframe(
             df_page.style.apply(style_dataframe, axis=1),
@@ -1055,19 +1062,33 @@ def render_chamados_page():
             height=table_height,
             on_select="rerun",
             selection_mode="single-row",
-            key="tabela_chamados_datagrid"
+            key=grid_key
         )
 
         selected_rows = selection_event.selection.rows if hasattr(selection_event, "selection") else []
         
         if selected_rows:
-            current_selected = selected_rows[0]
-            if st.session_state["last_selected"] != current_selected:
-                st.session_state["last_selected"] = current_selected
-                row_data = filtered_df.iloc[(current_page - 1) * items_per_page + current_selected]
-                show_ticket_details(row_data)
-        else:
-            st.session_state["last_selected"] = None
+            selected_idx = selected_rows[0]
+            if selected_idx < len(df_page):
+                sel_row_display = df_page.iloc[selected_idx]
+                raw_id_str = str(sel_row_display['id'])
+                # Extrai o ID limpo a partir de #id: ou valor direto
+                if "#id:" in raw_id_str:
+                    clean_ticket_id = raw_id_str.split("#id:")[-1].strip()
+                else:
+                    clean_ticket_id = raw_id_str.strip()
+
+                # Busca o chamado correspondente na base filtrada pelo ID exato
+                match_records = filtered_df[filtered_df['id'].astype(str).str.strip() == clean_ticket_id]
+                if not match_records.empty:
+                    ticket_record = match_records.iloc[0]
+                else:
+                    # Fallback posicional se por acaso não encontrar por ID
+                    ticket_record = filtered_df.iloc[(current_page - 1) * items_per_page + selected_idx] if ((current_page - 1) * items_per_page + selected_idx) < len(filtered_df) else None
+
+                if ticket_record is not None:
+                    row_dict = ticket_record.to_dict() if hasattr(ticket_record, "to_dict") else dict(ticket_record)
+                    show_ticket_details(row_dict)
 
         render_pagination_controls(
             page_key="chamados",

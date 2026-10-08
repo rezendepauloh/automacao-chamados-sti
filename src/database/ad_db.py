@@ -1,8 +1,23 @@
 import os
+import re
 from datetime import datetime
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from .connection import get_connection, DB_TYPE
+
+def pad_single_digit_ordinal(text: str) -> str:
+    """
+    Padroniza ordinais e números isolados de 1 a 9 colocando '0' à frente (ex: 1ª -> 01ª, 1º -> 01º, GAECO 1 -> GAECO 01),
+    deixando números com dois ou mais dígitos intactos (10ª, 20ª, 12, etc.).
+    Garante ordenação alfabética natural consistente nas listagens e tabelas.
+    """
+    if not text:
+        return ""
+    # 1. Trata ordinais como 1ª, 1º -> 01ª, 01º
+    t = re.sub(r"(?<!\d)([1-9])([ªº])", r"0\1\2", str(text).strip())
+    # 2. Trata números isolados de 1 a 9 cercados por limites não-alfanuméricos (ex: GAECO 1 -> GAECO 01, Assep - 2 -> Assep - 02)
+    t = re.sub(r"(?<!\w)([1-9])(?!\w)", r"0\1", t)
+    return t
 
 def setup_ad_tables():
     """
@@ -190,6 +205,9 @@ def save_ad_cache(
 
         # Inserção de Usuários
         for u in users:
+            raw_dept = str(u.get("department", "") or "").strip()
+            dept_normalized = pad_single_digit_ordinal(raw_dept) if raw_dept else ""
+
             cursor.execute("""
                 INSERT INTO ad_cache_users (
                     sam_account_name, display_name, mail, department, title, dn,
@@ -208,7 +226,7 @@ def save_ad_cache(
                 u.get("sam_account_name", ""),
                 u.get("display_name", ""),
                 u.get("mail", ""),
-                u.get("department", ""),
+                dept_normalized,
                 u.get("title", ""),
                 u.get("dn", ""),
                 u.get("parent_ou_dn", ""),
@@ -357,7 +375,7 @@ def get_ad_ous() -> pd.DataFrame:
         conn.close()
 
 
-def get_ad_users_df(status_filter: str = "Todos", department: str = "Todos", search: str = "") -> pd.DataFrame:
+def get_ad_users_df(status_filter: str = "Todos", department: str = "Todos", office: str = "Todos", search: str = "") -> pd.DataFrame:
     """
     Retorna DataFrame de usuários com filtros aplicados.
     status_filter: 'Todos', 'Ativos', 'Desativados'
@@ -381,30 +399,64 @@ def get_ad_users_df(status_filter: str = "Todos", department: str = "Todos", sea
             query += f" AND is_active = {('FALSE' if is_pg else '0')}"
 
         if department and department != "Todos":
-            query += f" AND department = {ph}"
-            params.append(department)
+            query += f" AND (department = {ph} OR department = {ph})"
+            raw_target = department
+            # Suporta correspondência tanto com o departamento original sem zero quanto com o formato com zero
+            raw_unpadded = re.sub(r"(?<!\d)0([1-9])([ªº])", r"\1\2", raw_target)
+            raw_unpadded = re.sub(r"(?<!\w)0([1-9])(?!\w)", r"\1", raw_unpadded)
+            params.extend([raw_target, raw_unpadded])
+
+        if office and office != "Todos":
+            query += f" AND (office = {ph} OR office = {ph})"
+            raw_office_target = office
+            raw_office_unpadded = re.sub(r"(?<!\d)0([1-9])([ªº])", r"\1\2", raw_office_target)
+            raw_office_unpadded = re.sub(r"(?<!\w)0([1-9])(?!\w)", r"\1", raw_office_unpadded)
+            params.extend([raw_office_target, raw_office_unpadded])
 
         if search:
-            query += f" AND (LOWER(sam_account_name) LIKE {ph} OR LOWER(display_name) LIKE {ph} OR LOWER(mail) LIKE {ph})"
+            query += f" AND (LOWER(sam_account_name) LIKE {ph} OR LOWER(display_name) LIKE {ph} OR LOWER(mail) LIKE {ph} OR LOWER(title) LIKE {ph} OR LOWER(office) LIKE {ph})"
             s_val = f"%{search.lower()}%"
-            params.extend([s_val, s_val, s_val])
+            params.extend([s_val, s_val, s_val, s_val, s_val])
 
         query += " ORDER BY display_name ASC"
 
         if params:
-            return pd.read_sql_query(query, conn, params=params)
-        return pd.read_sql_query(query, conn)
+            df = pd.read_sql_query(query, conn, params=params)
+        else:
+            df = pd.read_sql_query(query, conn)
+
+        if not df.empty and "department" in df.columns:
+            df["department"] = df["department"].apply(lambda d: pad_single_digit_ordinal(d) if pd.notna(d) else d)
+        if not df.empty and "office" in df.columns:
+            df["office"] = df["office"].apply(lambda o: pad_single_digit_ordinal(o) if pd.notna(o) else o)
+        return df
     finally:
         conn.close()
 
 
 def get_ad_departments() -> List[str]:
-    """Retorna a lista de departamentos distintos existentes no cache de usuários."""
+    """Retorna a lista de departamentos distintos padronizados com zero à esquerda nos ordinais de 1 a 9 e ordenados naturalmente."""
     setup_ad_tables()
     conn = get_connection()
     try:
-        df = pd.read_sql_query("SELECT DISTINCT department FROM ad_cache_users WHERE department IS NOT NULL AND department != '' ORDER BY department ASC", conn)
-        return [str(d) for d in df["department"].dropna().tolist()]
+        df = pd.read_sql_query("SELECT DISTINCT department FROM ad_cache_users WHERE department IS NOT NULL AND department != ''", conn)
+        raw_list = [str(d).strip() for d in df["department"].dropna().tolist() if str(d).strip()]
+        # Normaliza cada departamento com zero à esquerda caso seja ordinal simples (ex: 1ª -> 01ª)
+        padded_set = set(pad_single_digit_ordinal(d) for d in raw_list)
+        return sorted(list(padded_set))
+    finally:
+        conn.close()
+
+
+def get_ad_offices() -> List[str]:
+    """Retorna a lista de localidades / escritórios / prédios (office) distintos padronizados com zero à esquerda nos ordinais e ordenados."""
+    setup_ad_tables()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query("SELECT DISTINCT office FROM ad_cache_users WHERE office IS NOT NULL AND office != ''", conn)
+        raw_list = [str(o).strip() for o in df["office"].dropna().tolist() if str(o).strip()]
+        padded_set = set(pad_single_digit_ordinal(o) for o in raw_list)
+        return sorted(list(padded_set))
     finally:
         conn.close()
 
@@ -762,5 +814,129 @@ def get_all_ou_entities_compact() -> Dict[str, Any]:
         return {"users": users_by_ou, "comps": comps_by_ou}
     finally:
         conn.close()
+
+
+def get_ad_orgchart_data() -> List[Dict[str, Any]]:
+    """
+    Constrói a estrutura hierárquica (OrgChart) de gestores e subordinados a partir do Active Directory.
+    Retorna nós prontos para renderização em diagrama GoJS / OrgChart.
+    """
+    setup_ad_tables()
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        users_rows = cur.execute("""
+            SELECT sam_account_name, display_name, mail, title, department, office, telephone_number, manager, is_active
+            FROM ad_cache_users
+            WHERE is_active = 1
+        """).fetchall()
+
+        # Mapeamento de usuários
+        by_name = {}
+        by_sam = {}
+        for r in users_rows:
+            sam = str(r[0] or "").strip()
+            name = str(r[1] or sam).strip()
+            mail = str(r[2] or "").strip()
+            title = str(r[3] or "").strip()
+            dept = pad_single_digit_ordinal(str(r[4] or "").strip())
+            office = pad_single_digit_ordinal(str(r[5] or "").strip())
+            phone = str(r[6] or "").strip()
+            mgr = str(r[7] or "").strip()
+            active = bool(r[8])
+
+            user_obj = {
+                "key": sam,
+                "sam": sam,
+                "name": name,
+                "mail": mail,
+                "title": title,
+                "dept": dept,
+                "office": office,
+                "phone": phone,
+                "manager": mgr,
+                "active": active
+            }
+            by_sam[sam] = user_obj
+            # Armazena pelo nome limpo em lowercase para resolução de managers
+            name_lower = name.lower()
+            if name_lower not in by_name or (title and not by_name[name_lower].get("title")):
+                by_name[name_lower] = user_obj
+
+        # Filtra quem tem gestor ou quem é gestor de alguém
+        managers_sams = set()
+        subordinates = []
+
+        for sam, u in by_sam.items():
+            mgr_str = u["manager"]
+            if mgr_str:
+                mgr_obj = by_name.get(mgr_str.lower())
+                if mgr_obj:
+                    u["parent"] = mgr_obj["key"]
+                    managers_sams.add(mgr_obj["key"])
+                    subordinates.append(u)
+
+        if not managers_sams and not subordinates:
+            return []
+
+        # Identifica gestores raiz (que não possuem parent nos subordinates)
+        all_hierarchy_keys = managers_sams.union(set(u["key"] for u in subordinates))
+        nodes_dict = {}
+
+        # Adiciona os gestores de topo
+        for m_key in managers_sams:
+            m_user = by_sam.get(m_key)
+            if m_user:
+                # Se o gestor também tem um superior cadastrado na hierarquia
+                parent_m = by_name.get(m_user["manager"].lower()) if m_user["manager"] else None
+                sam_login = m_user.get("sam") or m_key
+                nodes_dict[m_key] = {
+                    "key": sam_login,
+                    "sam": sam_login,
+                    "name": m_user["name"],
+                    "title": m_user["title"] or "Gestor / Liderança",
+                    "dept": m_user["dept"],
+                    "office": m_user["office"],
+                    "phone": m_user["phone"],
+                    "mail": m_user["mail"],
+                    "parent": parent_m["sam"] if (parent_m and parent_m["sam"] in all_hierarchy_keys and parent_m["sam"] != m_key) else "ROOT_PGJ",
+                    "isManager": True
+                }
+
+        # Adiciona subordinados
+        for sub in subordinates:
+            if sub["key"] not in nodes_dict:
+                sam_login = sub.get("sam") or sub["key"]
+                nodes_dict[sub["key"]] = {
+                    "key": sam_login,
+                    "sam": sam_login,
+                    "name": sub["name"],
+                    "title": sub["title"] or "Colaborador",
+                    "dept": sub["dept"],
+                    "office": sub["office"],
+                    "phone": sub["phone"],
+                    "mail": sub["mail"],
+                    "parent": sub["parent"],
+                    "isManager": False
+                }
+
+        # Adiciona nó raiz unificador do MPMS
+        nodes_list = [{
+            "key": "ROOT_PGJ",
+            "name": "Ministério Público do Estado de Mato Grosso do Sul",
+            "title": "Procuradoria-Geral de Justiça (Lideranças & Equipes)",
+            "dept": "MPMS Corporativo",
+            "office": "Parque dos Poderes / Capital / Interior",
+            "phone": "",
+            "mail": "",
+            "isRoot": True,
+            "isManager": True
+        }]
+
+        nodes_list.extend(nodes_dict.values())
+        return nodes_list
+    finally:
+        conn.close()
+
 
 
