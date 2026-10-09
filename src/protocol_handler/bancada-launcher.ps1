@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # Script: bancada-launcher.ps1
 # Função: Executor local do Protocol Handler 'bancada://' para estações Windows.
 # ==============================================================================
@@ -60,6 +60,7 @@ try {
     $timeoutSec = if ($params['timeout']) { [int]$params['timeout'] } else { 30 }
     $usersPurge = $params['users']
     $psEngine   = $params['ps_engine']
+    $adUser     = if ($params['ad_user']) { $params['ad_user'].Trim() } else { "" }
 
     $currentEngineName = if ($PSVersionTable.PSVersion.Major -ge 7) { "⚡ PowerShell 7+ ($($PSVersionTable.PSVersion))" } else { "💻 Windows PowerShell 5.1 ($($PSVersionTable.PSVersion))" }
     Write-Host " [INFO] Interpretador em uso  : $currentEngineName" -ForegroundColor Cyan
@@ -373,7 +374,7 @@ try {
             $scriptFiles = @("RemoverUsuarios.ps1", "cred_admin.xml")
             $mainScript = Join-Path $tempFolder "RemoverUsuarios.ps1"
         } elseif ($tool -eq "remover_ad_sccm" -or $tool -eq "remover_computador" -or $tool -eq "limpar_ad_sccm") {
-            $scriptFiles = @("remover_computador_ad_sccm.ps1", "cred_admin.xml")
+            $scriptFiles = @("remover_computador_ad_sccm.ps1", "cred_admin_ad.xml", "cred_admin.xml")
             $mainScript = Join-Path $tempFolder "remover_computador_ad_sccm.ps1"
         } else {
             Write-Host " [ERRO] Ferramenta desconhecida: '$tool'" -ForegroundColor Red
@@ -406,8 +407,8 @@ try {
                     Write-Host " [INFO] Copiando scripts auxiliares de: $sDir" -ForegroundColor Cyan
                     foreach ($file in $scriptFiles) {
                         $srcPath = Join-Path $sDir $file
-                        if (-not (Test-Path $srcPath) -and $file -eq "cred_admin.xml") {
-                            $srcPath = Join-Path (Split-Path $sDir -Parent) "cred_admin.xml"
+                        if (-not (Test-Path $srcPath) -and ($file -eq "cred_admin.xml" -or $file -eq "cred_admin_ad.xml")) {
+                            $srcPath = Join-Path (Split-Path $sDir -Parent) $file
                         }
                         if (Test-Path $srcPath) {
                             Copy-Item -Path $srcPath -Destination (Join-Path $tempFolder $file) -Force
@@ -474,11 +475,16 @@ try {
             & $mainScript -ComputerName $targetHost -UsersToPurge $usersPurge
         } elseif ($tool -eq "remover_ad_sccm" -or $tool -eq "remover_computador" -or $tool -eq "limpar_ad_sccm") {
             $forceFlag = $params['force'] -eq 'true'
-            if ($forceFlag) {
-                & $mainScript -ComputerName $targetHost -Force
-            } else {
-                & $mainScript -ComputerName $targetHost
+            $remArgs = @{
+                ComputerName = $targetHost
             }
+            if ($forceFlag) {
+                $remArgs.Force = $true
+            }
+            if ($adUser) {
+                $remArgs.AdAdminUser = $adUser
+            }
+            & $mainScript @remArgs
         }
 
         Write-Host ""

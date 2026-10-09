@@ -218,7 +218,17 @@ def modal_device_details(device_row: dict):
         st.link_button("🛠️ Analisador", url=analisador_url, use_container_width=True, help="Executa o diagnóstico profundo da Bancada STI na máquina.")
 
     with col6:
-        limpar_url = f"bancada://run?tool=remover_ad_sccm&host={name}"
+        ad_user_query = ""
+        try:
+            from src.auth import get_current_user, ADMIN_USERS
+            curr = get_current_user()
+            if curr and curr.get("admin_ad"):
+                ad_user_query = f"&ad_user={curr.get('admin_ad')}"
+            elif curr and curr.get("username") in ADMIN_USERS:
+                ad_user_query = f"&ad_user={ADMIN_USERS[curr.get('username')].get('admin_ad')}"
+        except Exception:
+            pass
+        limpar_url = f"bancada://run?tool=remover_ad_sccm&host={name}{ad_user_query}"
         st.link_button("🗑️ Limpar AD/SCCM", url=limpar_url, use_container_width=True, help="Remove o computador do AD e do SCCM para formatação limpa via PXE.")
 
     st.markdown("---")

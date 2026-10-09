@@ -11,7 +11,9 @@ param(
 
     [switch]$Force,
     [string]$SiteServer,
-    [string]$SiteCode
+    [string]$SiteCode,
+    [string]$AdAdminUser,
+    [string]$AdAdminPassword
 )
 
 # -------------------------------------------------------------------------
@@ -222,7 +224,78 @@ if ($adComputer) {
         Write-Host "  -> Falha com usuario atual: $firstError" -ForegroundColor Yellow
     }
 
-    # Tentativa 2: Fallback com cred_admin.xml existente se disponível
+    # Tentativa 2: Fallback com credencial dedicada do AD (cred_admin_ad.xml) se disponível
+    if (-not $deleted) {
+        $credAdXml = Join-Path $PSScriptRoot "cred_admin_ad.xml"
+        if (-not (Test-Path $credAdXml)) {
+            $credAdXml = Join-Path (Split-Path $PSScriptRoot -Parent) "cred_admin_ad.xml"
+        }
+        if (Test-Path $credAdXml) {
+            try {
+                $savedAdCred = Import-Clixml -Path $credAdXml
+                Write-Host "  -> Tentando fallback via cred_admin_ad.xml ($($savedAdCred.UserName))..." -ForegroundColor Cyan
+                Set-ADComputer -Identity $adComputer.DistinguishedName -ProtectedFromAccidentalDeletion $false -Credential $savedAdCred -ErrorAction SilentlyContinue
+                Remove-ADComputer -Identity $adComputer.DistinguishedName -Credential $savedAdCred -Confirm:$false -ErrorAction Stop
+                Write-Host "  -> [SUCESSO] Computador removido do AD usando cred_admin_ad.xml!" -ForegroundColor Green
+                Write-SafeAppLog -Type Sucesso -Message "[$ComputerName] Removido do AD via cred_admin_ad.xml."
+                $deleted = $true
+            } catch {
+                Write-Host "  -> Falha com cred_admin_ad.xml: $_" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    # Tentativa 3: Fallback com conta de Administrador do AD passada por parâmetro ou .env
+    if (-not $deleted) {
+        $targetAdUser = $AdAdminUser
+        if (-not $targetAdUser) { $targetAdUser = $env:AD_ADMIN_USER }
+        $targetAdPass = $AdAdminPassword
+        if (-not $targetAdPass) { $targetAdPass = $env:AD_ADMIN_PASSWORD }
+
+        # Se nenhum usuário foi configurado mas o usuário logado for detectado, tenta sugerir ou usar <login>_admin_ad
+        if (-not $targetAdUser) {
+            $currentUserShort = $env:USERNAME
+            if ($currentUserShort) {
+                # Mapeamento conhecido para os técnicos da Bancada STI
+                $techMap = @{
+                    "paulogoncalves" = "paulo_admin_ad"
+                    "reginaldosb"    = "reginaldo_admin_ad"
+                    "luizvillalba"   = "villalba_admin_ad"
+                }
+                if ($techMap.ContainsKey($currentUserShort.ToLower())) {
+                    $targetAdUser = $techMap[$currentUserShort.ToLower()]
+                } else {
+                    $targetAdUser = "${currentUserShort}_admin_ad"
+                }
+            }
+        }
+
+        if ($targetAdUser) {
+            Write-Host "  -> Tentando fallback com a conta administrativa do AD: $targetAdUser..." -ForegroundColor Cyan
+            
+            if (-not $targetAdPass) {
+                $secPass = Read-Host "Digite a senha para $targetAdUser" -AsSecureString
+            } else {
+                $secPass = ConvertTo-SecureString $targetAdPass -AsPlainText -Force
+            }
+
+            $domain = if ($env:AD_DOMAIN) { $env:AD_DOMAIN } else { "in.mpe.ms.gov.br" }
+            $fullAdminUser = if ($targetAdUser -notmatch '[@\\]') { "$targetAdUser@$domain" } else { $targetAdUser }
+            $adminCred = New-Object System.Management.Automation.PSCredential($fullAdminUser, $secPass)
+
+            try {
+                Set-ADComputer -Identity $adComputer.DistinguishedName -ProtectedFromAccidentalDeletion $false -Credential $adminCred -ErrorAction SilentlyContinue
+                Remove-ADComputer -Identity $adComputer.DistinguishedName -Credential $adminCred -Confirm:$false -ErrorAction Stop
+                Write-Host "  -> [SUCESSO] Computador removido do AD usando credencial de $targetAdUser!" -ForegroundColor Green
+                Write-SafeAppLog -Type Sucesso -Message "[$ComputerName] Removido do AD via $targetAdUser."
+                $deleted = $true
+            } catch {
+                Write-Host "  -> [ERRO] Falha tambem com a conta ${targetAdUser}: $_" -ForegroundColor Red
+            }
+        }
+    }
+
+    # Tentativa 4: Fallback secundário com cred_admin.xml existente se disponível
     if (-not $deleted) {
         $credXml = Join-Path $PSScriptRoot "cred_admin.xml"
         if (-not (Test-Path $credXml)) {
@@ -231,7 +304,7 @@ if ($adComputer) {
         if (Test-Path $credXml) {
             try {
                 $savedCred = Import-Clixml -Path $credXml
-                Write-Host "  -> Tentando fallback via cred_admin.xml ($($savedCred.UserName))..." -ForegroundColor Cyan
+                Write-Host "  -> Tentando fallback secundário via cred_admin.xml ($($savedCred.UserName))..." -ForegroundColor Cyan
                 Set-ADComputer -Identity $adComputer.DistinguishedName -ProtectedFromAccidentalDeletion $false -Credential $savedCred -ErrorAction SilentlyContinue
                 Remove-ADComputer -Identity $adComputer.DistinguishedName -Credential $savedCred -Confirm:$false -ErrorAction Stop
                 Write-Host "  -> [SUCESSO] Computador removido do AD usando cred_admin.xml!" -ForegroundColor Green
@@ -243,38 +316,8 @@ if ($adComputer) {
         }
     }
 
-    # Tentativa 3: Fallback com conta de Administrador do AD se definida no .env
     if (-not $deleted) {
-        $adminUser = $env:AD_ADMIN_USER
-        if (-not $adminUser) { $adminUser = $env:SCCM_ADMIN_USER }
-        $adminPass = $env:AD_ADMIN_PASSWORD
-        if (-not $adminPass) { $adminPass = $env:SCCM_ADMIN_PASSWORD }
-
-        if ($adminUser) {
-            Write-Host "  -> Tentando fallback com a conta de admin: $adminUser..." -ForegroundColor Cyan
-            
-            if (-not $adminPass) {
-                $secPass = Read-Host "Digite a senha para $adminUser" -AsSecureString
-            } else {
-                $secPass = ConvertTo-SecureString $adminPass -AsPlainText -Force
-            }
-
-            $domain = if ($env:AD_DOMAIN) { $env:AD_DOMAIN } else { "in.mpe.ms.gov.br" }
-            $fullAdminUser = if ($adminUser -notmatch '[@\\]') { "$adminUser@$domain" } else { $adminUser }
-            $adminCred = New-Object System.Management.Automation.PSCredential($fullAdminUser, $secPass)
-
-            try {
-                Set-ADComputer -Identity $adComputer.DistinguishedName -ProtectedFromAccidentalDeletion $false -Credential $adminCred -ErrorAction SilentlyContinue
-                Remove-ADComputer -Identity $adComputer.DistinguishedName -Credential $adminCred -Confirm:$false -ErrorAction Stop
-                Write-Host "  -> [SUCESSO] Computador removido do AD usando credencial de $adminUser!" -ForegroundColor Green
-                Write-SafeAppLog -Type Sucesso -Message "[$ComputerName] Removido do AD via $adminUser."
-                $deleted = $true
-            } catch {
-                Write-Host "  -> [ERRO] Falha tambem com a conta ${adminUser}: $_" -ForegroundColor Red
-            }
-        } else {
-            Write-Host "  -> [DICA] Defina AD_ADMIN_USER ou SCCM_ADMIN_USER no arquivo .env para ativar fallback automatico." -ForegroundColor DarkGray
-        }
+        Write-Host "  -> [DICA] Defina AD_ADMIN_USER ou gere cred_admin_ad.xml para conceder permissão de exclusão no AD." -ForegroundColor DarkGray
     }
 } else {
     Write-Host "  -> Nada a remover no Active Directory." -ForegroundColor Gray

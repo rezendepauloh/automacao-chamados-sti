@@ -2174,7 +2174,17 @@ def show_computer_details_dialog(comp_row):
         st.caption("Ping contínuo no console")
 
     with b_col4:
-        limpar_uri = f"bancada://run?tool=remover_ad_sccm&host={target_addr}"
+        ad_user_query = ""
+        try:
+            from src.auth import get_current_user, ADMIN_USERS
+            curr = get_current_user()
+            if curr and curr.get("admin_ad"):
+                ad_user_query = f"&ad_user={curr.get('admin_ad')}"
+            elif curr and curr.get("username") in ADMIN_USERS:
+                ad_user_query = f"&ad_user={ADMIN_USERS[curr.get('username')].get('admin_ad')}"
+        except Exception:
+            pass
+        limpar_uri = f"bancada://run?tool=remover_ad_sccm&host={target_addr}{ad_user_query}"
         st.markdown(
             f"""<a href="{limpar_uri}" style="text-decoration: none;">
                 <div style="background: #1e293b; border: 1px solid #ef4444; border-radius: 8px; padding: 10px; text-align: center; color: #f87171; font-weight: 600; font-size: 0.85rem; cursor: pointer;">

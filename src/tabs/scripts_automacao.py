@@ -138,85 +138,152 @@ def _read_file_safe_utf8(filepath: Path) -> str:
 
 def _ensure_cred_admin_xml():
     """
-    Verifica e regenera o cred_admin.xml na pasta interna src/scripts_powershell/ e nas subpastas dos scripts
+    Verifica e regenera o cred_admin.xml e cred_admin_ad.xml na pasta interna src/scripts_powershell/ e nas subpastas dos scripts
     caso o arquivo não possa ser descriptografado pelo usuário atual do Windows (falha DPAPI).
-    Utiliza as credenciais salvas do SCCM_ADMIN_USER no cofre do Windows (keyring).
+    Utiliza as credenciais salvas do SCCM_ADMIN_USER e AD_ADMIN_USER no cofre do Windows (keyring) ou banco de configurações.
     """
-    admin_user = os.getenv("SCCM_ADMIN_USER", "")
-    if not admin_user:
-        return
-
-    script_paths = [PS_SCRIPT_ANALISADOR, PS_SCRIPT_MANUTENCAO, PS_SCRIPT_REMOVER_USUARIOS, PS_SCRIPT_REMOVER_COMPUTADOR]
-    target_xmls = set()
-    # Adiciona explicitamente o cred_admin.xml da pasta raiz interna de scripts
-    if PS_SCRIPTS_DIR:
-        PS_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-        target_xmls.add(PS_SCRIPTS_DIR / "cred_admin.xml")
-
-    # Adiciona o cred_admin.xml dentro de cada subpasta específica
-    for sp in script_paths:
-        if sp:
-            sp.parent.mkdir(parents=True, exist_ok=True)
-            target_xmls.add(sp.parent / "cred_admin.xml")
-
     ps_exe = _get_powershell_exe()
     creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
-    admin_pass = None
+    # Configuração 1: cred_admin.xml (SCCM / Administrador de estações)
+    sccm_admin_user = os.getenv("SCCM_ADMIN_USER", "")
+    if sccm_admin_user:
+        script_paths = [PS_SCRIPT_ANALISADOR, PS_SCRIPT_MANUTENCAO, PS_SCRIPT_REMOVER_USUARIOS, PS_SCRIPT_REMOVER_COMPUTADOR]
+        target_xmls = set()
+        if PS_SCRIPTS_DIR:
+            PS_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+            target_xmls.add(PS_SCRIPTS_DIR / "cred_admin.xml")
 
-    for target_xml in target_xmls:
-        need_regenerate = False
-        if not target_xml.exists():
-            logger.info(f"O arquivo '{target_xml}' não existe. Será gerado...")
-            need_regenerate = True
-        else:
-            test_ps = f"try {{ $c = Import-Clixml -Path '{target_xml}'; if ($c.UserName) {{ exit 0 }} else {{ exit 1 }} }} catch {{ exit 1 }}"
-            ps_kwargs = {"capture_output": True}
-            if sys.platform == "win32":
-                ps_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-            res = subprocess.run(
-                [ps_exe, "-NonInteractive", "-NoProfile", "-Command", test_ps],
-                **ps_kwargs
-            )
-            if res.returncode != 0:
-                logger.warning(f"⚠️ cred_admin.xml em '{target_xml}' não pode ser descriptografado. Necessário regenerar.")
+        for sp in script_paths:
+            if sp:
+                sp.parent.mkdir(parents=True, exist_ok=True)
+                target_xmls.add(sp.parent / "cred_admin.xml")
+
+        sccm_admin_pass = None
+        for target_xml in target_xmls:
+            need_regenerate = False
+            if not target_xml.exists():
+                logger.info(f"O arquivo '{target_xml}' não existe. Será gerado...")
                 need_regenerate = True
-
-        if need_regenerate:
-            if not admin_pass:
-                try:
-                    from src.database.settings_db import get_setting
-                    admin_pass = get_setting("SCCM_ADMIN_PASSWORD")
-                except Exception:
-                    pass
-                if not admin_pass:
-                    admin_pass = keyring.get_password("sccm_admin", admin_user) or keyring.get_password("sccm", admin_user) or os.getenv("SCCM_ADMIN_PASSWORD")
-
-            if not admin_pass:
-                logger.error("❌ Senha do SCCM_ADMIN_USER não encontrada no banco ou keyring. Não é possível gerar cred_admin.xml.")
-                continue
-
-            domain_user = admin_user if ("\\" in admin_user or "@" in admin_user) else f"mpe\\{admin_user}"
-            escaped_pass = admin_pass.replace('"', '`"').replace('$', '`$')
-
-            gen_ps = (
-                f'$sec = ConvertTo-SecureString "{escaped_pass}" -AsPlainText -Force; '
-                f'$cred = New-Object System.Management.Automation.PSCredential ("{domain_user}", $sec); '
-                f'$cred | Export-Clixml -Path "{target_xml}" -Force'
-            )
-
-            gen_kwargs = {"capture_output": True, "text": True}
-            if sys.platform == "win32":
-                gen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-            gen_res = subprocess.run(
-                [ps_exe, "-NonInteractive", "-NoProfile", "-Command", gen_ps],
-                **gen_kwargs
-            )
-
-            if gen_res.returncode == 0:
-                logger.info(f"✅ cred_admin.xml regenerado com sucesso em '{target_xml}'!")
             else:
-                logger.error(f"❌ Falha ao gerar cred_admin.xml em '{target_xml}': {gen_res.stderr}")
+                test_ps = f"try {{ $c = Import-Clixml -Path '{target_xml}'; if ($c.UserName) {{ exit 0 }} else {{ exit 1 }} }} catch {{ exit 1 }}"
+                ps_kwargs = {"capture_output": True}
+                if sys.platform == "win32":
+                    ps_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                res = subprocess.run(
+                    [ps_exe, "-NonInteractive", "-NoProfile", "-Command", test_ps],
+                    **ps_kwargs
+                )
+                if res.returncode != 0:
+                    logger.warning(f"⚠️ cred_admin.xml em '{target_xml}' não pode ser descriptografado. Necessário regenerar.")
+                    need_regenerate = True
+
+            if need_regenerate:
+                if not sccm_admin_pass:
+                    try:
+                        from src.database.settings_db import get_setting
+                        sccm_admin_pass = get_setting("SCCM_ADMIN_PASSWORD")
+                    except Exception:
+                        pass
+                    if not sccm_admin_pass:
+                        sccm_admin_pass = keyring.get_password("sccm_admin", sccm_admin_user) or keyring.get_password("sccm", sccm_admin_user) or os.getenv("SCCM_ADMIN_PASSWORD")
+
+                if not sccm_admin_pass:
+                    logger.error("❌ Senha do SCCM_ADMIN_USER não encontrada no banco ou keyring. Não é possível gerar cred_admin.xml.")
+                    continue
+
+                domain_user = sccm_admin_user if ("\\" in sccm_admin_user or "@" in sccm_admin_user) else f"mpe\\{sccm_admin_user}"
+                escaped_pass = sccm_admin_pass.replace('"', '`"').replace('$', '`$')
+
+                gen_ps = (
+                    f'$sec = ConvertTo-SecureString "{escaped_pass}" -AsPlainText -Force; '
+                    f'$cred = New-Object System.Management.Automation.PSCredential ("{domain_user}", $sec); '
+                    f'$cred | Export-Clixml -Path "{target_xml}" -Force'
+                )
+
+                gen_kwargs = {"capture_output": True, "text": True}
+                if sys.platform == "win32":
+                    gen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                gen_res = subprocess.run(
+                    [ps_exe, "-NonInteractive", "-NoProfile", "-Command", gen_ps],
+                    **gen_kwargs
+                )
+
+                if gen_res.returncode == 0:
+                    logger.info(f"✅ cred_admin.xml regenerado com sucesso em '{target_xml}'!")
+                else:
+                    logger.error(f"❌ Falha ao gerar cred_admin.xml em '{target_xml}': {gen_res.stderr}")
+
+    # Configuração 2: cred_admin_ad.xml (Active Directory / Administrador de domínio)
+    ad_admin_user = os.getenv("AD_ADMIN_USER", "")
+    if not ad_admin_user:
+        # Se não definido no .env, tenta pelo usuário autenticado ou pelo mapeamento oficial
+        try:
+            from src.auth import get_current_user, ADMIN_USERS
+            curr = get_current_user()
+            if curr and curr.get("admin_ad"):
+                ad_admin_user = curr.get("admin_ad")
+            elif curr and curr.get("username") in ADMIN_USERS:
+                ad_admin_user = ADMIN_USERS[curr.get("username")].get("admin_ad")
+        except Exception:
+            pass
+
+    if ad_admin_user:
+        target_ad_xmls = set()
+        if PS_SCRIPTS_DIR:
+            target_ad_xmls.add(PS_SCRIPTS_DIR / "cred_admin_ad.xml")
+        if PS_SCRIPT_REMOVER_COMPUTADOR:
+            target_ad_xmls.add(PS_SCRIPT_REMOVER_COMPUTADOR.parent / "cred_admin_ad.xml")
+
+        ad_admin_pass = None
+        for target_xml in target_ad_xmls:
+            need_regenerate = False
+            if not target_xml.exists():
+                need_regenerate = True
+            else:
+                test_ps = f"try {{ $c = Import-Clixml -Path '{target_xml}'; if ($c.UserName) {{ exit 0 }} else {{ exit 1 }} }} catch {{ exit 1 }}"
+                ps_kwargs = {"capture_output": True}
+                if sys.platform == "win32":
+                    ps_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                res = subprocess.run(
+                    [ps_exe, "-NonInteractive", "-NoProfile", "-Command", test_ps],
+                    **ps_kwargs
+                )
+                if res.returncode != 0:
+                    need_regenerate = True
+
+            if need_regenerate:
+                if not ad_admin_pass:
+                    try:
+                        from src.database.settings_db import get_setting
+                        ad_admin_pass = get_setting("AD_ADMIN_PASSWORD")
+                    except Exception:
+                        pass
+                    if not ad_admin_pass:
+                        ad_admin_pass = keyring.get_password("ad_admin", ad_admin_user) or keyring.get_password("ad", ad_admin_user) or os.getenv("AD_ADMIN_PASSWORD")
+
+                if not ad_admin_pass:
+                    continue
+
+                domain_user = ad_admin_user if ("\\" in ad_admin_user or "@" in ad_admin_user) else f"mpe\\{ad_admin_user}"
+                escaped_pass = ad_admin_pass.replace('"', '`"').replace('$', '`$')
+
+                gen_ps = (
+                    f'$sec = ConvertTo-SecureString "{escaped_pass}" -AsPlainText -Force; '
+                    f'$cred = New-Object System.Management.Automation.PSCredential ("{domain_user}", $sec); '
+                    f'$cred | Export-Clixml -Path "{target_xml}" -Force'
+                )
+
+                gen_kwargs = {"capture_output": True, "text": True}
+                if sys.platform == "win32":
+                    gen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                gen_res = subprocess.run(
+                    [ps_exe, "-NonInteractive", "-NoProfile", "-Command", gen_ps],
+                    **gen_kwargs
+                )
+                if gen_res.returncode == 0:
+                    logger.info(f"✅ cred_admin_ad.xml regenerado com sucesso em '{target_xml}'!")
+
 
 
 def _resolve_local_path(path_str: str) -> Path:
@@ -674,13 +741,30 @@ def render_scripts_automacao_page():
                 st.warning("⚠️ Por favor, informe o Nome do computador a ser removido.")
             else:
                 engine_param = "pwsh" if "pwsh" in selected_ps_version.lower() else ("powershell" if "5.1" in selected_ps_version else "auto")
+                ad_user_param = ""
+                try:
+                    from src.auth import get_current_user, ADMIN_USERS
+                    curr = get_current_user()
+                    if curr and curr.get("admin_ad"):
+                        ad_user_param = curr.get("admin_ad")
+                    elif curr and curr.get("username") in ADMIN_USERS:
+                        ad_user_param = ADMIN_USERS[curr.get("username")].get("admin_ad")
+                except Exception:
+                    pass
+                if not ad_user_param:
+                    ad_user_param = os.getenv("AD_ADMIN_USER", "")
+
+                extra = {
+                    "force": "true" if force_confirm else "false",
+                    "ps_engine": engine_param
+                }
+                if ad_user_param:
+                    extra["ad_user"] = ad_user_param
+
                 b_url = dispatch_bancada_uri(
                     tool="remover_ad_sccm",
                     host=comp_remover.strip(),
-                    extra_params={
-                        "force": "true" if force_confirm else "false",
-                        "ps_engine": engine_param
-                    }
+                    extra_params=extra
                 )
                 st.success(f"🗑️ **Comando enviado para o seu Windows!** O PowerShell local executará a limpeza de **{comp_remover.strip().upper()}** no Active Directory e no SCCM.")
                 st.markdown(f"""
