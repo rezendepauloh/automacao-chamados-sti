@@ -107,6 +107,15 @@ def render_central_telefonica_page():
                     st.toast("🚀 Scraper do OXE iniciado em segundo plano!", icon="🤖")
                     st.rerun()
 
+            from src.config import OXE_URL
+            oxe_web_url = OXE_URL if OXE_URL else "https://10.12.32.30/"
+            st.link_button(
+                "🌐 Acessar Central OXE ↗",
+                url=oxe_web_url,
+                width='stretch',
+                help="Abre o painel de gerenciamento da Central Telefônica OXE em uma nova aba."
+            )
+
             st.markdown("---")
         st.header("🔍 Filtros de Busca")
 

@@ -233,11 +233,20 @@ def render_login_page():
     </style>
     """, unsafe_allow_html=True)
 
+    import base64
+    from pathlib import Path
+    favicon_file = Path(__file__).parent.parent / "assets" / "favicon.png"
+    if favicon_file.exists():
+        fav_b64 = base64.b64encode(favicon_file.read_bytes()).decode()
+        logo_html = f'<img src="data:image/png;base64,{fav_b64}" width="72" height="72" style="margin-bottom: 12px; filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.4));" />'
+    else:
+        logo_html = '<div class="login-logo">🛡️</div>'
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("""
+        st.markdown(f"""
         <div class="login-container">
-            <div class="login-logo">🛡️</div>
+            {logo_html}
             <div class="login-title">Bancada STI</div>
             <div class="login-subtitle">Autenticação com Credenciais de Rede (Active Directory)</div>
         </div>

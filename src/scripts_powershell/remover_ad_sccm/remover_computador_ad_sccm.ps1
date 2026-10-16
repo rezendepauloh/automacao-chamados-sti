@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Script unificado para localizar e remover contas de computador do Active Directory e SCCM.
     Suporta fallback de credencial de administrador (definido em .env, cred_admin.xml ou interativo) e remoção de proteção contra exclusão acidental.

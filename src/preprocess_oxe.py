@@ -5,7 +5,15 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 
-from config import (
+import sys
+root_dir = Path(__file__).resolve().parent.parent
+src_dir = Path(__file__).resolve().parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
+from src.config import (
     INPUT_DIR_BRUTOS,
     OUTPUT_DIR_TRATADOS,
     DEBUG_DIR_PREPROCESS,
@@ -13,7 +21,7 @@ from config import (
     save_df_to_excel_formatted,
     cleanup_old_files
 )
-from terminal import print_header, CYAN
+from src.terminal import print_header, CYAN
 
 # ---------------------------
 # Logging

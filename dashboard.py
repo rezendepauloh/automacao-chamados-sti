@@ -63,8 +63,13 @@ except Exception:
     except Exception:
         pass
 
-# Configuração de Página Streamlit
-st.set_page_config(page_title="Painel de Chamados - STI", layout="wide")
+# Configuração de Página Streamlit com Favicon do Sistema Bancada STI
+favicon_path = root_dir / "assets" / "favicon.png"
+st.set_page_config(
+    page_title="Painel de Chamados - STI",
+    page_icon=str(favicon_path) if favicon_path.exists() else "🛠️",
+    layout="wide"
+)
 
 # Carrega arquivo de estilos CSS globais da pasta assets
 css_path = root_dir / "assets" / "css" / "styles.css"

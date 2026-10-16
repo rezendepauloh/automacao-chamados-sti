@@ -59,5 +59,32 @@ class TestScriptsAndIntegrity(unittest.TestCase):
         content = reg_file.read_text(encoding="utf-8", errors="ignore")
         self.assertTrue("bancada" in content and "URL Protocol" in content)
 
+    def test_powershell_scripts_have_utf8_bom(self):
+        """
+        Valida que TODOS os scripts .ps1 do projeto possuem assinatura UTF-8 BOM (0xEF, 0xBB, 0xBF).
+        O Windows PowerShell 5.1 (powershell.exe) interpreta scripts UTF-8 sem BOM como Windows-1252 (ANSI),
+        causando erros de parser em caracteres multibyte (como aspas, hífens tipográficos e acentos).
+        """
+        ps_files = list(ROOT_DIR.glob("src/**/*.ps1"))
+        self.assertTrue(len(ps_files) > 0, "Nenhum script PowerShell (.ps1) localizado no projeto.")
+
+        UTF8_BOM = b"\xef\xbb\xbf"
+        missing_bom = []
+
+        for ps_path in ps_files:
+            with open(ps_path, "rb") as f:
+                header = f.read(3)
+                if header != UTF8_BOM:
+                    rel_path = ps_path.relative_to(ROOT_DIR)
+                    missing_bom.append(str(rel_path))
+
+        self.assertEqual(
+            missing_bom,
+            [],
+            f"Os seguintes scripts PowerShell não possuem UTF-8 BOM e falharão no Windows PowerShell 5.1:\n"
+            + "\n".join(f" - {p}" for p in missing_bom)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

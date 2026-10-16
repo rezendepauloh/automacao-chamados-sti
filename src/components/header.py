@@ -139,6 +139,19 @@ def render_header_navigation() -> str:
     current_user = get_current_user()
 
     with st.popover("☰ Menu"):
+        import base64
+        from pathlib import Path
+        fav_path = Path(__file__).parent.parent.parent / "assets" / "favicon.png"
+        if fav_path.exists():
+            fav_b64 = base64.b64encode(fav_path.read_bytes()).decode()
+            st.markdown(
+                f'<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">'
+                f'<img src="data:image/png;base64,{fav_b64}" width="34" height="34" style="border-radius: 8px;" />'
+                f'<span style="font-size: 1.15rem; font-weight: 700; color: #f8fafc;">Bancada STI</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
         # Identificação do usuário logado
         if current_user:
             d_name = current_user.get("display_name", current_user.get("username", "Operador"))

@@ -78,6 +78,9 @@ RUN playwright install-deps chromium \
 # Copia todo o código-fonte para o container
 COPY . .
 
+# Substitui o favicon estático padrão do Streamlit pelo favicon oficial da Bancada STI
+RUN cp assets/favicon.png $(python -c "import streamlit, os; print(os.path.join(os.path.dirname(streamlit.__file__), 'static', 'favicon.png'))")
+
 ARG STREAMLIT_PORT=8501
 ENV STREAMLIT_PORT=${STREAMLIT_PORT}
 

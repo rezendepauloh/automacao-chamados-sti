@@ -66,118 +66,123 @@ def _save_db_and_keyring(service_name, username, password, setting_key):
     except Exception:
         pass
 
-print("💡 DICA: Agora você também pode gerenciar e alterar todas as suas senhas")
-print("   diretamente pela interface web na aba: ⚙️ Configurações do Sistema!")
-print()
 
-# -----------------------------------------------------------------------------
-# 1. SENHA DE REDE / AD (OTRS & CitSmart)
-# -----------------------------------------------------------------------------
-print("="*60)
-print("🔑 CONFIGURAÇÃO DE SENHA DA REDE / AD (OTRS & CitSmart)")
-print("="*60)
+def main():
+    print("💡 DICA: Agora você também pode gerenciar e alterar todas as suas senhas")
+    print("   diretamente pela interface web na aba: ⚙️ Configurações do Sistema!")
+    print()
 
-usuario_windows = _get_username()
-deve_pedir, target_user, _ = prompt_senha("otrs", usuario_windows, default_user=usuario_windows)
+    # -----------------------------------------------------------------------------
+    # 1. SENHA DE REDE / AD (OTRS & CitSmart)
+    # -----------------------------------------------------------------------------
+    print("="*60)
+    print("🔑 CONFIGURAÇÃO DE SENHA DA REDE / AD (OTRS & CitSmart)")
+    print("="*60)
 
-if deve_pedir:
-    senha_real = getpass.getpass(f"Digite a sua senha da rede/AD para o usuário '{usuario_windows}': ").strip()
-    if senha_real:
-        _save_db_and_keyring("otrs", usuario_windows, senha_real, "AD_PASSWORD")
-        try:
-            keyring.set_password("citSmart", usuario_windows, senha_real)
-        except Exception:
-            pass
-        print(f"✅ Senha de rede salva com sucesso para o usuário: {usuario_windows}\n")
-    else:
-        print("⚠️ Nenhuma senha digitada. Etapa pulada.\n")
+    usuario_windows = _get_username()
+    deve_pedir, target_user, _ = prompt_senha("otrs", usuario_windows, default_user=usuario_windows)
 
-
-# -----------------------------------------------------------------------------
-# 2. USUÁRIO ADMINISTRADOR DO SCCM
-# -----------------------------------------------------------------------------
-print("="*60)
-print("🔑 CONFIGURAÇÃO OPCIONAL: USUÁRIO ADMINISTRADOR DO SCCM")
-print("="*60)
-print("Se você deseja rodar a consulta de IPs no SCCM com privilégios de Administrador,")
-print("podemos salvar a senha da conta administradora (ex: paulo_admin) no seu cofre.")
-
-admin_user = "paulo_admin"
-deve_pedir_sccm, target_admin, _ = prompt_senha("sccm_admin", admin_user, default_user=admin_user)
-
-if deve_pedir_sccm:
-    quer_salvar = input("Deseja salvar/atualizar a senha da conta de Admin para SCCM? (S/N): ").strip().upper()
-    if quer_salvar == 'S':
-        print(f"--> Configurando credenciais para: {admin_user}")
-        senha_admin = getpass.getpass(f"Digite a senha de rede do usuário administrador ({admin_user}): ").strip()
-        if senha_admin:
+    if deve_pedir:
+        senha_real = getpass.getpass(f"Digite a sua senha da rede/AD para o usuário '{usuario_windows}': ").strip()
+        if senha_real:
+            _save_db_and_keyring("otrs", usuario_windows, senha_real, "AD_PASSWORD")
             try:
-                keyring.set_password("sccm_admin", admin_user, senha_admin)
-                print(f"✅ Senha de administrador salva com sucesso para a conta: {admin_user}!\n")
-            except Exception as e:
-                print(f"⚠️ Erro ao salvar senha no keyring: {e}\n")
+                keyring.set_password("citSmart", usuario_windows, senha_real)
+            except Exception:
+                pass
+            print(f"✅ Senha de rede salva com sucesso para o usuário: {usuario_windows}\n")
         else:
-            print("⚠️ Nenhuma senha digitada. Configuração de Admin ignorada.\n")
-    else:
-        print("ℹ️ Configuração do SCCM ignorada.\n")
+            print("⚠️ Nenhuma senha digitada. Etapa pulada.\n")
 
 
-# -----------------------------------------------------------------------------
-# 3. USUÁRIO ADMINISTRADOR DO PAPERCUT
-# -----------------------------------------------------------------------------
-print("="*60)
-print("🖨️ CONFIGURAÇÃO OPCIONAL: USUÁRIO ADMINISTRADOR DO PAPERCUT")
-print("="*60)
+    # -----------------------------------------------------------------------------
+    # 2. USUÁRIO ADMINISTRADOR DO SCCM
+    # -----------------------------------------------------------------------------
+    print("="*60)
+    print("🔑 CONFIGURAÇÃO OPCIONAL: USUÁRIO ADMINISTRADOR DO SCCM")
+    print("="*60)
+    print("Se você deseja rodar a consulta de IPs no SCCM com privilégios de Administrador,")
+    print("podemos salvar a senha da conta administradora (ex: paulo_admin) no seu cofre.")
 
-current_pc_user = keyring.get_password("papercut_user", "papercut") or "admin"
-deve_pedir_pc, _, _ = prompt_senha("papercut", current_pc_user, default_user=current_pc_user)
+    admin_user = "paulo_admin"
+    deve_pedir_sccm, target_admin, _ = prompt_senha("sccm_admin", admin_user, default_user=admin_user)
 
-if deve_pedir_pc:
-    quer_salvar_papercut = input("Deseja salvar/atualizar as credenciais de Admin do PaperCut? (S/N): ").strip().upper()
-    if quer_salvar_papercut == 'S':
-        pc_user = input(f"Digite o usuário do PaperCut (padrão: {current_pc_user}): ").strip() or current_pc_user
-        pc_pass = getpass.getpass("Digite a senha do PaperCut: ").strip()
-        if pc_pass:
-            try:
-                keyring.set_password("papercut_user", "papercut", pc_user)
-                keyring.set_password("papercut", pc_user, pc_pass)
-                print(f"✅ Credenciais do PaperCut salvas para o usuário: {pc_user}\n")
-            except Exception as e:
-                print(f"⚠️ Erro ao salvar senha no keyring: {e}\n")
+    if deve_pedir_sccm:
+        quer_salvar = input("Deseja salvar/atualizar a senha da conta de Admin para SCCM? (S/N): ").strip().upper()
+        if quer_salvar == 'S':
+            print(f"--> Configurando credenciais para: {admin_user}")
+            senha_admin = getpass.getpass(f"Digite a senha de rede do usuário administrador ({admin_user}): ").strip()
+            if senha_admin:
+                try:
+                    keyring.set_password("sccm_admin", admin_user, senha_admin)
+                    print(f"✅ Senha de administrador salva com sucesso para a conta: {admin_user}!\n")
+                except Exception as e:
+                    print(f"⚠️ Erro ao salvar senha no keyring: {e}\n")
+            else:
+                print("⚠️ Nenhuma senha digitada. Configuração de Admin ignorada.\n")
         else:
-            print("⚠️ Nenhuma senha digitada. Configuração do PaperCut ignorada.\n")
-    else:
-        print("ℹ️ Configuração do PaperCut ignorada.\n")
+            print("ℹ️ Configuração do SCCM ignorada.\n")
 
 
-# -----------------------------------------------------------------------------
-# 4. CENTRAL TELEFÔNICA (OXE)
-# -----------------------------------------------------------------------------
-print("="*60)
-print("📞 CONFIGURAÇÃO OPCIONAL: CENTRAL TELEFÔNICA (OXE)")
-print("="*60)
+    # -----------------------------------------------------------------------------
+    # 3. USUÁRIO ADMINISTRADOR DO PAPERCUT
+    # -----------------------------------------------------------------------------
+    print("="*60)
+    print("🖨️ CONFIGURAÇÃO OPCIONAL: USUÁRIO ADMINISTRADOR DO PAPERCUT")
+    print("="*60)
 
-current_oxe_user = keyring.get_password("oxe_user", "oxe") or "mtcl"
-deve_pedir_oxe, _, _ = prompt_senha("oxe", current_oxe_user, default_user=current_oxe_user)
+    current_pc_user = keyring.get_password("papercut_user", "papercut") or "admin"
+    deve_pedir_pc, _, _ = prompt_senha("papercut", current_pc_user, default_user=current_pc_user)
 
-if deve_pedir_oxe:
-    oxe_input = input("Digite a senha do OXE (ou 'S' para alterar usuário / N para ignorar): ").strip()
-    if oxe_input and oxe_input.upper() != 'N':
-        if oxe_input.upper() == 'S':
-            oxe_user = input(f"Digite o usuário do OXE (padrão: {current_oxe_user}): ").strip() or current_oxe_user
-            oxe_pass = getpass.getpass(f"Digite a senha do OXE para o usuário '{oxe_user}': ").strip()
+    if deve_pedir_pc:
+        quer_salvar_papercut = input("Deseja salvar/atualizar as credenciais de Admin do PaperCut? (S/N): ").strip().upper()
+        if quer_salvar_papercut == 'S':
+            pc_user = input(f"Digite o usuário do PaperCut (padrão: {current_pc_user}): ").strip() or current_pc_user
+            pc_pass = getpass.getpass("Digite a senha do PaperCut: ").strip()
+            if pc_pass:
+                try:
+                    keyring.set_password("papercut_user", "papercut", pc_user)
+                    keyring.set_password("papercut", pc_user, pc_pass)
+                    print(f"✅ Credenciais do PaperCut salvas para o usuário: {pc_user}\n")
+                except Exception as e:
+                    print(f"⚠️ Erro ao salvar senha no keyring: {e}\n")
+            else:
+                print("⚠️ Nenhuma senha digitada. Configuração do PaperCut ignorada.\n")
         else:
-            oxe_user = current_oxe_user
-            oxe_pass = oxe_input
+            print("ℹ️ Configuração do PaperCut ignorada.\n")
 
-        if oxe_pass:
-            try:
-                keyring.set_password("oxe_user", "oxe", oxe_user)
-                keyring.set_password("oxe", oxe_user, oxe_pass)
-                print(f"✅ Credenciais do OXE salvas com sucesso para o usuário: {oxe_user}\n")
-            except Exception as e:
-                print(f"⚠️ Erro ao salvar senha no keyring: {e}\n")
+
+    # -----------------------------------------------------------------------------
+    # 4. CENTRAL TELEFÔNICA (OXE)
+    # -----------------------------------------------------------------------------
+    print("="*60)
+    print("📞 CONFIGURAÇÃO OPCIONAL: CENTRAL TELEFÔNICA (OXE)")
+    print("="*60)
+
+    current_oxe_user = keyring.get_password("oxe_user", "oxe") or "mtcl"
+    deve_pedir_oxe, _, _ = prompt_senha("oxe", current_oxe_user, default_user=current_oxe_user)
+
+    if deve_pedir_oxe:
+        oxe_input = input("Digite a senha do OXE (ou 'S' para alterar usuário / N para ignorar): ").strip()
+        if oxe_input and oxe_input.upper() != 'N':
+            if oxe_input.upper() == 'S':
+                oxe_user = input(f"Digite o usuário do OXE (padrão: {current_oxe_user}): ").strip() or current_oxe_user
+                oxe_pass = getpass.getpass(f"Digite a senha do OXE para o usuário '{oxe_user}': ").strip()
+            else:
+                oxe_user = current_oxe_user
+                oxe_pass = oxe_input
+
+            if oxe_pass:
+                try:
+                    keyring.set_password("oxe_user", "oxe", oxe_user)
+                    keyring.set_password("oxe", oxe_user, oxe_pass)
+                    print(f"✅ Credenciais do OXE salvas com sucesso para o usuário: {oxe_user}\n")
+                except Exception as e:
+                    print(f"⚠️ Erro ao salvar senha no keyring: {e}\n")
+            else:
+                print("⚠️ Nenhuma senha digitada. Configuração do OXE ignorada.\n")
         else:
-            print("⚠️ Nenhuma senha digitada. Configuração do OXE ignorada.\n")
-    else:
-        print("ℹ️ Configuração do OXE ignorada.\n")
+            print("ℹ️ Configuração do OXE ignorada.\n")
+
+if __name__ == "__main__":
+    main()

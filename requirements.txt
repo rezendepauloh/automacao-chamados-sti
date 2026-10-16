@@ -42,6 +42,7 @@ pyasn1==0.6.2
 pycparser==3.0
 pydantic==2.12.5
 pydantic_core==2.41.5
+pyarrow<19.0.0
 Pygments==2.19.2
 PySocks==1.7.1
 python-dateutil==2.9.0.post0
@@ -64,6 +65,7 @@ spacy==3.8.11
 spacy-legacy==3.0.12
 spacy-loggers==1.0.5
 srsly==2.5.2
+starlette<1.8.0
 thinc==8.3.10
 threadpoolctl==3.6.0
 tqdm==4.67.3
