@@ -63,7 +63,7 @@ if "%LOCAL_IP%"=="" (
 )
 if "%LOCAL_IP%"=="" set "LOCAL_IP=localhost"
 
-set "PORT=8502"
+set "PORT=8501"
 if exist ".env" (
     for /f "usebackq tokens=1,* delims==" %%i in (".env") do (
         set "KEY=%%i"
@@ -76,7 +76,7 @@ if exist ".env" (
         )
     )
 )
-if "%PORT%"=="" set "PORT=8502"
+if "%PORT%"=="" set "PORT=8501"
 set "PORT=%PORT: =%"
 
 if not exist "src\js" mkdir "src\js"
