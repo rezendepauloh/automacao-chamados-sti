@@ -64,10 +64,13 @@ except Exception:
         pass
 
 # Configuração de Página Streamlit com Favicon do Sistema Bancada STI
+from PIL import Image
 favicon_path = root_dir / "assets" / "favicon.png"
+fav_icon_obj = Image.open(favicon_path) if favicon_path.exists() else "🛠️"
+
 st.set_page_config(
     page_title="Painel de Chamados - STI",
-    page_icon=str(favicon_path) if favicon_path.exists() else "🛠️",
+    page_icon=fav_icon_obj,
     layout="wide"
 )
 

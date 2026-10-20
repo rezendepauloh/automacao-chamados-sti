@@ -130,9 +130,16 @@ def inject_cookie_remover():
     """Injeta JavaScript para apagar o cookie e localStorage no logout."""
     js_code = f"""
     <script>
-        document.cookie = "{COOKIE_NAME}=; max-age=0; path=/; SameSite=Lax";
+        const cookieName = "{COOKIE_NAME}";
+        document.cookie = `${{cookieName}}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+        document.cookie = `${{cookieName}}=; max-age=0; path=/; SameSite=Lax`;
+        document.cookie = `${{cookieName}}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=; SameSite=Lax`;
         try {{
-            localStorage.removeItem("{COOKIE_NAME}");
+            window.parent.document.cookie = `${{cookieName}}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+        }} catch(e) {{}}
+        try {{
+            localStorage.removeItem(cookieName);
+            sessionStorage.clear();
         }} catch(e) {{}}
     </script>
     """
@@ -143,6 +150,10 @@ def restore_session_from_cookie() -> bool:
     Tenta restaurar a sessão a partir do cookie presente no st.context.cookies ou query params.
     Retorna True se a sessão foi restaurada com sucesso.
     """
+    # Se o usuário acabou de solicitar logout, não restaura o cookie da requisição atual
+    if st.session_state.get("do_logout_cleanup"):
+        return False
+
     if is_authenticated():
         return True
 
@@ -193,6 +204,10 @@ def logout_user():
     st.session_state["authenticated_user"] = None
     st.session_state["auth_token"] = None
     st.session_state["do_logout_cleanup"] = True
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
     st.rerun()
 
 def render_login_page():
