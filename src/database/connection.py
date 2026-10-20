@@ -12,6 +12,57 @@ DB_TYPE = os.getenv("DB_TYPE", "sqlite").lower()
 _pg_pool = None
 
 
+from psycopg2.extensions import cursor as _pg_base_cursor
+import re
+
+class PostgreSQLCompatibleCursor(_pg_base_cursor):
+    """
+    Cursor PostgreSQL adaptativo que traduz automaticamente sintaxes SQLite comuns:
+    1. Placeholders '?' são substituídos por '%s'.
+    2. 'INTEGER PRIMARY KEY AUTOINCREMENT' é convertido para 'SERIAL PRIMARY KEY'.
+    3. 'PRAGMA table_info(tabela)' é emulado consultando information_schema.columns.
+    """
+    def execute(self, query, vars=None):
+        if 'PRAGMA table_info(' in query:
+            m = re.search(r'PRAGMA\s+table_info\((.+?)\)', query, re.I)
+            if m:
+                tbl = m.group(1).strip('"\' ')
+                return super().execute('''
+                    SELECT ordinal_position, column_name, data_type, 
+                           CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END,
+                           column_default, 0
+                    FROM information_schema.columns 
+                    WHERE table_name = %s
+                    ORDER BY ordinal_position
+                ''', (tbl,))
+
+        if 'INTEGER PRIMARY KEY AUTOINCREMENT' in query:
+            query = query.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
+
+        if 'ON CONFLICT' in query:
+            # Em CREATE TABLE no PostgreSQL, UNIQUE(...) ON CONFLICT REPLACE / IGNORE não é sintaxe ANSI (apenas UNIQUE(...))
+            query = re.sub(r'\s+ON\s+CONFLICT\s+(?:REPLACE|IGNORE)', '', query, flags=re.I)
+
+        if 'INSERT OR REPLACE INTO' in query:
+            query = query.replace('INSERT OR REPLACE INTO', 'INSERT INTO')
+
+        if 'INSERT OR IGNORE INTO' in query:
+            query = query.replace('INSERT OR IGNORE INTO', 'INSERT INTO')
+
+        if 'COLLATE NOCASE' in query:
+            query = re.sub(r'\s+COLLATE\s+NOCASE', '', query, flags=re.I)
+
+        if vars is not None and '?' in query:
+            query = query.replace('?', '%s')
+
+        return super().execute(query, vars)
+
+    def executemany(self, query, vars_list):
+        if vars_list and '?' in query:
+            query = query.replace('?', '%s')
+        return super().executemany(query, vars_list)
+
+
 def get_pg_pool():
     """Retorna o pool de conexões ThreadedConnectionPool para PostgreSQL (singleton lazy)."""
     global _pg_pool
@@ -30,7 +81,8 @@ def get_pg_pool():
                 port=pg_port,
                 dbname=pg_db,
                 user=pg_user,
-                password=pg_pass
+                password=pg_pass,
+                cursor_factory=PostgreSQLCompatibleCursor
             )
             logger.info("🔌 Pool de conexões PostgreSQL inicializado com sucesso (1-20 conexões).")
         except Exception as e:
@@ -39,26 +91,44 @@ def get_pg_pool():
     return _pg_pool
 
 
+class PooledPostgresConnection:
+    """Wrapper para conexão do pool PostgreSQL que devolve a conexão ao pool quando close() for chamado."""
+    def __init__(self, raw_conn, pool):
+        self._raw_conn = raw_conn
+        self._pool = pool
+        self._closed = False
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            try:
+                self._pool.putconn(self._raw_conn)
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self._raw_conn.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self._raw_conn.__exit__(exc_type, exc_val, exc_tb)
+
+    def __getattr__(self, name):
+        return getattr(self._raw_conn, name)
+
+
 def get_connection():
     """
     Retorna uma conexão com o banco de dados.
     Suporta modo híbrido: 'sqlite' (padrão local chamados.db) ou 'postgres' (servidor PostgreSQL).
     Para PostgreSQL, utiliza o Connection Pool gerenciado com fallback direto se necessário.
     """
-    if DB_TYPE in ["postgres", "postgresql"]:
+    db_mode = os.getenv("DB_TYPE", DB_TYPE).lower()
+    if db_mode in ["postgres", "postgresql"]:
         pool = get_pg_pool()
         if pool:
             try:
-                conn = pool.getconn()
-                # Encapsula o close para devolver a conexão ao pool quando conn.close() for chamado
-                orig_close = conn.close
-                def _pooled_close():
-                    try:
-                        pool.putconn(conn)
-                    except Exception:
-                        pass
-                conn.close = _pooled_close
-                return conn
+                raw_conn = pool.getconn()
+                return PooledPostgresConnection(raw_conn, pool)
             except Exception as e_pool:
                 logger.warning(f"Falha ao obter conexão do pool Postgres: {e_pool}. Conectando diretamente.")
         
@@ -73,7 +143,8 @@ def get_connection():
             port=pg_port,
             dbname=pg_db,
             user=pg_user,
-            password=pg_pass
+            password=pg_pass,
+            cursor_factory=PostgreSQLCompatibleCursor
         )
     else:
         conn = sqlite3.connect(DB_PATH, timeout=30.0)

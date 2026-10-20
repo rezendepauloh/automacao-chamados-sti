@@ -61,6 +61,17 @@ def setup_environment(local_ip: str) -> None:
     if not db_file.exists():
         db_file.touch()
 
+    # Substitui o favicon padrão do Streamlit pelo favicon oficial da Bancada STI
+    try:
+        import streamlit
+        import shutil
+        static_fav = Path(streamlit.__file__).parent / "static" / "favicon.png"
+        src_fav = ROOT_DIR / "assets" / "favicon.png"
+        if src_fav.exists():
+            shutil.copy2(src_fav, static_fav)
+    except Exception:
+        pass
+
     # Gera/atualiza o arquivo de calendário estático .ics para consumo do Outlook
     try:
         from src.services.ics_export import update_published_ics_file

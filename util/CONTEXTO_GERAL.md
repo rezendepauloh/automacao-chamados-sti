@@ -358,11 +358,12 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
 
 ## 📋 5. Próximas Etapas e Melhorias Planejadas
 
-### 🎯 5.1 Migração Definitiva de SQLite para PostgreSQL no Docker (Prontidão para Deploy MPMS)
-1. **Transição de Banco de Dados para Produção:**
-   - O projeto já possui container `postgres:15-alpine` ativo no `docker-compose.yml` e suporte a `DB_TYPE="postgres"` em [`src/database/connection.py`](automated-OTRS-and-CitSmart/src/database/connection.py).
-   - Execução de script unificado de migração de dados e esquemas para transferir todo o histórico e caches locais do SQLite para o PostgreSQL.
-   - Ajustes finais de queries e conexões para garantir que 100% dos módulos (chamados, AD, SCCM, plantões, garantia, doações, cofre de senhas, cron) operem com alta performance em PostgreSQL no ambiente de deploy corporativo do MPMS.
+### 🎯 5.1 Migração Definitiva de SQLite para PostgreSQL no Docker (Prontidão para Deploy MPMS) [CONCLUÍDA ✅]
+1. **Transição de Banco de Dados para Produção Concluída:**
+   - O projeto agora roda por padrão com `DB_TYPE="postgres"` gerenciado via `docker-compose.yml`.
+   - Criado e executado o script de migração unificada [`util/migracoes/migrar_sqlite_para_postgres.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/migracoes/migrar_sqlite_para_postgres.py), transferindo com integridade **75.779 registros de 42 tabelas** do SQLite para o PostgreSQL.
+   - Implementado `PostgreSQLCompatibleCursor` e `PooledPostgresConnection` em [`src/database/connection.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/connection.py) com pool `ThreadedConnectionPool` (1 a 20 conexões concorrentes) e tradução transparente de placeholders (`?` -> `%s`), auto-increments (`SERIAL`), `ON CONFLICT` e introspecção de schema.
+   - Todos os módulos (Chamados, Active Directory, SCCM, Plantões, Garantia, Doações, Cofre de Senhas, Impressoras, Notificações, Telefonia e Cron) foram testados e validados com 100% de sucesso no PostgreSQL.
 
 ### 🎯 5.2 Estabilidade de Paginação e Modais no Streamlit (Issue Registrada)
 1. **Comportamento Residual de Seleção de Linhas ao Trocar de Página:**

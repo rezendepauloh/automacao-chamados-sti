@@ -100,7 +100,7 @@ def get_unidades_df() -> pd.DataFrame:
             u.setor AS Setor, 
             u.sigla AS Sigla, 
             u.titular AS Titular, 
-            u.unidade_predio AS 'Unidade (Prédio)', 
+            u.unidade_predio AS "Unidade (Prédio)", 
             u.telefone AS Telefone, 
             u.url AS URL,
             um.id AS manual_id,

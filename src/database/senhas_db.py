@@ -102,7 +102,8 @@ def listar_senhas(categoria: Optional[str] = None, busca: Optional[str] = None) 
     """
     setup_senhas_table()
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
+    if hasattr(conn, "row_factory"):
+        conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     query = "SELECT id, titulo, categoria, url_sistema, usuario, observacoes, data_criacao, data_atualizacao FROM senhas_cofre WHERE 1=1"
@@ -121,20 +122,22 @@ def listar_senhas(categoria: Optional[str] = None, busca: Optional[str] = None) 
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
+    col_names = [d[0] for d in cursor.description] if cursor.description else []
     conn.close()
 
     resultado = []
     for r in rows:
+        d = dict(zip(col_names, r)) if isinstance(r, (tuple, list)) else dict(r)
         resultado.append({
-            "id": r["id"],
-            "titulo": r["titulo"],
-            "categoria": r["categoria"],
-            "url_sistema": r["url_sistema"] or "",
-            "usuario": r["usuario"],
+            "id": d.get("id"),
+            "titulo": d.get("titulo"),
+            "categoria": d.get("categoria"),
+            "url_sistema": d.get("url_sistema") or "",
+            "usuario": d.get("usuario"),
             "senha_mascarada": "••••••••",
-            "observacoes": r["observacoes"] or "",
-            "data_criacao": r["data_criacao"],
-            "data_atualizacao": r["data_atualizacao"]
+            "observacoes": d.get("observacoes") or "",
+            "data_criacao": d.get("data_criacao"),
+            "data_atualizacao": d.get("data_atualizacao")
         })
     return resultado
 
@@ -176,25 +179,29 @@ def obter_credencial_por_id(senha_id: int) -> Optional[Dict[str, Any]]:
     """
     setup_senhas_table()
     conn = get_connection()
-    conn.row_factory = sqlite3.Row
+    if hasattr(conn, "row_factory"):
+        conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM senhas_cofre WHERE id = ?", (senha_id,))
     row = cursor.fetchone()
+    col_names = [d[0] for d in cursor.description] if cursor.description else []
     conn.close()
 
     if not row:
         return None
 
+    d = dict(zip(col_names, row)) if isinstance(row, (tuple, list)) else dict(row)
+
     return {
-        "id": row["id"],
-        "titulo": row["titulo"],
-        "categoria": row["categoria"],
-        "url_sistema": row["url_sistema"] or "",
-        "usuario": row["usuario"],
-        "senha_plana": decrypt_value(row["senha_cifrada"]),
-        "observacoes": row["observacoes"] or "",
-        "data_criacao": row["data_criacao"],
-        "data_atualizacao": row["data_atualizacao"]
+        "id": d.get("id"),
+        "titulo": d.get("titulo"),
+        "categoria": d.get("categoria"),
+        "url_sistema": d.get("url_sistema") or "",
+        "usuario": d.get("usuario"),
+        "senha_plana": decrypt_value(d.get("senha_cifrada")),
+        "observacoes": d.get("observacoes") or "",
+        "data_criacao": d.get("data_criacao"),
+        "data_atualizacao": d.get("data_atualizacao")
     }
 
 
