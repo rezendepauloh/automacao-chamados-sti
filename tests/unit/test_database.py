@@ -63,7 +63,7 @@ class TestDatabaseModule(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "test_chamados.db"
         
-        # Patch na conexão global para abrir conexão no banco temporário
+        # Patch na conexão global e na flag DB_TYPE para abrir conexão no banco temporário isolado
         self.patchers = [
             patch("src.database.connection.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.sccm_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
@@ -72,6 +72,10 @@ class TestDatabaseModule(unittest.TestCase):
             patch("src.database.viagens_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.garantia_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.ad_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
+            patch("src.database.connection.DB_TYPE", "sqlite"),
+            patch("src.database.sccm_db.DB_TYPE", "sqlite"),
+            patch("src.database.ad_db.DB_TYPE", "sqlite"),
+            patch("src.database.tickets_db.DB_TYPE", "sqlite", create=True),
         ]
         for p in self.patchers:
             p.start()
@@ -540,6 +544,64 @@ class TestDatabaseModule(unittest.TestCase):
         self.assertIn("ROOT_PGJ", node_keys)
         self.assertIn("gestor1", node_keys)
         self.assertIn("subordinado1", node_keys)
+
+    def test_ticket_modal_edits_and_retrieval(self):
+        """Valida que todas as operações de edição do modal de chamados persistem e retornam com precisão."""
+        from src.database.tickets_db import (
+            setup_database,
+            update_ticket_title,
+            update_ticket_location_details,
+            update_ticket_tag,
+            update_ticket_andamento,
+            get_ticket_by_id
+        )
+        import pandas as pd
+        setup_database()
+
+        # Inserção de ticket de teste com colunas brutas esperadas pelo save_tickets_to_db
+        test_df = pd.DataFrame([{
+            'Chamado#': '99988877',
+            'Data Criação': '2026-10-20 10:00:00',
+            'Título': 'Título Original',
+            'Cidade - Prédio': 'Campo Grande - Sede',
+            'Unidade': 'STI',
+            'Localidade física': 'Sede - STI',
+            'Nome do Usuário': 'teste.usuario',
+            'ID do Cliente': 'teste.usuario',
+            'Descrição': 'Descrição de teste',
+            'TAG': 'SUPORTE',
+            'IP_Origem': '10.0.0.1',
+            'Base': 'OTRS',
+            'Link': 'https://central.mpms.mp.br/otrs'
+        }])
+        save_tickets_to_db(test_df)
+
+        # 1. Teste de get_ticket_by_id
+        ticket = get_ticket_by_id('99988877')
+        self.assertEqual(ticket.get('titulo'), 'Título Original')
+        self.assertEqual(ticket.get('tag'), 'SUPORTE')
+
+        # 2. Teste de update de Título
+        update_ticket_title('99988877', 'Título Alterado via Modal')
+        ticket = get_ticket_by_id('99988877')
+        self.assertEqual(ticket.get('titulo'), 'Título Alterado via Modal')
+
+        # 3. Teste de update de Localização
+        update_ticket_location_details('99988877', 'Dourados - PJ', 'Dourados - Prédio Novo', '1ª Promotoria')
+        ticket = get_ticket_by_id('99988877')
+        self.assertEqual(ticket.get('cidade_predio'), 'Dourados - Prédio Novo')
+        self.assertEqual(ticket.get('unidade'), '1ª Promotoria')
+        self.assertEqual(ticket.get('localidade_fisica'), 'Dourados - PJ')
+
+        # 4. Teste de update de TAG
+        update_ticket_tag('99988877', 'GARANTIA')
+        ticket = get_ticket_by_id('99988877')
+        self.assertEqual(ticket.get('tag'), 'GARANTIA')
+
+        # 5. Teste de update de Nota de Andamento
+        update_ticket_andamento('99988877', 'Aguardando peça da garantia pela Dell')
+        ticket = get_ticket_by_id('99988877')
+        self.assertEqual(ticket.get('andamento'), 'Aguardando peça da garantia pela Dell')
 
 
 if __name__ == "__main__":

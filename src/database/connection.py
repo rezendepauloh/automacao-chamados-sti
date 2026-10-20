@@ -1,7 +1,11 @@
 import os
 import sqlite3
 import logging
+import warnings
 from pathlib import Path
+
+# Suprime aviso informativo do pandas ao usar conexão DBAPI2 nativa (psycopg2) sem SQLAlchemy
+warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
 
 logger = logging.getLogger(__name__)
 
@@ -12,8 +16,12 @@ DB_TYPE = os.getenv("DB_TYPE", "sqlite").lower()
 _pg_pool = None
 
 
-from psycopg2.extensions import cursor as _pg_base_cursor
 import re
+
+try:
+    from psycopg2.extensions import cursor as _pg_base_cursor
+except Exception:
+    _pg_base_cursor = object
 
 class PostgreSQLCompatibleCursor(_pg_base_cursor):
     """
@@ -21,8 +29,24 @@ class PostgreSQLCompatibleCursor(_pg_base_cursor):
     1. Placeholders '?' são substituídos por '%s'.
     2. 'INTEGER PRIMARY KEY AUTOINCREMENT' é convertido para 'SERIAL PRIMARY KEY'.
     3. 'PRAGMA table_info(tabela)' é emulado consultando information_schema.columns.
+    4. Emulação de 'lastrowid' para INSERTs em tabelas com chaves SERIAL / IDENTITY.
+    5. Retorno de 'self' em execute/executemany para method-chaining fluído.
     """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._custom_lastrowid = None
+
+    @property
+    def lastrowid(self):
+        if self._custom_lastrowid is not None:
+            return self._custom_lastrowid
+        try:
+            return super().lastrowid
+        except Exception:
+            return None
+
     def execute(self, query, vars=None):
+        self._custom_lastrowid = None
         if 'PRAGMA table_info(' in query:
             m = re.search(r'PRAGMA\s+table_info\((.+?)\)', query, re.I)
             if m:
@@ -55,12 +79,45 @@ class PostgreSQLCompatibleCursor(_pg_base_cursor):
         if vars is not None and '?' in query:
             query = query.replace('?', '%s')
 
-        return super().execute(query, vars)
+        # Detecta tabela em INSERT para emular cursor.lastrowid via currval / pg_get_serial_sequence
+        insert_match = re.match(r'^\s*INSERT\s+INTO\s+([a-zA-Z0-9_]+)', query, re.I)
+        target_table = insert_match.group(1).lower() if insert_match else None
+
+        super().execute(query, vars)
+
+        # Emulação de lastrowid apenas para tabelas que utilizam chave primária SERIAL
+        SERIAL_TABLES = {
+            'ad_cache_group_members', 'ad_sync_meta', 'comentarios', 'eventos_manuais',
+            'faq_videos', 'faqs', 'ferias_bancada', 'garantia', 'garantia_contratos',
+            'notificacoes', 'plantoes_matutino', 'plantoes_semanal', 'ramais_mpms',
+            'senhas_cofre', 'unidades', 'cron_logs', 'faq_imagens', 'garantia_chamados',
+            'garantia_agendamentos', 'impressoras', 'viagens', 'unidades_manuais',
+            'whatsapp_destinatarios', 'whatsapp_disparos_log'
+        }
+        if target_table and target_table in SERIAL_TABLES:
+            try:
+                seq_name = f"{target_table}_id_seq"
+                with self.connection.cursor() as seq_cur:
+                    seq_cur.execute(f"SAVEPOINT _sp_lastrowid; SELECT currval('{seq_name}'::regclass);")
+                    val = seq_cur.fetchone()
+                    if val and val[0] is not None:
+                        self._custom_lastrowid = int(val[0])
+                    seq_cur.execute("RELEASE SAVEPOINT _sp_lastrowid;")
+            except Exception:
+                try:
+                    with self.connection.cursor() as sp_cur:
+                        sp_cur.execute("ROLLBACK TO SAVEPOINT _sp_lastrowid;")
+                except Exception:
+                    pass
+
+        return self
 
     def executemany(self, query, vars_list):
+        self._custom_lastrowid = None
         if vars_list and '?' in query:
             query = query.replace('?', '%s')
-        return super().executemany(query, vars_list)
+        super().executemany(query, vars_list)
+        return self
 
 
 def get_pg_pool():

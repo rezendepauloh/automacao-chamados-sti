@@ -61,3 +61,7 @@ src/scripts_powershell/manutencao/cred_admin.xml
 
 # Credential Docker RedHat
 Dockerfile-MP-RedHat
+
+# Arquivos de calendário gerados dinamicamente
+*.ics
+calendario.ics

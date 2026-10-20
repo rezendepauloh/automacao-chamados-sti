@@ -95,16 +95,16 @@ def get_unidades_df() -> pd.DataFrame:
         query = """
         SELECT 
             u.id,
-            u.cidade AS Cidade, 
-            u.tipo AS Tipo, 
-            u.setor AS Setor, 
-            u.sigla AS Sigla, 
-            u.titular AS Titular, 
+            u.cidade AS "Cidade", 
+            u.tipo AS "Tipo", 
+            u.setor AS "Setor", 
+            u.sigla AS "Sigla", 
+            u.titular AS "Titular", 
             u.unidade_predio AS "Unidade (Prédio)", 
-            u.telefone AS Telefone, 
-            u.url AS URL,
+            u.telefone AS "Telefone", 
+            u.url AS "URL",
             um.id AS manual_id,
-            CASE WHEN um.id IS NOT NULL THEN '📌 Manual' ELSE '🌐 Portal Web' END AS Origem
+            CASE WHEN um.id IS NOT NULL THEN '📌 Manual' ELSE '🌐 Portal Web' END AS "Origem"
         FROM unidades u
         LEFT JOIN unidades_manuais um ON u.cidade = um.cidade AND u.tipo = um.tipo AND u.setor = um.setor
         ORDER BY u.cidade ASC, u.setor ASC

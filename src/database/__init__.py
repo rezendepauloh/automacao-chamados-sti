@@ -23,7 +23,8 @@ from .tickets_db import (
     save_comments_to_db,
     get_comments_by_ticket,
     sync_closed_tickets_to_train_dataset,
-    load_data
+    load_data,
+    get_ticket_by_id
 )
 
 from .map_db import (

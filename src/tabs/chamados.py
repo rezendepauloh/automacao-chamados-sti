@@ -24,7 +24,8 @@ from src.database import (
     update_ticket_tag,
     update_ticket_andamento,
     update_ticket_title,
-    update_ticket_device_info
+    update_ticket_device_info,
+    get_ticket_by_id
 )
 from src.database.sccm_db import get_device_by_user
 from src.components.pagination import (
@@ -56,186 +57,40 @@ TAG_COLORS = {
     "VISTORIA CPDS": "#b2740e",
 }
 
-@st.cache_resource
-def load_spacy_model():
-    """Carrega o modelo spaCy local em português, com fallback caso falhe."""
-    import spacy
-    try:
-        return spacy.load("pt_core_news_sm")
-    except Exception:
-        return None
-
-@st.cache_data(show_spinner=False)
-def summarize_ticket_locally(description: str, comments: str, max_sentences: int = 2) -> str:
-    """
-    Resume o chamado técnico localmente usando Processamento de Linguagem Natural (spaCy).
-    """
-    from collections import Counter
-    from src.config import clean_otrs_description
-    
-    description = clean_otrs_description(description)
-    
-    def clean_text(t: str) -> str:
-        if not t:
-            return ""
-        t = re.sub(
-            r'^\s*(?:prezados?|prezadas?|caros?|caras?|olá|ola|bom\s+dia|boa\s+tarde|boa\s+noite|prezada\s+equipe|prezada\s+sti)\b(?:[^\n\.\?]*[\n\.,\?])?',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'^\s*(?:tudo\s+bem\??|espero\s+que\s+esteja\s+tudo\s+bem\??|espero\s+que\s+sim\??)',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'\b(?:gostaria\s+de\s+|venho\s+(?:por\s+meio\s+deste\s+)?|favor\s+|por\s+gentileza\s+|gentileza\s+)\b',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'\b(?:solicito\s+providências\s+para\s+|solicito\s+(?:a|o|que|os|as)?\s+|encaminho\s+para\s+providências\s*(?:[ao]s?|para|de)?\s+|encaminho\s+para\s+|segue\s+para\s+|segue\s+o\s+chamado\s+(?:para\s+)?)\b',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'\b(?:conforme|como|conforme\s+mostra\s+a|ver|veja)\s+(?:imagem\s+)?(?:em\s+)?anexo\b',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'\b(?:segue[m]?\s+)?(?:em\s+)?anexo\b',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'\b(?:fico|ficamos)\s+(?:à|a)\s+disposição\s+para\s+(?:eventuais|quaisquer)\s+(?:esclarecimentos|dúvidas)\b\.?',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'\b(?:desde\s+já\s+)?agradeço[s]?\b\.?',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(
-            r'\b(?:atenciosamente|grato|obrigado|fico\s+no\s+aguardo|aguardo\s+retorno|sem\s+mais)\b\.?',
-            '', t, flags=re.IGNORECASE
-        )
-        t = re.sub(r'\s+', ' ', t)
-        t = re.sub(r'^\s*[,\.\-\:\/]+\s*', '', t)
-        return t.strip()
-
-    desc_clean = clean_text(str(description))
-    
-    comments_clean_list = []
-    if comments:
-        for line in str(comments).split('\n'):
-            line_payload = re.sub(r'^[-\s]*[\d/:\s\[\]\-\#\.]+(?:[\w\s\(\)]+)?:\s*', '', line).strip()
-            line_clean = clean_text(line_payload)
-            if line_clean and len(line_clean) > 8:
-                comments_clean_list.append(line_clean)
-                
-    text_parts = []
-    if desc_clean:
-        text_parts.append(desc_clean)
-    if comments_clean_list:
-        text_parts.append(" ".join(comments_clean_list))
-        
-    combined_text = " ".join(text_parts).strip()
-    
-    if not combined_text:
-        return "Sem descrição detalhada."
-        
-    nlp = load_spacy_model()
-    
-    if nlp is None:
-        sentences = [s.strip() for s in combined_text.split('.') if len(s.strip()) > 8]
-        if sentences:
-            res = ". ".join(sentences[:max_sentences])
-            if not res.endswith('.'):
-                res += '.'
-            return res
-        return combined_text[:140] + "..." if len(combined_text) > 140 else combined_text
-
-    doc = nlp(combined_text)
-    
-    TECHNICAL_BOOST = {
-        "ssd", "hd", "windows", "formatação", "formatar", "lentidão", "travamento", "travando",
-        "impressora", "imprimir", "rede", "conexão", "erro", "falha", "sistema", "configurar",
-        "configuração", "instalação", "instalar", "senha", "usuário", "computador", "máquina",
-        "notebook", "monitor", "teclado", "mouse", "backup", "servidor", "internet", "cabo",
-        "wi-fi", "wifi", "login", "acesso", "workstation", "driver", "inicialização", "boot",
-        "perfil", "outlook", "email", "e-mail", "toner", "cartucho", "suporte", "atualizar",
-        "atualização", "office", "word", "excel", "pasta", "rede", "compartilhamento"
-    }
-    
-    keywords = []
-    for token in doc:
-        if token.is_stop or token.is_punct or token.is_space:
-            continue
-        if token.pos_ in ["NOUN", "VERB", "ADJ", "PROPN"]:
-            keywords.append(token.text.lower())
-            
-    if not keywords:
-        sentences = list(doc.sents)
-        return " ".join([s.text.strip() for s in sentences[:max_sentences]])
-        
-    word_freq = Counter(keywords)
-    max_freq = max(word_freq.values())
-    for word in word_freq:
-        word_freq[word] = word_freq[word] / max_freq
-        
-    sent_scores = {}
-    sentences = list(doc.sents)
-    
-    for idx, sent in enumerate(sentences):
-        words = [t for t in sent if not t.is_punct and not t.is_space]
-        if len(words) < 3:
-            continue
-            
-        score = 0
-        for token in sent:
-            word_lower = token.text.lower()
-            if word_lower in word_freq:
-                score += word_freq[word_lower]
-            if word_lower in TECHNICAL_BOOST:
-                score += 3.0
-                
-        word_count = len(words)
-        if 8 <= word_count <= 25:
-            score *= 1.3
-        elif word_count > 30:
-            score *= 0.6
-        elif word_count < 6:
-            score *= 0.7
-            
-        if idx == 0:
-            score += 2.0
-            
-        if idx == len(sentences) - 1 and len(sentences) > 1:
-            score += 1.0
-            
-        sent_scores[sent] = score
-        
-    if not sent_scores:
-        res = " ".join([s.text.strip() for s in sentences[:max_sentences]])
-        return res
-        
-    sorted_sents = sorted(sent_scores.keys(), key=lambda x: sent_scores[x], reverse=True)
-    top_sents = sorted_sents[:max_sentences]
-    top_sents = sorted(top_sents, key=lambda x: x.start)
-    
-    formatted_sentences = []
-    for s in top_sents:
-        sent_text = s.text.strip()
-        if not sent_text:
-            continue
-        sent_text = sent_text[0].upper() + sent_text[1:]
-        sent_text = re.sub(r'^[\s,\.\-\:\/]+', '', sent_text)
-        if not sent_text.endswith(('.', '!', '?')):
-            sent_text += '.'
-        formatted_sentences.append(sent_text)
-        
-    summary = " ".join(formatted_sentences)
-    return summary
 
 
-@st.dialog("Detalhes do Chamado", width="large")
-def show_ticket_details(row: dict):
+
+def _on_modal_dismiss():
+    """Callback disparado automaticamente quando o modal é fechado (pelo X, botão Fechar ou clicando fora)."""
+    curr = st.session_state.get("active_ticket_modal")
+    if curr:
+        st.session_state["dismissed_ticket_id"] = curr
+    st.session_state["active_ticket_modal"] = None
+    if st.session_state.get("ticket_data_dirty"):
+        st.session_state["ticket_data_dirty"] = False
+        st.cache_data.clear()
+
+
+@st.dialog("Detalhes do Chamado", width="large", on_dismiss=_on_modal_dismiss)
+def show_ticket_details(row_or_id):
     """Exibe o modal com todos os detalhes e ações rápidas do chamado."""
+    if isinstance(row_or_id, dict):
+        ticket_id = str(row_or_id.get('id', '')).strip()
+    else:
+        ticket_id = str(row_or_id).strip()
+
+    # Busca os dados mais recentes diretamente do banco
+    fresh_row = get_ticket_by_id(ticket_id)
+    if not fresh_row and isinstance(row_or_id, dict):
+        fresh_row = row_or_id
+    elif not fresh_row:
+        st.error(f"Chamado #{ticket_id} não encontrado no banco de dados.")
+        if st.button("Fechar", key="close_modal_err_btn", width="stretch"):
+            _on_modal_dismiss()
+            st.rerun()
+        return
+
+    row = fresh_row
     title = str(row.get('titulo', '')).strip()
     if title and title.lower() not in ["none", "nan", "null", ""]:
         header_text = f"🎫 Chamado #{row.get('id', '')} – {title}"
@@ -313,8 +168,9 @@ def show_ticket_details(row: dict):
                     new_titulo = st.text_input("Título do Chamado:", value=curr_title, key=f"edit_titulo_{row.get('id')}")
                     if st.button("💾 Salvar Título", key=f"save_title_btn_{row.get('id')}"):
                         update_ticket_title(row.get('id'), new_titulo)
-                        st.success("Título do chamado atualizado com sucesso! (Fechar para atualizar a tabela)")
                         st.cache_data.clear()
+                        st.success("✅ Título atualizado com sucesso!")
+                        st.toast("✅ Título salvo com sucesso!", icon="💾")
 
                 with st.expander("📍 Editar Localização Manual", expanded=False):
                     curr_cp = _sanitize_val(row.get('cidade_predio'))
@@ -324,13 +180,19 @@ def show_ticket_details(row: dict):
                     curr_loc = _sanitize_val(row.get('localidade_fisica'))
                     if "nan" in curr_loc.lower() or "não encontrad" in curr_loc.lower():
                         curr_loc = ""
-                    new_cidade = st.text_input("Cidade - Prédio", value=curr_cp, key=f"edit_cidade_{row.get('id')}")
-                    new_unidade = st.text_input("Unidade", value=curr_un, key=f"edit_unidade_{row.get('id')}")
-                    new_localidade = st.text_input("Localidade Física", value=curr_loc, key=f"edit_localidade_{row.get('id')}")
+                    
+                    cid_key = f"edit_cidade_{row.get('id')}"
+                    un_key = f"edit_unidade_{row.get('id')}"
+                    loc_key = f"edit_localidade_{row.get('id')}"
+                    new_cidade = st.text_input("Cidade - Prédio", value=curr_cp, key=cid_key)
+                    new_unidade = st.text_input("Unidade", value=curr_un, key=un_key)
+                    new_localidade = st.text_input("Localidade Física", value=curr_loc, key=loc_key)
+
                     if st.button("💾 Salvar Localização", key=f"save_loc_btn_{row.get('id')}"):
                         update_ticket_location_details(row.get('id'), new_localidade, new_cidade, new_unidade)
-                        st.success("Localização salva! (Fechar para atualizar a tabela)")
                         st.cache_data.clear()
+                        st.success("✅ Localização salva com sucesso!")
+                        st.toast("✅ Localização salva com sucesso!", icon="💾")
             
         with col2:
             st.markdown("### ⚙️ Classificação & Status")
@@ -354,13 +216,16 @@ def show_ticket_details(row: dict):
                     default_idx = tag_options.index(tag_name)
                 except ValueError:
                     default_idx = 0
-                    
-                new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=f"select_tag_{row.get('id')}")
+                
+                tag_key = f"select_tag_{row.get('id')}"
+                new_tag = st.selectbox("🏷️ Alterar TAG Manualmente", options=tag_options, index=default_idx, key=tag_key)
+                
                 if new_tag != tag_name:
                     if st.button("💾 Salvar Nova TAG", key=f"save_tag_btn_{row.get('id')}"):
                         update_ticket_tag(row.get('id'), new_tag)
-                        st.success(f"TAG alterada com sucesso para {new_tag}! (Atualizará na tabela ao fechar o modal)")
                         st.cache_data.clear()
+                        st.success(f"✅ TAG alterada com sucesso para {new_tag}!")
+                        st.toast(f"✅ TAG alterada para {new_tag}!", icon="🏷️")
             
             link_url = row.get('link')
             if link_url:
@@ -372,11 +237,19 @@ def show_ticket_details(row: dict):
         if current_andamento.lower() in ["none", "nan", "null", ""]:
             current_andamento = ""
         if is_admin():
-            new_andamento = st.text_area("Nota rápida sobre o andamento do chamado:", value=current_andamento, key="andamento_modal_ta")
-            if st.button("💾 Salvar Nota de Andamento", key="save_andamento_modal_btn"):
-                update_ticket_andamento(row.get('id'), new_andamento)
-                st.success("Nota de andamento atualizada com sucesso! (Atualizará na tabela ao fechar o modal)")
+            ticket_id_key = str(row.get('id', '')).strip()
+            andamento_key = f"andamento_modal_ta_{ticket_id_key}"
+            new_andamento = st.text_area(
+                "Nota rápida sobre o andamento do chamado:", 
+                value=current_andamento, 
+                key=andamento_key
+            )
+            
+            if st.button("💾 Salvar Nota de Andamento", key=f"save_andamento_modal_btn_{ticket_id_key}"):
+                update_ticket_andamento(ticket_id_key, new_andamento)
                 st.cache_data.clear()
+                st.success("✅ Nota de andamento salva com sucesso!")
+                st.toast("✅ Nota de andamento salva com sucesso!", icon="💾")
         else:
             st.write(current_andamento if current_andamento else "*(Nenhuma nota de andamento registrada)*")
     
@@ -393,9 +266,11 @@ def show_ticket_details(row: dict):
                 st.text(c.get('texto', ''))
         
     if st.button("Fechar", key="close_modal_btn", width="stretch"):
-        st.session_state["active_ticket_modal"] = None
-        st.session_state["chamados_reset_counter"] = st.session_state.get("chamados_reset_counter", 0) + 1
+        _on_modal_dismiss()
         st.rerun()
+
+
+
 
 
 def render_chamados_page():
@@ -446,20 +321,8 @@ def render_chamados_page():
         st.warning("Nenhum dado encontrado no banco de dados. Execute o orquestrador primeiro!")
         return
 
-    # Conversão de data garantindo formato brasileiro e ISO correto
-    def parse_dates_safely(val):
-        if pd.isna(val) or not str(val).strip():
-            return pd.NaT
-        s = str(val).strip()
-        # Se estiver no padrão ISO YYYY-MM-DD HH:MM:SS
-        if re.match(r'^\d{4}-\d{2}-\d{2}', s):
-            return pd.to_datetime(s, errors='coerce')
-        # Se estiver no formato brasileiro DD/MM/YYYY HH:MM:SS
-        return pd.to_datetime(s, dayfirst=True, errors='coerce')
-
-    df['datetime_obj'] = df['data_criacao'].apply(parse_dates_safely)
-    df['Data Formatada'] = df['datetime_obj'].dt.strftime('%d/%m/%Y %H:%M:%S')
-    df['Data Formatada'] = df['Data Formatada'].fillna(df['data_criacao'])
+    df['datetime_obj'] = pd.to_datetime(df['data_criacao'], format='mixed', errors='coerce')
+    df['Data Formatada'] = df['datetime_obj'].dt.strftime('%d/%m/%Y %H:%M:%S').fillna(df['data_criacao'])
 
     # Ordenação padrão decrescente pela data correta
     df = df.sort_values(by='datetime_obj', ascending=False)
@@ -1038,8 +901,8 @@ def render_chamados_page():
 
         table_height = "content" if items_per_page >= 999999 else 600
 
-        # Chave dinâmica por página e contador de reset para garantir que a seleção não vaze entre páginas ou reabra o chamado anterior
-        grid_key = f"tabela_chamados_p{current_page}_v{st.session_state['chamados_reset_counter']}"
+        # Chave estável por página para preservar a ordenação de colunas (asc/desc) feita pelo usuário
+        grid_key = f"tabela_chamados_p{current_page}"
 
         selection_event = st.dataframe(
             df_page.style.apply(style_dataframe, axis=1),
@@ -1067,6 +930,7 @@ def render_chamados_page():
 
         selected_rows = selection_event.selection.rows if hasattr(selection_event, "selection") else []
         
+        # Identifica se houve uma nova seleção feita pelo usuário
         if selected_rows:
             selected_idx = selected_rows[0]
             if selected_idx < len(df_page):
@@ -1078,17 +942,16 @@ def render_chamados_page():
                 else:
                     clean_ticket_id = raw_id_str.strip()
 
-                # Busca o chamado correspondente na base filtrada pelo ID exato
-                match_records = filtered_df[filtered_df['id'].astype(str).str.strip() == clean_ticket_id]
-                if not match_records.empty:
-                    ticket_record = match_records.iloc[0]
-                else:
-                    # Fallback posicional se por acaso não encontrar por ID
-                    ticket_record = filtered_df.iloc[(current_page - 1) * items_per_page + selected_idx] if ((current_page - 1) * items_per_page + selected_idx) < len(filtered_df) else None
+                # Só reabre o modal se for um chamado diferente do último dispensado/fechado
+                if st.session_state.get("dismissed_ticket_id") != clean_ticket_id:
+                    st.session_state["active_ticket_modal"] = clean_ticket_id
+                    st.session_state["dismissed_ticket_id"] = None
+        else:
+            # Se o usuário desmarcou a linha, limpa o registro de dispensado
+            st.session_state["dismissed_ticket_id"] = None
 
-                if ticket_record is not None:
-                    row_dict = ticket_record.to_dict() if hasattr(ticket_record, "to_dict") else dict(ticket_record)
-                    show_ticket_details(row_dict)
+        if st.session_state.get("active_ticket_modal"):
+            show_ticket_details(st.session_state["active_ticket_modal"])
 
         render_pagination_controls(
             page_key="chamados",
@@ -1099,105 +962,3 @@ def render_chamados_page():
         )
 
 
-        st.markdown("---")
-        st.subheader("📲 Compartilhar Fila por WhatsApp")
-        with st.expander("💬 Gerar Resumo Formatado (Pronto para copiar e enviar)", expanded=False):
-            if filtered_df.empty:
-                st.info("Nenhum chamado na fila filtrada.")
-            else:
-                usar_resumo_ia = st.checkbox(
-                    "✨ Usar Resumos Inteligentes (NLP Local)", 
-                    value=True, 
-                    help="Usa Processamento de Linguagem Natural (spaCy) rodando totalmente local para resumir o chamado em poucas palavras."
-                )
-                
-                def get_ai_diagnostico(tag, desc):
-                    tag = str(tag).upper().strip()
-                    desc = str(desc).strip()
-                    
-                    clean_desc = re.sub(r'^(bom dia|boa tarde|boa noite|ola|prezados|favor|solicito|gostaria de)\b.*?\n', '', desc, flags=re.IGNORECASE)
-                    clean_desc = clean_desc.strip()
-                    
-                    sentences = re.split(r'[.!?\n]', clean_desc)
-                    first_sentence = ""
-                    for s in sentences:
-                        s = s.strip()
-                        if len(s) > 10:
-                            first_sentence = s
-                            break
-                    if not first_sentence:
-                        first_sentence = desc[:100]
-                        if len(desc) > 100:
-                            first_sentence += "..."
-                            
-                    diagnosticos = {
-                        "BACKUP": "Cópia de segurança ou restauração de arquivos pendente.",
-                        "EVENTO": "Suporte técnico para eventos ou solenidades institucionais.",
-                        "FORMATAÇÃO": "Computador com lentidão extrema/travamento exigindo formatação e reinstalação de OS.",
-                        "GARANTIA": "Defeito físico de fábrica em equipamento que exige acionamento de suporte terceirizado.",
-                        "IMPRESSORA": "Instabilidade na fila de impressão local, papel atolado ou configuração de nova impressora de rede.",
-                        "INSTALAÇÃO HARDWARE": "Necessidade de substituição física ou acréscimo de componente de hardware na máquina.",
-                        "INSTALAÇÃO SOFTWARE": "Instalação, licenciamento ou atualização corretiva de programas corporativos.",
-                        "MANUTENÇÃO": "Necessidade de intervenção mecânica/elétrica, limpeza interna ou reaperto de conexões físicas.",
-                        "MONITOR": "Sem sinal de vídeo, tela preta, piscando ou distorcendo imagens de saída.",
-                        "MUDANÇA": "Deslocamento físico completo de equipamentos de informática entre salas ou comarcas.",
-                        "PREPARAÇÃO COMPUTADORES": "Configuração inicial de máquinas novas e perfis de rede para novos servidores.",
-                        "REDE": "Ausência total de internet, falha de rede física ou lentidão no tráfego de dados locais.",
-                        "SOLICITAÇÃO SSD": "Melhoria de desempenho físico de máquina lenta via substituição por disco de estado sólido (SSD).",
-                        "SUPORTE": "Instruções de uso básico ou esclarecimento de dúvidas técnicas em sistemas internos.",
-                        "TELEFONIA FIXA": "Aparelho de telefone mudo, ramal com ruídos/chiado ou necessidade de transferência de ramal.",
-                        "VIAGEM": "Deslocamento programado da equipe STI para atendimento em promotoria regional externa.",
-                        "VISTORIA CPDS": "Check-up preventivo completo nos servidores e no centro de processamento de dados local."
-                    }
-                    
-                    diag = diagnosticos.get(tag, "Análise e resolução de ticket técnico STI.")
-                    return f"🧠 *Possível Problema:* {diag}\n🩺 *Sintoma:* _{first_sentence}_"
-     
-                lines = []
-                lines.append("📋 *LISTA DE CHAMADOS STI - MPMS* 📋\n")
-                for _, row in filtered_df.iterrows():
-                    cid = str(row['id']).strip()
-                    link = str(row.get('link', '')).strip()
-                    if not link or link.lower() in ["none", "nan", "null", ""]:
-                        if row['base'] == 'CitSmart':
-                            link = f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}"
-                        else:
-                            link = "https://central.mpms.mp.br/otrs/index.pl"
-                    
-                    user = str(row['usuario'])
-                    loc = str(row['localidade_fisica'])
-                    tag = str(row['tag'])
-                    desc = str(row['descricao']).strip()
-                    
-                    comments_list = get_comments_by_ticket(row['id'])
-                    comments_text = ""
-                    comments_summary_input = ""
-                    if comments_list:
-                        comments_text = "💬 *Histórico de Acompanhamento:*"
-                        comments_summary_input = "\n".join([f"- {c['data']} ({c['autor']}): {c['texto']}" for c in comments_list])
-                        for i, c in enumerate(comments_list, start=1):
-                            comments_text += f"\n  • #{i} [{c['data']}] – {c['autor']}: {c['texto']}"
-                    
-                    diagnostico_ia = get_ai_diagnostico(tag, desc)
-                    
-                    lines.append(f"🎫 *Chamado #{cid}* ({row['base']})")
-                    lines.append(f"👤 *Usuário:* {user}")
-                    lines.append(f"📍 *Local:* {loc}")
-                    lines.append(f"🏷️ *TAG:* {tag}")
-                    lines.append(f"{diagnostico_ia}")
-                    
-                    if usar_resumo_ia:
-                        resumo_nlp = summarize_ticket_locally(desc, comments_summary_input)
-                        lines.append(f"📝 *Resumo Inteligente:* {resumo_nlp}")
-                    else:
-                        lines.append(f"📝 *Problema Completo:*")
-                        lines.append(f"{desc}")
-                        if comments_text:
-                            lines.append(comments_text)
-                    
-                    lines.append(f"🔗 *Link Direto:* {link}")
-                    lines.append("--------------------------------------------------")
-                
-                whats_text = "\n".join(lines)
-                st.write("Dica: Use o botão de **copiar** no canto superior direito do bloco de código abaixo:")
-                st.code(whats_text, language="text")

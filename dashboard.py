@@ -74,6 +74,27 @@ st.set_page_config(
     layout="wide"
 )
 
+# Injeção forçada de favicon via HTML/base64 para contornar cache agressivo do navegador
+if favicon_path.exists():
+    import base64
+    try:
+        with open(favicon_path, "rb") as fav_f:
+            fav_b64 = base64.b64encode(fav_f.read()).decode("utf-8")
+            st.markdown(
+                f"""
+                <script>
+                    var link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+                    link.type = 'image/png';
+                    link.rel = 'shortcut icon';
+                    link.href = 'data:image/png;base64,{fav_b64}';
+                    document.getElementsByTagName('head')[0].appendChild(link);
+                </script>
+                """,
+                unsafe_allow_html=True
+            )
+    except Exception:
+        pass
+
 # Carrega arquivo de estilos CSS globais da pasta assets
 css_path = root_dir / "assets" / "css" / "styles.css"
 if css_path.exists():

@@ -419,7 +419,6 @@ def save_comments_to_db(chamado_id: str, comments: list):
 
 def get_comments_by_ticket(chamado_id: str) -> list:
     """Retorna todos os comentários de um chamado ordenados por id (filtrando robôs)."""
-    setup_database()
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -524,3 +523,41 @@ def load_data():
         df['localidade_fisica'] = df['localidade_fisica'].apply(_clean_loc_series)
 
     return df
+
+
+def get_ticket_by_id(cid: str) -> dict:
+    """Busca um chamado específico no banco de dados e retorna como dicionário sanitizado."""
+    if not cid:
+        return {}
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM chamados WHERE id = ?", conn, params=(cid_clean,))
+    conn.close()
+
+    if df.empty:
+        return {}
+
+    # Sanitização preventiva
+    for col in ['ip_origem', 'hostname', 'titulo', 'id_cliente', 'andamento', 'cidade_predio', 'unidade']:
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype(str).replace(r'^(?i:nan|none|null|<na>)$', '', regex=True).str.strip()
+
+    if 'unidade' in df.columns:
+        df['unidade'] = df['unidade'].apply(
+            lambda x: "" if any(term in str(x).lower() for term in ["não encontrad", "nao encontrad"]) else str(x).strip()
+        )
+
+    if 'localidade_fisica' in df.columns:
+        def _clean_loc_series(val):
+            if pd.isna(val):
+                return "Não identificada"
+            s = str(val).strip()
+            if s.lower() in ["nan", "none", "null", "<na>", "", "não identificada"]:
+                return "Não identificada"
+            if "nan -" in s.lower() or "- nan" in s.lower():
+                return "Não identificada"
+            return s
+        df['localidade_fisica'] = df['localidade_fisica'].apply(_clean_loc_series)
+
+    record = df.iloc[0].to_dict()
+    return record
