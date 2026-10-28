@@ -70,10 +70,30 @@ except ImportError:
             else:
                 self.data = {}
                 self.columns = columns or []
-            self.empty = len(self.data) == 0
+            self.empty = len(self.data) == 0 or (len(self.data) > 0 and len(next(iter(self.data.values()))) == 0)
             self.at = _MockAtIndexer(self)
             self.loc = _MockAtIndexer(self)
             self.iloc = _MockAtIndexer(self)
+
+        def head(self, n=5):
+            if not self.data:
+                return self.copy()
+            new_data = {col: self.data[col][:n] for col in self.columns if col in self.data}
+            return MockDataFrame(data=new_data, columns=list(self.columns))
+
+        def groupby(self, by_col):
+            if not self.data or by_col not in self.data:
+                return []
+            groups = {}
+            rows_count = len(self)
+            for i in range(rows_count):
+                k = self.data[by_col][i]
+                groups.setdefault(k, []).append(i)
+            result = []
+            for k, idxs in groups.items():
+                g_data = {col: [self.data[col][i] for i in idxs] for col in self.columns if col in self.data}
+                result.append((k, MockDataFrame(data=g_data, columns=list(self.columns))))
+            return result
 
         def copy(self):
             return MockDataFrame(data=dict(self.data), columns=list(self.columns))
@@ -120,19 +140,67 @@ except ImportError:
         def __getitem__(self, item):
             if isinstance(self.data, dict) and item in self.data:
                 col_data = self.data[item]
-                mock_col = MagicMock()
-                mock_col.values = col_data if isinstance(col_data, list) else [col_data]
-                mock_col.tolist = lambda: col_data if isinstance(col_data, list) else [col_data]
-                return mock_col
-            mock_col = MagicMock()
-            mock_col.values = []
-            mock_col.tolist = lambda: []
-            return mock_col
+                return _MockColumn(col_data if isinstance(col_data, list) else [col_data])
+            return _MockColumn([])
+
+        def __setitem__(self, item, value):
+            if isinstance(value, _MockColumn):
+                self.data[item] = list(value.values)
+            elif isinstance(value, list):
+                self.data[item] = list(value)
+            else:
+                rows_count = len(self) if self.data else 1
+                self.data[item] = [value] * rows_count
+            if item not in self.columns:
+                self.columns.append(item)
+            self.empty = len(self.data) == 0 or len(self) == 0
 
         def __len__(self):
             if isinstance(self.data, dict) and self.data:
                 return len(next(iter(self.data.values())))
             return 0
+
+    class _MockColumn:
+        def __init__(self, values):
+            self.values = list(values)
+
+        def tolist(self):
+            return list(self.values)
+
+        def dropna(self):
+            return _MockColumn([v for v in self.values if v is not None and not (isinstance(v, float) and v != v)])
+
+        def fillna(self, fill_val=""):
+            return _MockColumn([fill_val if (v is None or (isinstance(v, float) and v != v)) else v for v in self.values])
+
+        def astype(self, _t):
+            return _MockColumn([str(v) if _t is str else v for v in self.values])
+
+        def replace(self, pat, repl, regex=False):
+            import re
+            if regex:
+                return _MockColumn([re.sub(pat, repl, str(v)) for v in self.values])
+            return _MockColumn([repl if v == pat else v for v in self.values])
+
+        def apply(self, fn):
+            return _MockColumn([fn(v) for v in self.values])
+
+        def sum(self):
+            return sum(int(v) for v in self.values if v is not None)
+
+        @property
+        def str(self):
+            col_self = self
+            class _StrMethods:
+                def strip(self_s):
+                    return _MockColumn([str(v).strip() for v in col_self.values])
+            return _StrMethods()
+
+        def __len__(self):
+            return len(self.values)
+
+        def __iter__(self):
+            return iter(self.values)
 
     class MockSeries(dict):
         def __init__(self, data=None, **kwargs):
@@ -214,9 +282,14 @@ except ImportError:
     mock_st.query_params = {}
     
     def _decorator_helper(*args, **kwargs):
+        def _wrap(fn):
+            fn.clear = MagicMock()
+            return fn
         if len(args) == 1 and callable(args[0]) and not kwargs:
-            return args[0]
-        return lambda fn: fn
+            return _wrap(args[0])
+        return _wrap
+
+    _decorator_helper.clear = MagicMock()
 
     mock_st.dialog = _decorator_helper
     mock_st.cache_data = _decorator_helper
@@ -368,6 +441,87 @@ _mock_module_if_missing("psycopg2", {
 _mock_module_if_missing("psycopg2.extras", {
     "RealDictCursor": MagicMock(),
 })
+
+# 7b. Mock de itsdangerous e selenium caso ausentes no host
+try:
+    import itsdangerous
+except ImportError:
+    import json
+    import base64
+    import hmac
+    import hashlib
+    import time as _time
+
+    class _SignatureExpired(Exception):
+        pass
+
+    class _BadSignature(Exception):
+        pass
+
+    class _URLSafeTimedSerializer:
+        def __init__(self, secret_key, salt="default"):
+            self.secret_key = str(secret_key).encode()
+            self.salt = str(salt).encode()
+
+        def dumps(self, obj):
+            payload = {"d": obj, "t": _time.time()}
+            raw = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+            sig = hmac.new(self.secret_key + self.salt, raw.encode(), hashlib.sha256).hexdigest()
+            return f"{raw}.{sig}"
+
+        def loads(self, token, max_age=None):
+            if not isinstance(token, str) or "." not in token:
+                raise _BadSignature("Invalid token format")
+            raw, sig = token.rsplit(".", 1)
+            expected = hmac.new(self.secret_key + self.salt, raw.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig, expected):
+                raise _BadSignature("Bad signature")
+            try:
+                payload = json.loads(base64.urlsafe_b64decode(raw.encode()).decode())
+            except Exception as e:
+                raise _BadSignature("Corrupted payload") from e
+            if max_age is not None and (_time.time() - payload.get("t", 0)) > max_age:
+                raise _SignatureExpired("Token expired")
+            return payload.get("d")
+
+    _mock_module_if_missing("itsdangerous", {
+        "URLSafeTimedSerializer": _URLSafeTimedSerializer,
+        "SignatureExpired": _SignatureExpired,
+        "BadSignature": _BadSignature,
+    })
+
+_mock_module_if_missing("selenium", {"webdriver": MagicMock()})
+_mock_module_if_missing("selenium.webdriver", {"Chrome": MagicMock(), "ChromeOptions": MagicMock()})
+_mock_module_if_missing("selenium.webdriver.common", {})
+_mock_module_if_missing("selenium.webdriver.common.by", {"By": MagicMock()})
+_mock_module_if_missing("selenium.webdriver.common.keys", {"Keys": MagicMock()})
+_mock_module_if_missing("selenium.webdriver.chrome", {})
+_mock_module_if_missing("selenium.webdriver.chrome.options", {"Options": MagicMock()})
+_mock_module_if_missing("selenium.webdriver.chrome.service", {"Service": MagicMock()})
+_mock_module_if_missing("selenium.webdriver.support", {})
+_mock_module_if_missing("selenium.webdriver.support.ui", {"WebDriverWait": MagicMock()})
+_mock_module_if_missing("selenium.webdriver.support.expected_conditions", {})
+_mock_module_if_missing("selenium.common", {})
+_mock_module_if_missing("selenium.common.exceptions", {
+    "TimeoutException": Exception,
+    "WebDriverException": Exception,
+    "NoSuchElementException": Exception,
+})
+_mock_module_if_missing("webdriver_manager", {})
+_mock_module_if_missing("webdriver_manager.chrome", {"ChromeDriverManager": MagicMock()})
+
+import unicodedata as _unicodedata
+_mock_module_if_missing("unidecode", {
+    "unidecode": lambda s: "".join(
+        c for c in _unicodedata.normalize("NFD", str(s)) if _unicodedata.category(c) != "Mn"
+    ),
+})
+_mock_module_if_missing("pdfplumber", {
+    "open": MagicMock(),
+})
+_mock_module_if_missing("playwright", {})
+_mock_module_if_missing("playwright.sync_api", {"sync_playwright": MagicMock()})
+_mock_module_if_missing("playwright.async_api", {"async_playwright": MagicMock()})
 
 # 8. Mock de bs4 (BeautifulSoup)
 try:

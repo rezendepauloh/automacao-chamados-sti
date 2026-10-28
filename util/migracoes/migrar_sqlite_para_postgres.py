@@ -97,21 +97,24 @@ def migrate():
         for col in columns_info:
             c_name = col[1]
             c_type = col[2]
+            c_dflt = col[4]
             c_pk = col[5]
             col_names.append(c_name)
             
             pg_type = map_sqlite_type_to_pg(c_type, c_name)
+            dflt_clause = ""
+            if c_dflt is not None and c_pk == 0:
+                if "CURRENT_TIMESTAMP" in str(c_dflt).upper() and pg_type == "TEXT":
+                    dflt_clause = " DEFAULT to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')"
+                else:
+                    dflt_clause = f" DEFAULT {c_dflt}"
             
             # Se for chave primária auto-increment
             if c_pk > 0:
                 pk_cols.append(f'"{c_name}"')
-                if "INT" in (c_type or "").upper():
-                    # Usamos INTEGER/BIGINT e criaremos sequência posteriormente
-                    col_defs.append(f'"{c_name}" {pg_type}')
-                else:
-                    col_defs.append(f'"{c_name}" {pg_type}')
-            else:
                 col_defs.append(f'"{c_name}" {pg_type}')
+            else:
+                col_defs.append(f'"{c_name}" {pg_type}{dflt_clause}')
 
         pk_clause = f", PRIMARY KEY ({', '.join(pk_cols)})" if pk_cols else ""
         create_table_sql = f'CREATE TABLE IF NOT EXISTS "{table}" (\n  ' + ',\n  '.join(col_defs) + pk_clause + '\n);'

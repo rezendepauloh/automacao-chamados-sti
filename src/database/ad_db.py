@@ -52,7 +52,7 @@ def setup_ad_tables():
         title TEXT,
         dn TEXT,
         parent_ou_dn TEXT,
-        is_active BOOLEAN,
+        is_active INTEGER DEFAULT 1,
         user_account_control INTEGER,
         when_created TEXT,
         last_logon TEXT,
@@ -124,7 +124,7 @@ def setup_ad_tables():
         managed_by TEXT,
         dn TEXT,
         parent_ou_dn TEXT,
-        is_active BOOLEAN,
+        is_active INTEGER DEFAULT 1,
         user_account_control INTEGER,
         when_created TEXT,
         last_logon TEXT,
@@ -230,7 +230,7 @@ def save_ad_cache(
                 u.get("title", ""),
                 u.get("dn", ""),
                 u.get("parent_ou_dn", ""),
-                bool(u.get("is_active", True)),
+                1 if u.get("is_active", True) else 0,
                 int(u.get("user_account_control", 512)),
                 str(u.get("when_created", "")),
                 str(u.get("last_logon", "")),
@@ -299,7 +299,7 @@ def save_ad_cache(
                 c.get("managed_by", ""),
                 c.get("dn", ""),
                 c.get("parent_ou_dn", ""),
-                bool(c.get("is_active", True)),
+                1 if c.get("is_active", True) else 0,
                 int(c.get("user_account_control", 4096)),
                 str(c.get("when_created", "")),
                 str(c.get("last_logon", "")),
@@ -394,9 +394,9 @@ def get_ad_users_df(status_filter: str = "Todos", department: str = "Todos", off
         ph = "%s" if is_pg else "?"
 
         if status_filter == "Ativos":
-            query += f" AND is_active = {('TRUE' if is_pg else '1')}"
+            query += " AND is_active = 1"
         elif status_filter == "Desativados":
-            query += f" AND is_active = {('FALSE' if is_pg else '0')}"
+            query += " AND is_active = 0"
 
         if department and department != "Todos":
             query += f" AND (department = {ph} OR department = {ph})"
@@ -586,9 +586,9 @@ def get_ad_computers_df(
         ph = "%s" if is_pg else "?"
 
         if status_filter == "Ativos":
-            query += f" AND is_active = {('TRUE' if is_pg else '1')}"
+            query += " AND is_active = 1"
         elif status_filter == "Desativados":
-            query += f" AND is_active = {('FALSE' if is_pg else '0')}"
+            query += " AND is_active = 0"
 
         if machine_type == "Servidores":
             query += f" AND LOWER(operating_system) LIKE {ph}"

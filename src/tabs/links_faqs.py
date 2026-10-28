@@ -159,8 +159,8 @@ def sync_sharepoint_catalog_via_api() -> dict:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
     }
 
-    db_path = Path(__file__).parent.parent.parent / "chamados.db"
-    conn = sqlite3.connect(db_path)
+    from src.database.connection import get_connection
+    conn = get_connection()
     cursor = conn.cursor()
 
     stats = {"faqs": 0, "videos": 0, "imagens": 0}
@@ -839,9 +839,10 @@ def render_faq_page():
     json_videos_path = root_dir / "temp" / "videos_faq_template.json"
     json_imagens_path = root_dir / "temp" / "imagens_faq_template.json"
     
-    # Carrega dados do SQLite (FAQs, Vídeos FAQ e Imagens FAQ)
+    # Carrega dados do banco de dados (FAQs, Vídeos FAQ e Imagens FAQ)
     try:
-        conn = sqlite3.connect(db_path)
+        from src.database.connection import get_connection
+        conn = get_connection()
         cursor = conn.cursor()
         
         # 1. Tabela de FAQs / Artigos
@@ -869,8 +870,9 @@ def render_faq_page():
                 faqs_json = json.load(f)
             for item in faqs_json:
                 cursor.execute("""
-                    INSERT OR IGNORE INTO faqs (titulo, tipo_faq, url, conteudo)
+                    INSERT INTO faqs (titulo, tipo_faq, url, conteudo)
                     VALUES (?, ?, ?, ?)
+                    ON CONFLICT (url) DO NOTHING
                 """, (item.get("titulo"), item.get("tipo_faq", "Geral"), item.get("url"), item.get("conteudo")))
             conn.commit()
 
@@ -895,8 +897,9 @@ def render_faq_page():
                 vids_json = json.load(f)
             for item in vids_json:
                 cursor.execute("""
-                    INSERT OR IGNORE INTO faq_videos (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
+                    INSERT INTO faq_videos (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
                     VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (url) DO NOTHING
                 """, (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)))
             conn.commit()
 
@@ -921,8 +924,9 @@ def render_faq_page():
                 imgs_json = json.load(f)
             for item in imgs_json:
                 cursor.execute("""
-                    INSERT OR IGNORE INTO faq_imagens (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
+                    INSERT INTO faq_imagens (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
                     VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (url) DO NOTHING
                 """, (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)))
             conn.commit()
 

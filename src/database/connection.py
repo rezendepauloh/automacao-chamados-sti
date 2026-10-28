@@ -45,6 +45,35 @@ class PostgreSQLCompatibleCursor(_pg_base_cursor):
         except Exception:
             return None
 
+    @staticmethod
+    def _translate_sqlite_query(query: str, has_vars: bool = False) -> str:
+        if 'INTEGER PRIMARY KEY AUTOINCREMENT' in query:
+            query = query.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
+
+        if 'ON CONFLICT' in query:
+            # Em CREATE TABLE no PostgreSQL, UNIQUE(...) ON CONFLICT REPLACE / IGNORE não é sintaxe ANSI (apenas UNIQUE(...))
+            query = re.sub(r'\s+ON\s+CONFLICT\s+(?:REPLACE|IGNORE)', '', query, flags=re.I)
+
+        if re.search(r'INSERT\s+OR\s+IGNORE\s+INTO', query, re.I):
+            query = re.sub(r'INSERT\s+OR\s+IGNORE\s+INTO', 'INSERT INTO', query, flags=re.I)
+            if 'ON CONFLICT' not in query.upper():
+                stripped = query.rstrip()
+                if stripped.endswith(';'):
+                    query = stripped[:-1] + ' ON CONFLICT DO NOTHING;'
+                else:
+                    query = stripped + ' ON CONFLICT DO NOTHING'
+
+        if re.search(r'INSERT\s+OR\s+REPLACE\s+INTO', query, re.I):
+            query = re.sub(r'INSERT\s+OR\s+REPLACE\s+INTO', 'INSERT INTO', query, flags=re.I)
+
+        if 'COLLATE NOCASE' in query:
+            query = re.sub(r'\s+COLLATE\s+NOCASE', '', query, flags=re.I)
+
+        if has_vars and '?' in query:
+            query = query.replace('?', '%s')
+
+        return query
+
     def execute(self, query, vars=None):
         self._custom_lastrowid = None
         if 'PRAGMA table_info(' in query:
@@ -60,24 +89,7 @@ class PostgreSQLCompatibleCursor(_pg_base_cursor):
                     ORDER BY ordinal_position
                 ''', (tbl,))
 
-        if 'INTEGER PRIMARY KEY AUTOINCREMENT' in query:
-            query = query.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
-
-        if 'ON CONFLICT' in query:
-            # Em CREATE TABLE no PostgreSQL, UNIQUE(...) ON CONFLICT REPLACE / IGNORE não é sintaxe ANSI (apenas UNIQUE(...))
-            query = re.sub(r'\s+ON\s+CONFLICT\s+(?:REPLACE|IGNORE)', '', query, flags=re.I)
-
-        if 'INSERT OR REPLACE INTO' in query:
-            query = query.replace('INSERT OR REPLACE INTO', 'INSERT INTO')
-
-        if 'INSERT OR IGNORE INTO' in query:
-            query = query.replace('INSERT OR IGNORE INTO', 'INSERT INTO')
-
-        if 'COLLATE NOCASE' in query:
-            query = re.sub(r'\s+COLLATE\s+NOCASE', '', query, flags=re.I)
-
-        if vars is not None and '?' in query:
-            query = query.replace('?', '%s')
+        query = self._translate_sqlite_query(query, has_vars=(vars is not None))
 
         # Detecta tabela em INSERT para emular cursor.lastrowid via currval / pg_get_serial_sequence
         insert_match = re.match(r'^\s*INSERT\s+INTO\s+([a-zA-Z0-9_]+)', query, re.I)
@@ -114,8 +126,7 @@ class PostgreSQLCompatibleCursor(_pg_base_cursor):
 
     def executemany(self, query, vars_list):
         self._custom_lastrowid = None
-        if vars_list and '?' in query:
-            query = query.replace('?', '%s')
+        query = self._translate_sqlite_query(query, has_vars=bool(vars_list))
         super().executemany(query, vars_list)
         return self
 
@@ -159,6 +170,12 @@ class PooledPostgresConnection:
         if not self._closed:
             self._closed = True
             try:
+                # Limpa qualquer transação abortada ou pendente antes de devolver ao pool
+                if getattr(self._raw_conn, "closed", 0) == 0:
+                    try:
+                        self._raw_conn.rollback()
+                    except Exception:
+                        pass
                 self._pool.putconn(self._raw_conn)
             except Exception:
                 pass
@@ -171,6 +188,65 @@ class PooledPostgresConnection:
 
     def __getattr__(self, name):
         return getattr(self._raw_conn, name)
+
+
+def save_dataframe_to_db(df, table_name: str, conn, if_exists: str = "replace"):
+    """
+    Persiste um DataFrame pandas em uma tabela do banco de dados de forma compatível
+    tanto com SQLite (sqlite3) quanto com PostgreSQL (psycopg2/PooledPostgresConnection),
+    sem depender de SQLAlchemy ou sqlite_master.
+    """
+    import pandas as pd
+    if isinstance(conn, sqlite3.Connection) and hasattr(df, "to_sql"):
+        try:
+            df.to_sql(table_name, conn, if_exists=if_exists, index=False)
+            return
+        except Exception:
+            pass
+
+    cursor = conn.cursor()
+    cols = [str(c) for c in df.columns]
+    if not cols:
+        return
+
+    escaped_cols = [f'"{c}"' for c in cols]
+
+    if if_exists == "replace":
+        cursor.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        col_defs = []
+        for c in cols:
+            dtype_str = str(getattr(df[c], "dtype", "object")).lower() if hasattr(df, "__getitem__") else "object"
+            if "int" in dtype_str:
+                pg_type = "BIGINT"
+            elif "float" in dtype_str:
+                pg_type = "DOUBLE PRECISION"
+            else:
+                pg_type = "TEXT"
+            col_defs.append(f'"{c}" {pg_type}')
+        cursor.execute(f'CREATE TABLE "{table_name}" ({", ".join(col_defs)})')
+    elif if_exists == "append":
+        col_defs = [f'"{c}" TEXT' for c in cols]
+        cursor.execute(f'CREATE TABLE IF NOT EXISTS "{table_name}" ({", ".join(col_defs)})')
+
+    if len(df) > 0:
+        rows = []
+        for _, r in df.iterrows():
+            row_vals = []
+            for c in cols:
+                v = r[c] if c in r else None
+                if v is None or (hasattr(pd, "isna") and pd.isna(v)):
+                    row_vals.append(None)
+                elif hasattr(v, "isoformat") and not isinstance(v, str):
+                    row_vals.append(v.strftime("%Y-%m-%d %H:%M:%S") if hasattr(v, "strftime") else str(v))
+                elif hasattr(v, "item"):
+                    row_vals.append(v.item())
+                else:
+                    row_vals.append(v)
+            rows.append(tuple(row_vals))
+
+        placeholders = ", ".join(["?"] * len(cols))
+        insert_sql = f'INSERT INTO "{table_name}" ({", ".join(escaped_cols)}) VALUES ({placeholders})'
+        cursor.executemany(insert_sql, rows)
 
 
 def get_connection():

@@ -1,18 +1,15 @@
+import sys
 import sqlite3
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "chamados.db"
-if not DB_PATH.exists():
-    DB_PATH = Path("chamados.db")
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from src.database.connection import get_connection
 
 def limpar_localidades():
-    if not DB_PATH.exists():
-        print(f"❌ Banco de dados não encontrado em: {DB_PATH.resolve()}")
-        return
-
-    print(f"🔧 Conectando ao banco: {DB_PATH.resolve()}")
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
 
     # 1. Remove chamados espúrios com ID 'nan' ou nulo

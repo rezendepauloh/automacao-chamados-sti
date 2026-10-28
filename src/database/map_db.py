@@ -35,7 +35,10 @@ def save_map_config(config_data: dict):
     
     predios = config_data.get("predios", [])
     config_json_str = json.dumps({"predios": predios})
-    cursor.execute("INSERT OR REPLACE INTO mapa_config (id, config_json) VALUES ('config_atual', ?)", (config_json_str,))
+    cursor.execute("""
+        INSERT INTO mapa_config (id, config_json) VALUES ('config_atual', ?)
+        ON CONFLICT (id) DO UPDATE SET config_json = EXCLUDED.config_json
+    """, (config_json_str,))
     
     cursor.execute("DELETE FROM mapa_pins")
     
@@ -44,8 +47,15 @@ def save_map_config(config_data: dict):
         p_pins = predio.get("pins", [])
         for pin in p_pins:
             cursor.execute("""
-            INSERT OR REPLACE INTO mapa_pins (id, predio_id, pavimento_id, sala, x, y, descricao)
+            INSERT INTO mapa_pins (id, predio_id, pavimento_id, sala, x, y, descricao)
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+                predio_id = EXCLUDED.predio_id,
+                pavimento_id = EXCLUDED.pavimento_id,
+                sala = EXCLUDED.sala,
+                x = EXCLUDED.x,
+                y = EXCLUDED.y,
+                descricao = EXCLUDED.descricao
             """, (
                 str(pin.get("id")),
                 str(pin.get("predio_id", p_id)),
@@ -59,8 +69,15 @@ def save_map_config(config_data: dict):
     pins = config_data.get("pins", [])
     for pin in pins:
         cursor.execute("""
-        INSERT OR REPLACE INTO mapa_pins (id, predio_id, pavimento_id, sala, x, y, descricao)
+        INSERT INTO mapa_pins (id, predio_id, pavimento_id, sala, x, y, descricao)
         VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO UPDATE SET
+            predio_id = EXCLUDED.predio_id,
+            pavimento_id = EXCLUDED.pavimento_id,
+            sala = EXCLUDED.sala,
+            x = EXCLUDED.x,
+            y = EXCLUDED.y,
+            descricao = EXCLUDED.descricao
         """, (
             str(pin.get("id")),
             str(pin.get("predio_id")),

@@ -1,23 +1,39 @@
+from datetime import datetime
 import pandas as pd
-from .connection import get_connection
+from .connection import get_connection, DB_TYPE
 
 def setup_notifications_table():
     """Cria a tabela de notificações se não existir."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS notificacoes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tipo TEXT NOT NULL,
-        titulo TEXT NOT NULL,
-        mensagem TEXT NOT NULL,
-        data_evento TEXT,
-        link_pagina TEXT,
-        lida INTEGER DEFAULT 0,
-        data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(tipo, titulo, data_evento) ON CONFLICT IGNORE
-    )
-    """)
+    if DB_TYPE in ["postgres", "postgresql"]:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notificacoes (
+            id SERIAL PRIMARY KEY,
+            tipo TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            mensagem TEXT NOT NULL,
+            data_evento TEXT,
+            link_pagina TEXT,
+            lida INTEGER DEFAULT 0,
+            data_criacao TEXT DEFAULT to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS'),
+            CONSTRAINT uq_notificacoes_evento UNIQUE (tipo, titulo, data_evento)
+        )
+        """)
+    else:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notificacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            mensagem TEXT NOT NULL,
+            data_evento TEXT,
+            link_pagina TEXT,
+            lida INTEGER DEFAULT 0,
+            data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(tipo, titulo, data_evento) ON CONFLICT IGNORE
+        )
+        """)
     conn.commit()
     conn.close()
 
@@ -26,15 +42,21 @@ def add_notification(tipo: str, titulo: str, mensagem: str, data_evento: str = "
     setup_notifications_table()
     conn = get_connection()
     cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         cursor.execute("""
-        INSERT INTO notificacoes (tipo, titulo, mensagem, data_evento, link_pagina, lida)
-        VALUES (?, ?, ?, ?, ?, 0)
-        """, (tipo, titulo, mensagem, data_evento, link_pagina))
+        INSERT INTO notificacoes (tipo, titulo, mensagem, data_evento, link_pagina, lida, data_criacao)
+        VALUES (?, ?, ?, ?, ?, 0, ?)
+        ON CONFLICT (tipo, titulo, data_evento) DO NOTHING
+        """, (tipo, titulo, mensagem, data_evento, link_pagina, now_str))
         inserted = cursor.rowcount > 0
         conn.commit()
         return inserted
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return False
     finally:
         conn.close()

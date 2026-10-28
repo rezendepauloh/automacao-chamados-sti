@@ -2,7 +2,7 @@ import shutil
 import tempfile
 from pathlib import Path
 import pandas as pd
-from .connection import get_connection
+from .connection import get_connection, save_dataframe_to_db
 
 def sync_fiscalizacao_from_excel(file_path_or_buffer) -> bool:
     """Lê os dados da planilha de fiscalização de contratos e salva no SQLite em tabelas dedicadas."""
@@ -40,9 +40,9 @@ def sync_fiscalizacao_from_excel(file_path_or_buffer) -> bool:
 
         conn = get_connection()
         try:
-            df_indicacoes.to_sql("fiscalizacao_indicacoes", conn, if_exists="replace", index=False)
-            df_publicacoes.to_sql("fiscalizacao_publicacoes", conn, if_exists="replace", index=False)
-            df_contador.to_sql("fiscalizacao_contador", conn, if_exists="replace", index=False)
+            save_dataframe_to_db(df_indicacoes, "fiscalizacao_indicacoes", conn, if_exists="replace")
+            save_dataframe_to_db(df_publicacoes, "fiscalizacao_publicacoes", conn, if_exists="replace")
+            save_dataframe_to_db(df_contador, "fiscalizacao_contador", conn, if_exists="replace")
             conn.commit()
         finally:
             conn.close()

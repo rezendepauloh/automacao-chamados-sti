@@ -16,14 +16,15 @@ if str(src_dir) not in sys.path:
 db_path = root_dir / "chamados.db"
 
 from src.config import setup_logging, DEBUG_DIR_FAQ
+from src.database.connection import get_connection
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 logger = setup_logging(DEBUG_DIR_FAQ / "faq_scraper.log", __name__)
 
 
 def init_faq_schema():
-    """Garante que a tabela faqs possui a estrutura completa no SQLite."""
-    conn = sqlite3.connect(db_path)
+    """Garante que a tabela faqs possui a estrutura completa no banco de dados."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS faqs (
@@ -132,7 +133,7 @@ def scrape_all_faqs():
     print_header("SCRAPER FAQ - BASE DE CONHECIMENTO", color=CYAN)
     logger.info("🤖 Iniciando raspagem de FAQs e Manuais do SharePoint...")
     init_faq_schema()
-    conn = sqlite3.connect(db_path)
+    conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""

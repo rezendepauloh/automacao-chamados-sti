@@ -1,17 +1,15 @@
+import sys
 import sqlite3
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "chamados.db"
-if not DB_PATH.exists():
-    DB_PATH = Path("chamados.db")
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from src.database.connection import get_connection
 
 def limpar_chamados_automaticos():
-    if not DB_PATH.exists():
-        print(f"Erro: Banco de dados '{DB_PATH}' não encontrado.")
-        return
-
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
 
     usuarios_remocao = ('Monitoramento Adm Mpms', 'Adm Ticket Por Email')
@@ -43,11 +41,7 @@ def limpar_chamados_automaticos():
     print(f"   - Comentários removidos: {comentarios_removidos}")
 
 def limpar_impressoras_invalidas():
-    if not DB_PATH.exists():
-        print(f"Erro: Banco de dados '{DB_PATH}' não encontrado.")
-        return
-
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
 
     # Apaga registros com ';' no nome ou que são cabeçalhos de importações antigas

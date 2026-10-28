@@ -38,7 +38,7 @@ def setup_plantoes_tables():
     conn.close()
 
 def save_plantoes_matutino(records: list[dict]):
-    """Salva ou atualiza registros de plantão matutino no SQLite."""
+    """Salva ou atualiza registros de plantão matutino no banco de dados."""
     setup_plantoes_tables()
     if not records:
         return
@@ -46,8 +46,11 @@ def save_plantoes_matutino(records: list[dict]):
     cursor = conn.cursor()
     for r in records:
         cursor.execute("""
-        INSERT OR REPLACE INTO plantoes_matutino (ano, data_iso, dia_semana, servidor, telefone)
+        INSERT INTO plantoes_matutino (ano, data_iso, dia_semana, servidor, telefone)
         VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (ano, data_iso, servidor) DO UPDATE SET
+            dia_semana = EXCLUDED.dia_semana,
+            telefone = EXCLUDED.telefone
         """, (
             r.get("ano"),
             r.get("data_iso"),
@@ -59,7 +62,7 @@ def save_plantoes_matutino(records: list[dict]):
     conn.close()
 
 def save_plantoes_semanal(records: list[dict]):
-    """Salva ou atualiza registros de plantão semanal SIMP no SQLite."""
+    """Salva ou atualiza registros de plantão semanal SIMP no banco de dados."""
     setup_plantoes_tables()
     if not records:
         return
@@ -67,9 +70,16 @@ def save_plantoes_semanal(records: list[dict]):
     cursor = conn.cursor()
     for r in records:
         cursor.execute("""
-        INSERT OR REPLACE INTO plantoes_semanal 
+        INSERT INTO plantoes_semanal 
         (ano, mes, periodo_str, data_inicio, data_fim, service_desk, manutencao, infraestrutura, desenvolvimento)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (ano, data_inicio, manutencao) DO UPDATE SET
+            mes = EXCLUDED.mes,
+            periodo_str = EXCLUDED.periodo_str,
+            data_fim = EXCLUDED.data_fim,
+            service_desk = EXCLUDED.service_desk,
+            infraestrutura = EXCLUDED.infraestrutura,
+            desenvolvimento = EXCLUDED.desenvolvimento
         """, (
             r.get("ano"),
             r.get("mes"),

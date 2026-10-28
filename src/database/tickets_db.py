@@ -2,7 +2,7 @@ import logging
 from typing import Any
 import pandas as pd
 from datetime import datetime
-from .connection import DB_PATH, get_connection
+from .connection import DB_PATH, DB_TYPE, get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -487,8 +487,8 @@ def sync_closed_tickets_to_train_dataset():
         print(f"Erro ao sincronizar chamados fechados com o dataset de treino: {e}")
 
 def load_data():
-    """Carrega todos os chamados da tabela SQLite em um DataFrame pandas."""
-    if not DB_PATH.exists():
+    """Carrega todos os chamados do banco de dados em um DataFrame pandas."""
+    if DB_TYPE not in ["postgres", "postgresql"] and not DB_PATH.exists():
         return pd.DataFrame()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM chamados", conn)

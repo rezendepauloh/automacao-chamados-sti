@@ -1,6 +1,6 @@
 import pandas as pd
 from datetime import datetime
-from .connection import get_connection
+from .connection import get_connection, save_dataframe_to_db
 
 def setup_ramais_table():
     """Cria a tabela ramais_mpms se não existir."""
@@ -34,7 +34,7 @@ def save_ramais_to_db(df: pd.DataFrame):
             
         cols = ["localidade", "setor_nome", "telefone_ramal", "tipo", "data_atualizacao"]
         cols_present = [c for c in cols if c in df_to_save.columns]
-        df_to_save[cols_present].to_sql("ramais_mpms", conn, if_exists="append", index=False)
+        save_dataframe_to_db(df_to_save[cols_present], "ramais_mpms", conn, if_exists="append")
         conn.commit()
     conn.close()
 
@@ -171,7 +171,13 @@ def save_ramais_config(url_interior: str, url_capital: str):
     setup_ramais_config_table()
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO ramais_config (chave, valor) VALUES ('url_interior', ?)", (url_interior.strip(),))
-    cursor.execute("INSERT OR REPLACE INTO ramais_config (chave, valor) VALUES ('url_capital', ?)", (url_capital.strip(),))
+    cursor.execute("""
+        INSERT INTO ramais_config (chave, valor) VALUES ('url_interior', ?)
+        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor
+    """, (url_interior.strip(),))
+    cursor.execute("""
+        INSERT INTO ramais_config (chave, valor) VALUES ('url_capital', ?)
+        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor
+    """, (url_capital.strip(),))
     conn.commit()
     conn.close()

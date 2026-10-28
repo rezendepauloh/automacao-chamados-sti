@@ -30,13 +30,13 @@ logger = setup_logging(DEBUG_DIR_PREPROCESS / "preprocess_oxe.log", __name__)
 
 
 def salvar_banco_dados(df: pd.DataFrame):
-    """Salva/Atualiza a tabela 'central_telefonica' no banco de dados SQLite chamados.db preservando todas as colunas."""
+    """Salva/Atualiza a tabela 'central_telefonica' no banco de dados preservando todas as colunas."""
     try:
-        db_path = Path("chamados.db")
-        conn = sqlite3.connect(db_path)
+        from src.database.connection import get_connection, save_dataframe_to_db
+        conn = get_connection()
         
         df_db = df.copy()
-        # Normalização de nomes de colunas para padrão de banco SQLite
+        # Normalização de nomes de colunas para padrão de banco
         col_rename = {
             c: c.lower()
                 .replace(" / ", "_")
@@ -50,11 +50,12 @@ def salvar_banco_dados(df: pd.DataFrame):
         }
         df_db.rename(columns=col_rename, inplace=True)
         
-        df_db.to_sql("central_telefonica", conn, if_exists="replace", index=False)
+        save_dataframe_to_db(df_db, "central_telefonica", conn, if_exists="replace")
+        conn.commit()
         conn.close()
-        logger.info(f"✅ Tabela 'central_telefonica' atualizada no banco de dados SQLite chamados.db ({len(df)} registros, {len(df_db.columns)} colunas).")
+        logger.info(f"✅ Tabela 'central_telefonica' atualizada no banco de dados ({len(df)} registros, {len(df_db.columns)} colunas).")
     except Exception as db_err:
-        logger.error(f"Erro ao salvar dados da Central Telefônica no SQLite: {db_err}")
+        logger.error(f"Erro ao salvar dados da Central Telefônica no banco de dados: {db_err}")
 
 
 def preprocess_oxe() -> bool:

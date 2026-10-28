@@ -14,10 +14,10 @@ def setup_settings_table():
         CREATE TABLE IF NOT EXISTS system_settings (
             key VARCHAR(100) PRIMARY KEY,
             value TEXT,
-            is_secret BOOLEAN DEFAULT FALSE,
+            is_secret INTEGER DEFAULT 0,
             category VARCHAR(50),
             description TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TEXT DEFAULT to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')
         );
         """
     else:
@@ -87,7 +87,7 @@ def set_setting(key: str, value: str, is_secret: bool = False, category: str = "
                 description = EXCLUDED.description,
                 updated_at = NOW();
             """
-            cursor.execute(sql, (key, val_to_save, is_secret, category, description))
+            cursor.execute(sql, (key, val_to_save, 1 if is_secret else 0, category, description))
         else:
             sql = """
             INSERT INTO system_settings (key, value, is_secret, category, description, updated_at)

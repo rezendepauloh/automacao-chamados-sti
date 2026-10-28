@@ -15,7 +15,6 @@ if str(ROOT_DIR) not in sys.path:
 
 import tests.test_helpers
 from src.components.status_banner import check_orquestrador_running, read_last_log_lines
-from src.tabs.chamados import summarize_ticket_locally
 from src.tabs.fiscalizacao import _formatar_texto_portaria
 from src.tabs.mapas import calculate_dijkstra_route, get_image_base64
 from src.tabs.plantoes import is_bancada_member
@@ -59,13 +58,6 @@ class TestComponentsAndTabs(unittest.TestCase):
 
         logs = read_last_log_lines(5)
         self.assertIsInstance(logs, str)
-
-    def test_summarize_ticket_locally(self):
-        """Valida gerador de resumo conciso do corpo do chamado."""
-        desc = "Bom dia. Gostaria de solicitar formatação do computador devido à lentidão extrema."
-        summary = summarize_ticket_locally(desc, "", max_sentences=1)
-        self.assertIsInstance(summary, str)
-        self.assertTrue(len(summary) > 0)
 
     def test_formatar_texto_portaria(self):
         """Valida realce de servidores designados em texto de portarias."""

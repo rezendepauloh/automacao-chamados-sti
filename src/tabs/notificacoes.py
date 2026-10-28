@@ -124,10 +124,16 @@ def render_notificacoes_page():
         tipo = str(row['tipo'])
         titulo = str(row['titulo'])
         mensagem = str(row['mensagem'])
+        raw_dt = row.get('data_criacao')
+        if pd.isna(raw_dt) or raw_dt is None or str(raw_dt).strip() in ("", "None", "NaT"):
+            raw_dt = row.get('data_evento', '')
         try:
-            data_criacao = pd.to_datetime(row['data_criacao']).strftime('%d/%m/%Y %H:%M:%S')
+            dt_parsed = pd.to_datetime(raw_dt, dayfirst=("/" in str(raw_dt)))
+            if pd.isna(dt_parsed):
+                raise ValueError("NaT")
+            data_criacao = dt_parsed.strftime('%d/%m/%Y %H:%M:%S') if ":" in str(raw_dt) else dt_parsed.strftime('%d/%m/%Y')
         except Exception:
-            data_criacao = str(row['data_criacao'])
+            data_criacao = str(raw_dt) if raw_dt and str(raw_dt).strip() not in ("None", "NaT") else "Não informado"
         link_pagina = str(row.get('link_pagina', ''))
         is_read = int(row['lida']) == 1
 

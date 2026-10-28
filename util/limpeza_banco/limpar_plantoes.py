@@ -1,18 +1,16 @@
+import sys
 import sqlite3
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "chamados.db"
-if not DB_PATH.exists():
-    DB_PATH = Path("chamados.db")
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from src.database.connection import get_connection
 
 def limpar_tabelas_plantoes():
-    """Remove todos os registros das tabelas plantoes_matutino e plantoes_semanal do SQLite."""
-    if not DB_PATH.exists():
-        print(f"Erro: Banco de dados '{DB_PATH}' não encontrado.")
-        return
-
-    conn = sqlite3.connect(DB_PATH)
+    """Remove todos os registros das tabelas plantoes_matutino e plantoes_semanal do banco de dados."""
+    conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("DELETE FROM plantoes_matutino")
