@@ -59,6 +59,183 @@ def modal_config_donations():
                     st.rerun()
 
 
+def _pluralize_equip(name: str, count: int) -> str:
+    n_lower = name.lower().strip()
+    if count == 1:
+        return f"1 {n_lower}"
+    # Regras simples de plural em português
+    if n_lower.endswith(('r', 's', 'z')):
+        return f"{count} {n_lower}es"
+    elif n_lower.endswith('m'):
+        return f"{count} {n_lower[:-1]}ns"
+    elif n_lower.endswith('l'):
+        return f"{count} {n_lower[:-1]}is"
+    elif n_lower.endswith(('a', 'e', 'i', 'o', 'u')):
+        return f"{count} {n_lower}s"
+    return f"{count} {n_lower}s"
+
+
+def _format_equip_breakdown(grp_df: pd.DataFrame) -> str:
+    raw_items = [str(x).strip() for x in grp_df['equipamento'].fillna('Equipamento').tolist() if str(x).strip()]
+    counts = {}
+    for item in raw_items:
+        counts[item] = counts.get(item, 0) + 1
+    sorted_items = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    parts = [_pluralize_equip(eq_name, c) for eq_name, c in sorted_items if eq_name]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return f"sendo {parts[0]}"
+    return f"sendo {', '.join(parts[:-1])} e {parts[-1]}"
+
+
+def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str, str, bool]:
+    """
+    Constrói o assunto, o corpo HTML do relatório de preparo de equipamentos
+    e um booleano indicando se houve inclusão de observação de entrega completa
+    (com armazenamento HD/SSD e memórias RAM) para máquinas de Doação e/ou Baixa.
+    """
+    from datetime import datetime
+    try:
+        dt_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        formatted_date = dt_obj.strftime("%d/%m/%Y")
+    except Exception:
+        formatted_date = date_str
+
+    raw_movs = [str(m).strip() for m in df_date['tipo_movimentacao'].tolist() if str(m).strip()]
+    movs = sorted(list(set(raw_movs)))
+    movs_clean = [m.capitalize() for m in movs]
+    if len(movs_clean) == 1:
+        movs_str = movs_clean[0]
+    elif len(movs_clean) > 1:
+        movs_str = ", ".join(movs_clean[:-1]) + " e " + movs_clean[-1]
+    else:
+        movs_str = "Movimentação"
+
+    total_prep = len(df_date)
+    equip_word = "equipamento" if total_prep == 1 else "equipamentos"
+    subject = f"[DOAÇÃO] - Preparação de {movs_str} de equipamentos ({total_prep} {equip_word}) do dia {formatted_date}"
+
+    global_breakdown = _format_equip_breakdown(df_date)
+    intro_breakdown_str = f" ({global_breakdown})" if global_breakdown else ""
+
+    html_parts = []
+    html_parts.append("<div style='font-family: Arial, Helvetica, sans-serif; color: #000000; line-height: 1.5;'>")
+    html_parts.append("<p>Prezados, boa tarde.</p>")
+    html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos um total de <strong>{total_prep} {equip_word}</strong>{intro_breakdown_str}, sendo eles:</p>")
+
+    has_doacao_or_baixa_machines = False
+    mov_types_with_machines = []
+    machine_keywords = ("computador", "notebook", "workstation", "desktop", "microcomputador", "all in one", "pc")
+    non_machine_types = ("ssd", "hdd", "hd", "leitor biométrico", "leitor biometrico", "telefone", "monitor")
+
+    for mov_type, grp in df_date.groupby('tipo_movimentacao'):
+        qtd_grp = len(grp)
+        qtd_word = "equipamento" if qtd_grp == 1 else "equipamentos"
+        grp_breakdown = _format_equip_breakdown(grp)
+        grp_breakdown_str = f", {grp_breakdown}" if grp_breakdown else ""
+
+        html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()} ({qtd_grp} {qtd_word}{grp_breakdown_str}):</strong></p>")
+
+        ssd_vals = [str(v).strip() for v in grp['ssd'].tolist() if v is not None and str(v).strip() not in ("", "nan", "None")]
+        obs_vals = [str(v).strip() for v in grp['motivo_baixa'].tolist() if v is not None and str(v).strip() not in ("", "nan", "None")]
+        has_ssd = len(ssd_vals) > 0
+        has_obs = len(obs_vals) > 0
+
+        table_html = [
+            "<table border='2' cellpadding='6' cellspacing='0' style='border-collapse: collapse; width: 100%; border: 2px solid #cccccc; font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #000000;'>"
+        ]
+        th_style = "background-color: #2f5597; border: 2px solid #cccccc; padding: 6px 10px; text-align: left;"
+
+        headers_html = [
+            "<tr>",
+            f"<th style='{th_style}'><span style=\"color:#ffffff\">#</span></th>",
+            f"<th style='{th_style}'><span style=\"color:#ffffff\">Patrimônio</span></th>",
+            f"<th style='{th_style}'><span style=\"color:#ffffff\">Modelo</span></th>",
+            f"<th style='{th_style}'><span style=\"color:#ffffff\">Serial Number PC</span></th>",
+            f"<th style='{th_style}'><span style=\"color:#ffffff\">Equipamento</span></th>"
+        ]
+        if has_ssd:
+            headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">SSD</span></th>")
+        if has_obs:
+            headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">Motivo/Obs</span></th>")
+        headers_html.append("</tr>")
+
+        table_html.append("".join(headers_html))
+
+        for idx, (_, row) in enumerate(grp.iterrows()):
+            item_num = idx + 1
+            pat = str(row.get('patrimonio', '')).strip()
+            mod = str(row.get('modelo', '')).strip()
+            ser = str(row.get('serial_number', '')).strip()
+            eqp = str(row.get('equipamento', '')).strip()
+            ssd = str(row.get('ssd', '')).strip()
+            obs = str(row.get('motivo_baixa', '')).strip()
+
+            bg_style = "background-color: #d9e1f2;" if idx % 2 == 1 else ""
+
+            row_html = [
+                "<tr>",
+                f"<td style='border: 2px solid #cccccc; padding: 6px 10px; text-align: center; font-weight: bold; {bg_style}'>{item_num}</td>",
+                f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{pat}</td>",
+                f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{mod}</td>",
+                f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ser}</td>",
+                f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{eqp}</td>"
+            ]
+            if has_ssd:
+                row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ssd}</td>")
+            if has_obs:
+                row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{obs}</td>")
+            row_html.append("</tr>")
+
+            table_html.append("".join(row_html))
+
+        colspan_extra = 0
+        if has_ssd:
+            colspan_extra += 1
+        if has_obs:
+            colspan_extra += 1
+        total_cols = 5 + colspan_extra
+        footer_text = f"Total {mov_type}: {qtd_grp} {qtd_word}{grp_breakdown_str}"
+        footer_html = f"<tr><td colspan='{total_cols}' style='border: 2px solid #cccccc; padding: 6px 10px; background-color: #e9ecef; font-weight: bold; text-align: right;'>{footer_text}</td></tr>"
+        table_html.append(footer_html)
+
+        table_html.append("</table>")
+        html_parts.append("".join(table_html))
+
+        mov_norm = str(mov_type).strip().lower()
+        if mov_norm in ("doação", "doacao", "baixa"):
+            eq_list_lower = [str(e).strip().lower() for e in grp['equipamento'].fillna('').tolist() if str(e).strip()]
+            has_machine_in_grp = any(
+                any(k in eq for k in machine_keywords) or eq not in non_machine_types
+                for eq in eq_list_lower
+            ) or not eq_list_lower
+            if has_machine_in_grp:
+                has_doacao_or_baixa_machines = True
+                label_mov = "Doação" if "doa" in mov_norm else "Baixa"
+                if label_mov not in mov_types_with_machines:
+                    mov_types_with_machines.append(label_mov)
+                html_parts.append(
+                    f"<p style='margin-top: 6px; margin-bottom: 14px; font-size: 12.5px; color: #1f2937;'>"
+                    f"ℹ️ <em><strong>Observação ({label_mov}):</strong> As máquinas relacionadas acima foram conferidas e entregues completas, "
+                    f"acompanhadas de seus respectivos dispositivos de armazenamento (HD/SSD) e pentes de memória RAM instalados.</em></p>"
+                )
+
+    if has_doacao_or_baixa_machines:
+        tipos_label = " e ".join(mov_types_with_machines)
+        html_parts.append(
+            f"<div style='margin-top: 18px; padding: 10px 14px; background-color: #f8fafc; border-left: 4px solid #2f5597; border: 1px solid #cbd5e1; font-size: 13px; color: #000000;'>"
+            f"<strong>📌 Nota de Conferência e Entrega ({tipos_label}):</strong> "
+            f"Registramos que todas as máquinas destinadas a <strong>{tipos_label.lower()}</strong> relacionadas neste chamado saíram da bancada técnica "
+            f"e foram entregues <strong>completas</strong> ao setor responsável, devidamente montadas com seus respectivos <strong>discos de armazenamento (HD/SSD) e memórias RAM</strong>."
+            f"</div>"
+        )
+
+    html_parts.append("</div>")
+    full_html = "\n".join(html_parts)
+    return subject, full_html, has_doacao_or_baixa_machines
+
+
 def render_donations_page():
     """Renderiza a página de Doação & Redistribuição de Máquinas."""
     from src.database import get_donations_data, sync_donations_from_excel
@@ -167,140 +344,18 @@ def render_donations_page():
         if df_date.empty:
             st.warning("Nenhum equipamento encontrado nesta data.")
             return
-            
-        from datetime import datetime
-        try:
-            dt_obj = datetime.strptime(date_str, "%Y-%m-%d")
-            formatted_date = dt_obj.strftime("%d/%m/%Y")
-        except:
-            formatted_date = date_str
-            
-        movs = sorted(list(df_date['tipo_movimentacao'].unique()))
-        movs_clean = [m.strip().capitalize() for m in movs if m.strip()]
-        if len(movs_clean) == 1:
-            movs_str = movs_clean[0]
-        elif len(movs_clean) > 1:
-            movs_str = ", ".join(movs_clean[:-1]) + " e " + movs_clean[-1]
-        else:
-            movs_str = "Movimentação"
-            
-        total_prep = len(df_date)
-        equip_word = "equipamento" if total_prep == 1 else "equipamentos"
-        subject = f"[DOAÇÃO] - Preparação de {movs_str} de equipamentos ({total_prep} {equip_word}) do dia {formatted_date}"
-        
+
+        subject, full_html, has_doacao_or_baixa_machines = build_preparo_report_html(date_str, df_date)
+
         st.write("📋 **Assunto do Chamado:**")
         st.code(subject, language="text")
+        if has_doacao_or_baixa_machines:
+            st.info(
+                "🛡️ **Observação de resguardo incluída automaticamente:** Como há máquinas de **Doação** e/ou **Baixa** nesta data, "
+                "o relatório e o HTML abaixo já contêm a observação expressa de que os equipamentos foram conferidos e entregues "
+                "**completos (com HD/SSD e memórias RAM)**."
+            )
         st.markdown("---")
-            
-        def _pluralize_equip(name: str, count: int) -> str:
-            n_lower = name.lower().strip()
-            if count == 1:
-                return f"1 {n_lower}"
-            # Regras simples de plural em português
-            if n_lower.endswith(('r', 's', 'z')):
-                return f"{count} {n_lower}es"
-            elif n_lower.endswith('m'):
-                return f"{count} {n_lower[:-1]}ns"
-            elif n_lower.endswith('l'):
-                return f"{count} {n_lower[:-1]}is"
-            elif n_lower.endswith(('a', 'e', 'i', 'o', 'u')):
-                return f"{count} {n_lower}s"
-            return f"{count} {n_lower}s"
-
-        def _format_equip_breakdown(grp_df) -> str:
-            counts = grp_df['equipamento'].fillna('Equipamento').astype(str).str.strip().value_counts()
-            parts = []
-            for eq_name, c in counts.items():
-                if eq_name:
-                    parts.append(_pluralize_equip(eq_name, c))
-            if not parts:
-                return ""
-            if len(parts) == 1:
-                return f"sendo {parts[0]}"
-            return f"sendo {', '.join(parts[:-1])} e {parts[-1]}"
-
-        # Resumo global para a frase de abertura
-        global_breakdown = _format_equip_breakdown(df_date)
-        intro_breakdown_str = f" ({global_breakdown})" if global_breakdown else ""
-
-        html_parts = []
-        html_parts.append("<div style='font-family: Arial, Helvetica, sans-serif; color: #000000; line-height: 1.5;'>")
-        html_parts.append("<p>Prezados, boa tarde.</p>")
-        html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos um total de <strong>{total_prep} {equip_word}</strong>{intro_breakdown_str}, sendo eles:</p>")
-        
-        for mov_type, grp in df_date.groupby('tipo_movimentacao'):
-            qtd_grp = len(grp)
-            qtd_word = "equipamento" if qtd_grp == 1 else "equipamentos"
-            grp_breakdown = _format_equip_breakdown(grp)
-            grp_breakdown_str = f", {grp_breakdown}" if grp_breakdown else ""
-
-            html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()} ({qtd_grp} {qtd_word}{grp_breakdown_str}):</strong></p>")
-            
-            has_ssd = grp['ssd'].astype(str).str.strip().any()
-            has_obs = grp['motivo_baixa'].astype(str).str.strip().any()
-            
-            table_html = [
-                "<table border='2' cellpadding='6' cellspacing='0' style='border-collapse: collapse; width: 100%; border: 2px solid #cccccc; font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #000000;'>"
-            ]
-            th_style = "background-color: #2f5597; border: 2px solid #cccccc; padding: 6px 10px; text-align: left;"
-            
-            headers_html = [
-                f"<tr>",
-                f"<th style='{th_style}'><span style=\"color:#ffffff\">#</span></th>",
-                f"<th style='{th_style}'><span style=\"color:#ffffff\">Patrimônio</span></th>",
-                f"<th style='{th_style}'><span style=\"color:#ffffff\">Modelo</span></th>",
-                f"<th style='{th_style}'><span style=\"color:#ffffff\">Serial Number PC</span></th>",
-                f"<th style='{th_style}'><span style=\"color:#ffffff\">Equipamento</span></th>"
-            ]
-            if has_ssd:
-                headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">SSD</span></th>")
-            if has_obs:
-                headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">Motivo/Obs</span></th>")
-            headers_html.append("</tr>")
-            
-            table_html.append("".join(headers_html))
-            
-            for idx, (_, row) in enumerate(grp.iterrows()):
-                item_num = idx + 1
-                pat = str(row.get('patrimonio', '')).strip()
-                mod = str(row.get('modelo', '')).strip()
-                ser = str(row.get('serial_number', '')).strip()
-                eqp = str(row.get('equipamento', '')).strip()
-                ssd = str(row.get('ssd', '')).strip()
-                obs = str(row.get('motivo_baixa', '')).strip()
-                
-                bg_style = "background-color: #d9e1f2;" if idx % 2 == 1 else ""
-                
-                row_html = [
-                    f"<tr>",
-                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; text-align: center; font-weight: bold; {bg_style}'>{item_num}</td>",
-                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{pat}</td>",
-                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{mod}</td>",
-                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ser}</td>",
-                    f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{eqp}</td>"
-                ]
-                if has_ssd:
-                    row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ssd}</td>")
-                if has_obs:
-                    row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{obs}</td>")
-                row_html.append("</tr>")
-                
-                table_html.append("".join(row_html))
- 
-            # Linha de rodapé com total do grupo detalhado por tipo de equipamento
-            colspan_extra = 0
-            if has_ssd: colspan_extra += 1
-            if has_obs: colspan_extra += 1
-            total_cols = 5 + colspan_extra
-            footer_text = f"Total {mov_type}: {qtd_grp} {qtd_word}{grp_breakdown_str}"
-            footer_html = f"<tr><td colspan='{total_cols}' style='border: 2px solid #cccccc; padding: 6px 10px; background-color: #e9ecef; font-weight: bold; text-align: right;'>{footer_text}</td></tr>"
-            table_html.append(footer_html)
-
-            table_html.append("</table>")
-            html_parts.append("".join(table_html))
-            
-        html_parts.append("</div>")
-        full_html = "\n".join(html_parts)
         
         st.write("💡 Selecione o texto abaixo com o mouse, copie (Ctrl+C) e cole diretamente no chamado do OTRS:")
         st.markdown(

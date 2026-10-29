@@ -19,6 +19,7 @@ from src.tabs.fiscalizacao import _formatar_texto_portaria
 from src.tabs.mapas import calculate_dijkstra_route, get_image_base64
 from src.tabs.plantoes import is_bancada_member
 from src.tabs.sccm import format_sccm_datetime, parse_sccm_datetime
+from src.tabs.redistribuicao import build_preparo_report_html
 from src.tabs.links_faqs import (
     parse_sharepoint_content,
     format_file_size,
@@ -143,6 +144,62 @@ class TestComponentsAndTabs(unittest.TestCase):
         nonexistent = Path("/caminho/completamente/inexistente/xyz_123")
         self.assertEqual(scan_video_faqs(nonexistent), [])
         self.assertEqual(scan_image_faqs(nonexistent), [])
+
+    def test_build_preparo_report_html_doacao_and_baixa_observations(self):
+        """Valida que o relatório HTML de preparo inclui observação de entrega completa (HD/SSD e memórias) para Doação e Baixa."""
+        import pandas as pd
+
+        # 1. Quando há máquinas de Doação e Baixa, deve incluir as observações no HTML
+        df_doacao_baixa = pd.DataFrame([
+            {
+                "patrimonio": "080111",
+                "modelo": "OptiPlex 7050",
+                "serial_number": "ABC1234",
+                "equipamento": "Computador",
+                "tipo_movimentacao": "Doação",
+                "data_movimentacao": "2026-10-29",
+                "chamado": "12345",
+                "ssd": "240GB",
+                "motivo_baixa": "",
+            },
+            {
+                "patrimonio": "070222",
+                "modelo": "ThinkCentre M90",
+                "serial_number": "XYZ9876",
+                "equipamento": "Computador",
+                "tipo_movimentacao": "Baixa",
+                "data_movimentacao": "2026-10-29",
+                "chamado": "12345",
+                "ssd": "",
+                "motivo_baixa": "Placa-mãe oxidada",
+            },
+        ])
+        subject, html_out, has_obs = build_preparo_report_html("2026-10-29", df_doacao_baixa)
+        self.assertTrue(has_obs)
+        self.assertIn("29/10/2026", subject)
+        self.assertIn("Observação (Doação):", html_out)
+        self.assertIn("Observação (Baixa):", html_out)
+        self.assertIn("entregues completas", html_out)
+        self.assertIn("HD/SSD", html_out)
+        self.assertIn("memórias RAM", html_out)
+
+        # 2. Quando há apenas Redistribuição, não deve incluir a observação de Doação/Baixa
+        df_redist = pd.DataFrame([
+            {
+                "patrimonio": "090333",
+                "modelo": "ThinkCentre M70q",
+                "serial_number": "LEN5555",
+                "equipamento": "Computador",
+                "tipo_movimentacao": "Redistribuição",
+                "data_movimentacao": "2026-10-29",
+                "chamado": "12346",
+                "ssd": "256GB",
+                "motivo_baixa": "",
+            }
+        ])
+        _, html_redist, has_obs_redist = build_preparo_report_html("2026-10-29", df_redist)
+        self.assertFalse(has_obs_redist)
+        self.assertNotIn("Nota de Conferência e Entrega", html_redist)
 
 if __name__ == "__main__":
     unittest.main()
