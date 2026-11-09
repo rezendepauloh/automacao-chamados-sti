@@ -15,7 +15,7 @@ SESSION_DURATION_DAYS = 30
 SESSION_DURATION_SECONDS = SESSION_DURATION_DAYS * 24 * 60 * 60
 
 # Mapeamento oficial dos Técnicos da Bancada (Administradores com Acesso Total)
-# Conforme especificado na Seção 5.1 do CONTEXTO_GERAL.md
+# Conforme especificado na documentação técnica (Docs/arquitetura/dossie_arquitetura_sistema.md)
 ADMIN_USERS: Dict[str, Dict[str, Any]] = {
     "paulogoncalves": {
         "display_name": "Paulo Henrique Gonçalves Rezende",

@@ -48,23 +48,22 @@ from terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 logger = setup_logging(DEBUG_DIR_TAG / "tag_classifier.log", __name__)
 
 # --------------------------------------------------------------------------
-# Configuração de NLP (spaCy)
+# Configuração de NLP (spaCy Otimizado: sem parser e sem ner para velocidade 10x)
 # --------------------------------------------------------------------------
 try:
-    nlp = spacy.load("pt_core_news_sm")
+    nlp = spacy.load("pt_core_news_sm", disable=["parser", "ner"])
 except OSError:
     logger.error("Modelo do spacy 'pt_core_news_sm' não encontrado. Instale com: python -m spacy download pt_core_news_sm")
     sys.exit(1)
 
-def clean_text(text: str) -> str:
-    """Limpeza de texto (NLP) focada em extração de features para TI."""
-    if not isinstance(text, str):
+def preclean_raw_text(text: str) -> str:
+    """Pré-limpeza rápida em nível de caracteres e termos técnicos."""
+    if not isinstance(text, str) or not text:
         return ""
     
-    # 1. Tudo em minúsculas
     text = text.lower()
     
-    # 2. Remoção de acentos (sua lógica)
+    # Remoção de acentos
     accent_map = {
         'á':'a','à':'a','â':'a','ã':'a','ä':'a',
         'é':'e','è':'e','ê':'e','ë':'e',
@@ -75,7 +74,7 @@ def clean_text(text: str) -> str:
     }
     text = ''.join(accent_map.get(c, c) for c in text)
     
-    # 3. Preservação de Termos Técnicos de TI (sua lógica)
+    # Preservação de Termos Técnicos de TI
     tech_map = {
         r"\bssd\b": "ssd",
         r"\bcpu\b": "cpu",
@@ -89,23 +88,57 @@ def clean_text(text: str) -> str:
     for patt, rep in tech_map.items():
         text = re.sub(patt, rep, text)
 
-    # 4. Limpeza de HTML, links e pontuação extra
+    # Limpeza de HTML, links e pontuação extra
     text = re.sub(r'<[^>]+>', ' ', text)
     text = re.sub(r'http\S+', ' ', text)
     text = re.sub(r'[^\w\s]', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def clean_texts_batch(texts: list[str]) -> list[str]:
+    """
+    Processa uma lista de textos em lote com spaCy (pipe) desativando parser e NER.
+    É até 10x mais rápido do que processar linha a linha.
+    """
+    precleaned = [preclean_raw_text(t) for t in texts]
+    cleaned = []
+    for doc in nlp.pipe(precleaned, batch_size=256):
+        tokens = []
+        for token in doc:
+            if (token.is_alpha or token.like_num) and token.text not in STOP_WORDS:
+                lem = token.text if token.like_num else token.lemma_
+                tokens.append(lem)
+        cleaned.append(" ".join(tokens))
+    return cleaned
+
+def clean_text(text: str) -> str:
+    """Função utilitária para limpar um único texto."""
+    if not text:
+        return ""
+    return clean_texts_batch([text])[0]
+
+def compose_ticket_text(row) -> str:
+    """
+    Combina Título, Unidade/Cidade, Descrição e Comentários para
+    fornecer contexto rico à classificação de Machine Learning.
+    """
+    titulo = str(row.get('Título', '') or '').strip()
+    unidade = str(row.get('Unidade', '') or row.get('Cidade - Prédio', '') or '').strip()
+    desc_raw = str(row.get('Descrição', '') or '').strip()
+    desc_clean = clean_otrs_description(desc_raw)
+    comments = extract_comments_text(row.get('Comentários', ''))
     
-    # 5. NLP com spaCy (Lematização + Preservação de números)
-    doc = nlp(text)
-    tokens = []
-    for token in doc:
-        # Aceita palavras (is_alpha) ou números (like_num) que não sejam Stop Words
-        if (token.is_alpha or token.like_num) and token.text not in STOP_WORDS:
-            # Mantém o número literal, e lematiza as palavras
-            lem = token.text if token.like_num else token.lemma_
-            tokens.append(lem)
-            
-    return " ".join(tokens)
+    parts = []
+    if titulo and titulo.lower() not in ['nan', 'none', 'null', 'sem título', '<na>', '']:
+        parts.append(titulo)
+    if unidade and unidade.lower() not in ['nan', 'none', 'null', 'n/a', '<na>', '']:
+        parts.append(unidade)
+    if desc_clean:
+        parts.append(desc_clean)
+    if comments:
+        parts.append(comments)
+        
+    return " ".join(parts)
 
 def extract_comments_text(comments_val) -> str:
     """Extrai texto puro dos comentários em formato JSON string ou lista (filtrando robôs)."""
@@ -138,19 +171,68 @@ def log_classification_details(y_true, y_pred, labels):
         f"Weighted F1: {report.get('weighted avg', {}).get('f1-score', 0):.2f}"
     )
 
+def train_champion_model(train_df: pd.DataFrame) -> Pipeline:
+    """
+    Treinamento direto ultrarrápido (<1 segundo) do modelo campeão validado (LinearSVC).
+    Utilizado na rotina frequente do orquestrador para evitar rodar GridSearchCV pesado a cada 5 minutos.
+    """
+    import time
+    logger.info("🚀 Treinando modelo campeão (LinearSVC Otimizado)...")
+    t0 = time.time()
+    
+    X = train_df['Descrição_Limpa'].tolist()
+    y = train_df["TAG"].astype(str).tolist()
+
+    pipe = Pipeline([
+        ("tfidf", TfidfVectorizer(
+            ngram_range=(1, 2),
+            max_df=0.7,
+            min_df=1,
+            max_features=None
+        )),
+        ("clf", LinearSVC(
+            class_weight='balanced',
+            random_state=42,
+            dual=False,
+            C=1.0
+        ))
+    ])
+
+    pipe.fit(X, y)
+    elapsed = time.time() - t0
+    num_classes = len(set(y))
+    logger.info(f"✅ Treinamento campeão concluído em {elapsed:.2f}s com {len(X)} exemplos e {num_classes} classes!")
+    
+    # Salva métricas de status no banco para a UI
+    try:
+        from src.database.settings_db import set_setting
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        set_setting("IA_LAST_TRAIN_DATE", now_str, False, "ia", "Data do último treino rápido de IA")
+        set_setting("IA_TRAIN_EXAMPLES_COUNT", str(len(X)), False, "ia", "Total de exemplos na base de treino")
+        set_setting("IA_TAGS_COUNT", str(num_classes), False, "ia", "Total de TAGs no vocabulário de IA")
+        set_setting("IA_ACTIVE_ALGORITHM", "LinearSVC (TF-IDF N-Grams 1-2)", False, "ia", "Algoritmo ativo de IA")
+    except Exception as e_db:
+        logger.debug(f"Aviso ao registrar métricas no banco: {e_db}")
+
+    return pipe
+
 def train_and_tune_model(train_df: pd.DataFrame) -> Pipeline:
-    logger.info("Iniciando treinamento PESADO e otimização do modelo (GridSearchCV)...")
+    """
+    Re-calibração profunda e busca exaustiva de hiperparâmetros (GridSearchCV).
+    Projetado para rodar sob demanda ou mensalmente via Cron Job agendado.
+    """
+    logger.info("🔬 Iniciando re-calibração PROFUNDA do modelo (GridSearchCV multi-algoritmo)...")
     
     X = train_df['Descrição_Limpa']
     y = train_df["TAG"].astype(str)
 
-    # Pipeline com placeholder genérico de classificador
+    # Pipeline base
     pipe = Pipeline([
         ("tfidf", TfidfVectorizer()),
         ("clf", MultinomialNB())
     ])
 
-    # A sua super grade de parâmetros (A Arena)
+    # Grade de busca de hiperparâmetros
     param_grid = [
         {
             "tfidf__ngram_range": [(1,1), (1,2)],
@@ -193,7 +275,7 @@ def train_and_tune_model(train_df: pd.DataFrame) -> Pipeline:
     grid = GridSearchCV(
         pipe, param_grid, scoring="f1_weighted",
         cv=StratifiedKFold(3, shuffle=True, random_state=42),
-        n_jobs=n_jobs, verbose=0 # mantido 0 para não poluir os logs de produção
+        n_jobs=n_jobs, verbose=0
     )
     
     grid.fit(X.tolist(), y.tolist())
@@ -204,9 +286,19 @@ def train_and_tune_model(train_df: pd.DataFrame) -> Pipeline:
     best_pipe = grid.best_estimator_
     y_pred = best_pipe.predict(X.tolist())
     
-    # Chama o seu log detalhado
     log_classification_details(y.tolist(), y_pred, best_pipe.named_steps["clf"].classes_)
     
+    # Salva métricas de fine-tuning no banco
+    try:
+        from src.database.settings_db import set_setting
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        set_setting("IA_LAST_TUNE_DATE", now_str, False, "ia", "Data da última re-calibração profunda (GridSearchCV)")
+        set_setting("IA_BEST_SCORE", f"{grid.best_score_ * 100:.1f}%", False, "ia", "Melhor F1-Score do GridSearchCV")
+        set_setting("IA_BEST_MODEL_PARAMS", str(grid.best_params_), False, "ia", "Melhores hiperparâmetros encontrados")
+        set_setting("IA_LAST_TRAIN_DATE", now_str, False, "ia", "Data do último treino de IA")
+    except Exception as e_db:
+        logger.debug(f"Aviso ao registrar métricas de fine-tuning: {e_db}")
+
     return best_pipe
 
 def predict_tags(df_novos: pd.DataFrame, pipeline: Pipeline) -> pd.DataFrame:
@@ -422,10 +514,60 @@ def needs_retrain(treino_path: Path, model_path: Path) -> bool:
         treino_path.stat().st_mtime > model_path.stat().st_mtime
     )
 
+def prepare_train_dataset(treino_path: Path) -> pd.DataFrame:
+    """
+    Carrega o dataset de treino com cache persistente da 'Descrição_Limpa'
+    para não reprocessar textos antigos via spaCy a cada ciclo.
+    """
+    if not treino_path.exists():
+        logger.error(f"❌ Arquivo de treino não encontrado em {treino_path}.")
+        sys.exit(1)
+
+    df_train = pd.read_excel(treino_path)
+    df_train = df_train.dropna(subset=['TAG', 'Descrição'])
+    if 'Comentários' not in df_train.columns:
+        df_train['Comentários'] = '[]'
+
+    # Se a coluna Descrição_Limpa já existe e está populada, processa apenas as linhas faltantes
+    needs_save_cache = False
+    if 'Descrição_Limpa' not in df_train.columns:
+        df_train['Descrição_Limpa'] = ""
+
+    missing_mask = df_train['Descrição_Limpa'].isna() | (df_train['Descrição_Limpa'].astype(str).str.strip() == "")
+    missing_count = missing_mask.sum()
+
+    if missing_count > 0:
+        logger.info(f"⚡ Limpando {missing_count} textos novos de treino em lote com spaCy...")
+        texts_to_clean = [compose_ticket_text(row) for _, row in df_train[missing_mask].iterrows()]
+        cleaned_batch = clean_texts_batch(texts_to_clean)
+        df_train.loc[missing_mask, 'Descrição_Limpa'] = cleaned_batch
+        needs_save_cache = True
+
+    if needs_save_cache:
+        try:
+            df_train.to_excel(treino_path, index=False)
+            logger.info("💾 Cache de 'Descrição_Limpa' atualizado no arquivo de treino.")
+        except Exception as e_save:
+            logger.warning(f"⚠️ Não foi possível persistir cache de treino no Excel: {e_save}")
+
+    return df_train
+
+def retrain_and_tune_model_job() -> str:
+    """
+    Job oficial executado pelo Cron Scheduler (mensal ou sob demanda)
+    para re-otimizar o classificador com GridSearchCV multi-algoritmo.
+    """
+    logger.info("🔬 [CRON JOB] Iniciando Re-calibração profunda de IA (GridSearchCV)...")
+    df_train = prepare_train_dataset(TREINO_PATH)
+    pipeline = train_and_tune_model(df_train)
+    joblib.dump(pipeline, MODEL_PATH)
+    logger.info(f"✅ Novo modelo campeão salvo em: {MODEL_PATH}")
+    return "Re-calibração com GridSearchCV concluída com sucesso e novo modelo gravado."
+
 # --------------------------------------------------------------------------
 # Pipeline Principal
 # --------------------------------------------------------------------------
-def main():
+def main(force_tune: bool = False):
     print_header("CLASSIFICADOR DE TAGS POR IA (NLP/ML)", color=CYAN)
     logger.info("🧠 Iniciando classificação inteligente de chamados com IA...")
     
@@ -441,30 +583,27 @@ def main():
     
     if 'Comentários' not in df_unificado.columns:
         df_unificado['Comentários'] = '[]'
-    df_unificado['Descrição_Limpa'] = (
-        df_unificado['Descrição'].apply(clean_otrs_description) + " " + 
-        df_unificado['Comentários'].apply(extract_comments_text)
-    ).apply(clean_text)
+        
+    # Combina Título, Unidade, Descrição e Comentários e limpa em batch ultrarrápido
+    logger.info(f"⚡ Pré-processando {len(df_unificado)} chamados unificados em lote (spaCy batch)...")
+    unif_raw_texts = [compose_ticket_text(row) for _, row in df_unificado.iterrows()]
+    df_unificado['Descrição_Limpa'] = clean_texts_batch(unif_raw_texts)
 
     # 2. Carrega ou Treina o Modelo
-    if not TREINO_PATH.exists():
-        logger.error(f"❌ Arquivo de treino não encontrado em {TREINO_PATH}.")
-        sys.exit(1)
+    df_train = prepare_train_dataset(TREINO_PATH)
 
-    df_train = pd.read_excel(TREINO_PATH)
-    df_train = df_train.dropna(subset=['TAG', 'Descrição'])
-    if 'Comentários' not in df_train.columns:
-        df_train['Comentários'] = '[]'
-    df_train['Descrição_Limpa'] = (
-        df_train['Descrição'].apply(clean_otrs_description) + " " + 
-        df_train['Comentários'].apply(extract_comments_text)
-    ).apply(clean_text)
-
-    if needs_retrain(TREINO_PATH, MODEL_PATH):
-        logger.info("⚡ Base de treino atualizada ou modelo inexistente. Iniciando retreinamento...")
+    is_tune_requested = force_tune or ("--tune" in sys.argv)
+    
+    if is_tune_requested:
+        logger.info("🔬 Modo de re-calibração profunda solicitado (--tune). Executando GridSearchCV...")
         pipeline = train_and_tune_model(df_train)
         joblib.dump(pipeline, MODEL_PATH)
         logger.info(f"Novo modelo salvo em: {MODEL_PATH}")
+    elif needs_retrain(TREINO_PATH, MODEL_PATH):
+        logger.info("⚡ Base de treino atualizada ou modelo inexistente. Treinando modelo campeão (LinearSVC)...")
+        pipeline = train_champion_model(df_train)
+        joblib.dump(pipeline, MODEL_PATH)
+        logger.info(f"Novo modelo campeão salvo em: {MODEL_PATH}")
     else:
         logger.info("🤖 Usando modelo IA existente (Nenhuma alteração na base de treino).")
         pipeline = joblib.load(MODEL_PATH)       
@@ -479,7 +618,7 @@ def main():
 
     try:
         from database import save_tickets_to_db, close_missing_tickets_by_base, sync_closed_tickets_to_train_dataset
-        logger.info("💾 Salvando dados no banco SQLite...")
+        logger.info("💾 Salvando dados no banco de dados...")
         save_tickets_to_db(df_tagged)
         
         active_ids_otrs = df_tagged[df_tagged['Base'] == 'OTRS']['Chamado#'].dropna().astype(str).tolist()
@@ -502,9 +641,9 @@ def main():
         logger.info("Sincronizando chamados fechados com o dataset de treino (Chamados_Treino.xlsx)...")
         sync_closed_tickets_to_train_dataset()
         
-        logger.info("Banco SQLite e Dataset de Treino atualizados com sucesso.")
+        logger.info("Banco de dados e Dataset de Treino atualizados com sucesso.")
     except Exception as db_err:
-        logger.error(f"⚠️ Erro ao atualizar banco SQLite/Treino: {db_err}")
+        logger.error(f"⚠️ Erro ao atualizar banco / dataset de treino: {db_err}")
 
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out = OUTPUT_DIR_PRONTO / f"Chamados_Tagged_{ts}.xlsx"

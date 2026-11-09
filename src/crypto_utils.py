@@ -87,9 +87,10 @@ def decrypt_value(cipher_text: str) -> str:
             logger.warning(
                 "⚠️ A credencial cifrada não pôde ser decriptografada com a chave Fernet atual. "
                 "Possível troca de ambiente ou chave mestra ausente/incompatível. "
-                "Redefina a senha correspondente na aba de Configurações."
+                "Ignorando valor corrompido e recorrendo ao fallback de ambiente/keyring."
             )
-        # Se for um valor pré-existente ainda não criptografado ou chave incompatível, retorna como está (fallback suave)
+            return ""
+        # Se for um valor pré-existente em texto plano (legado), retorna como está
         return cipher_text
 
 def mask_secret(secret_text: str, visible_chars: int = 4) -> str:

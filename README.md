@@ -4,6 +4,14 @@ Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para 
 
 ---
 
+> 📚 **Documentação Técnica Completa:**  
+> A documentação oficial de engenharia, arquitetura, guias práticos operacionais e suíte de testes está unificada no diretório [**`Docs/`**](Docs/README.md).
+>
+> 📌 **Diretrizes para Agentes Autônomos de Programação:**  
+> O ciclo de engenharia obrigatório (Avaliar ➔ Planejar ➔ Testar ➔ Documentar) e diretrizes de desenvolvimento encontram-se em [**`AGENTS.md`**](AGENTS.md).
+
+---
+
 ## 🚀 Funcionalidades
 
 ### 1. Web Scraping & Automação (RPA)

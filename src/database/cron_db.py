@@ -1,10 +1,17 @@
 import os
 import logging
-import pandas as pd
+import warnings
 from datetime import datetime
+import pandas as pd
 from src.database.connection import get_connection, DB_TYPE
 
+# Suprime avisos de compatibilidade do pandas com DBAPI2 nativo
+warnings.filterwarnings("ignore", message=r".*pandas only supports.*")
+warnings.filterwarnings("ignore", category=UserWarning, module=r"pandas.*")
+
 logger = logging.getLogger(__name__)
+
+_cron_tables_initialized = False
 
 DEFAULT_TASKS = [
     {
@@ -210,11 +217,27 @@ DEFAULT_TASKS = [
         "horario_fixo": "07:00",
         "apenas_dias_uteis": 0,
         "descricao": "Atualiza o inventário de estações, usuários e coleções do SCCM importando os dados coletados mais recentes ou via consultas WMI/CIM."
+    },
+    {
+        "task_id": "retrain_ia_gridsearch",
+        "nome": "🧠 Re-calibração Profunda de IA (GridSearchCV)",
+        "categoria": "Inteligência Artificial",
+        "ativo": 1,
+        "tipo_agendamento": "intervalo",
+        "intervalo_valor": 30,
+        "intervalo_unidade": "dias",
+        "horario_fixo": "02:00",
+        "apenas_dias_uteis": 0,
+        "descricao": "Executa busca exaustiva de hiperparâmetros (GridSearchCV) para re-otimizar o modelo campeão de classificação de TAGs."
     }
 ]
 
-def setup_cron_tables():
-    """Cria tabelas de agendamentos (cron_schedules) e logs de execução (cron_logs)."""
+def setup_cron_tables(force: bool = False):
+    """Cria tabelas de agendamentos (cron_schedules) e logs de execução (cron_logs) se não existirem."""
+    global _cron_tables_initialized
+    if _cron_tables_initialized and not force:
+        return
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -284,19 +307,27 @@ def setup_cron_tables():
         """)
 
     conn.commit()
-
-    # Previne que tarefas fiquem presas em 'executando' caso o container tenha reiniciado ou ocorrido queda
-    try:
-        cursor.execute("UPDATE cron_schedules SET ultimo_status = 'erro', ultimo_log = 'Execução interrompida por reinício do sistema.' WHERE ultimo_status = 'executando';")
-        cursor.execute("UPDATE cron_logs SET status = 'erro', mensagem = 'Interrompido por reinício do sistema' WHERE status = 'executando';")
-        conn.commit()
-    except Exception:
-        pass
-
     cursor.close()
     conn.close()
 
     seed_cron_tasks_if_empty()
+    _cron_tables_initialized = True
+
+def cleanup_interrupted_cron_tasks():
+    """
+    Reseta tarefas que ficaram em status 'executando' devido a encerramento súbito do container ou processo.
+    Deve ser chamado estritamente na inicialização do daemon no startup, NUNCA em leituras rotineiras.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE cron_schedules SET ultimo_status = 'erro', ultimo_log = 'Execução interrompida por reinício do sistema.' WHERE ultimo_status = 'executando';")
+        cursor.execute("UPDATE cron_logs SET status = 'erro', mensagem = 'Interrompido por reinício do sistema' WHERE status = 'executando';")
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Aviso ao higienizar tarefas interrompidas: {e}")
 
 def seed_cron_tasks_if_empty():
     """Insere as rotinas padrão caso não existam e migra tarefas antigas desacopladas."""

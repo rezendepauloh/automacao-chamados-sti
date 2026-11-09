@@ -48,9 +48,9 @@ class TestCryptoUtils(unittest.TestCase):
         f_outro = Fernet(outra_chave)
         token_estranho = f_outro.encrypt(b"senha_ambiente_antigo").decode("utf-8")
         
-        # Não deve lançar exceção, deve devolver o token para fallback e registrar warning
+        # Não deve lançar exceção, deve devolver string vazia para fallback gracioso (keyring/env) e registrar warning
         resultado = decrypt_value(token_estranho)
-        self.assertEqual(resultado, token_estranho)
+        self.assertEqual(resultado, "")
 
     def test_is_valid_fernet_key_and_token(self):
         """Valida detecção de integridade de chave Fernet e identificação heurística de tokens."""

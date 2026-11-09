@@ -13,6 +13,7 @@ if str(root_dir) not in sys.path:
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
+import tempfile
 from src.config import setup_logging, DEBUG_DIR_SYNC
 from src.database import (
     setup_cron_tables,
@@ -23,6 +24,32 @@ from src.database import (
 )
 
 logger = setup_logging(DEBUG_DIR_SYNC / "cron_scheduler.log", "cron_scheduler")
+
+DAEMON_LOCK_FILE = Path(tempfile.gettempdir()) / "bancada_cron_daemon.lock"
+
+def is_daemon_process_active() -> bool:
+    """Verifica se há um processo ativo detendo o lock do agendador mestre."""
+    if not DAEMON_LOCK_FILE.exists():
+        return False
+    try:
+        pid = int(DAEMON_LOCK_FILE.read_text().strip())
+        if pid == os.getpid():
+            return True
+        if sys.platform == "win32":
+            import ctypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            try:
+                os.kill(pid, 0)
+                return True
+            except (OSError, ProcessLookupError):
+                return False
+    except Exception:
+        return False
 
 # Mapeamento de executores das rotinas
 def execute_task_by_id(task_id: str) -> str:
@@ -46,7 +73,8 @@ def execute_task_by_id(task_id: str) -> str:
         "sync_ferias": "ferias_sync.lock",
         "sync_sharepoint_catalog": "sharepoint_catalog_sync.lock",
         "sync_ad_catalog": "ad_sync.lock",
-        "sync_sccm": "sccm_sync.lock"
+        "sync_sccm": "sccm_sync.lock",
+        "retrain_ia_gridsearch": "ia_tune.lock"
     }
 
     lock_file = None
@@ -140,7 +168,7 @@ def execute_task_by_id(task_id: str) -> str:
             if ok:
                 return "Sincronização de férias da bancada finalizada com sucesso."
             else:
-                raise RuntimeError("Falha na sincronização da planilha de férias.")
+                return "Aviso: Planilha de férias não localizada no SharePoint nem no disco local."
 
         elif task_id == "sync_sharepoint_catalog":
             from src.syncs.sync_sharepoint_catalog import run_sharepoint_catalog_sync
@@ -167,10 +195,21 @@ def execute_task_by_id(task_id: str) -> str:
             cols = res.get("collections", 0)
             return f"Inventário SCCM sincronizado com sucesso: {devs} estações, {usrs} usuários e {cols} coleções."
 
+        elif task_id == "retrain_ia_gridsearch":
+            from src.tag_classifier import retrain_and_tune_model_job
+            msg = retrain_and_tune_model_job()
+            return msg
+
         elif task_id == "orquestrador_chamados":
+            from src.components.status_banner import check_orquestrador_running
+            if check_orquestrador_running():
+                return "Orquestrador já está em execução em outra thread/processo."
             import subprocess
             proc = subprocess.run([sys.executable, "orquestrador.py"], capture_output=True, text=True)
             if proc.returncode != 0:
+                combined_output = (proc.stdout or "") + (proc.stderr or "")
+                if "Já existe uma instância do robô ativa" in combined_output:
+                    return "Orquestrador já estava em execução em outra instância ativa."
                 raise RuntimeError(f"Orquestrador finalizou com código {proc.returncode}: {proc.stderr[:300] if proc.stderr else proc.stdout[:300]}")
             return "Orquestrador de chamados executado com sucesso."
 
@@ -210,11 +249,35 @@ class BancadaCronDaemon:
         logger.info("BancadaCronDaemon instanciado.")
 
     def start(self):
-        """Inicia a thread do agendador em segundo plano."""
+        """Inicia a thread do agendador em segundo plano se for o processo primário."""
         with self._lock:
             if self._running:
-                logger.info("BancadaCronDaemon já está em execução.")
+                logger.info("BancadaCronDaemon já está em execução nesta instância.")
                 return
+
+            # Se outro processo ativo já detém o papel de agendador mestre no SO, não duplica a thread
+            if is_daemon_process_active():
+                try:
+                    pid = int(DAEMON_LOCK_FILE.read_text().strip())
+                    if pid != os.getpid():
+                        logger.info(f"BancadaCronDaemon já está ativo no processo PID {pid}. Este processo operará em modo cliente sem duplicar o loop de agendamento.")
+                        return
+                except Exception:
+                    pass
+
+            # Registra este processo como o agendador mestre
+            try:
+                DAEMON_LOCK_FILE.write_text(str(os.getpid()))
+            except Exception as e:
+                logger.warning(f"Não foi possível gravar DAEMON_LOCK_FILE: {e}")
+
+            # Limpa tarefas que possam ter sido interrompidas em reinício anterior
+            try:
+                from src.database.cron_db import cleanup_interrupted_cron_tasks
+                cleanup_interrupted_cron_tasks()
+            except Exception:
+                pass
+
             self._running = True
             self._thread = threading.Thread(target=self._loop, name="BancadaCronDaemonThread", daemon=True)
             self._thread.start()
@@ -224,17 +287,34 @@ class BancadaCronDaemon:
         """Sinaliza parada do agendador."""
         with self._lock:
             self._running = False
+            try:
+                if DAEMON_LOCK_FILE.exists():
+                    pid = int(DAEMON_LOCK_FILE.read_text().strip())
+                    if pid == os.getpid():
+                        DAEMON_LOCK_FILE.unlink(missing_ok=True)
+            except Exception:
+                pass
             logger.info("🔴 Sinal de parada enviado ao BancadaCronDaemon.")
 
     def is_alive(self) -> bool:
-        return self._running and self._thread is not None and self._thread.is_alive()
+        return (self._running and self._thread is not None and self._thread.is_alive()) or is_daemon_process_active()
 
     def trigger_task_now(self, task_id: str) -> bool:
         """Dispara uma tarefa imediatamente em uma thread separada."""
         if task_id in self._executing_tasks:
-            logger.warning(f"Tarefa {task_id} já está em execução.")
+            logger.warning(f"Tarefa {task_id} já está em execução nesta instância.")
             return False
-            
+
+        # Verifica se já está marcada como executando no banco
+        try:
+            sched = get_cron_schedule_by_id(task_id)
+            if sched and str(sched.get("ultimo_status", "")).lower() == "executando":
+                logger.warning(f"Tarefa {task_id} já está marcada como executando no banco.")
+                return False
+        except Exception:
+            pass
+
+        self._executing_tasks.add(task_id)
         t = threading.Thread(target=self._run_single_task, args=(task_id,), daemon=True)
         t.start()
         return True
@@ -334,6 +414,7 @@ class BancadaCronDaemon:
                             task_dict = dict(row)
                         task_id = str(task_dict.get("task_id", ""))
                         if self._should_run(task_dict, now):
+                            self._executing_tasks.add(task_id)
                             logger.info(f"⏰ Disparando tarefa agendada: {task_id} ({task_dict.get('nome')})")
                             threading.Thread(target=self._run_single_task, args=(task_id,), daemon=True).start()
             except Exception as e:

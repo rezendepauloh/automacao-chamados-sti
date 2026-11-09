@@ -247,31 +247,39 @@ except ImportError:
 # Mock sklearn e submódulos
 try:
     import sklearn
+    import sklearn.pipeline
+    import sklearn.svm
+    import sklearn.feature_extraction
+    import sklearn.feature_extraction.text
+    import sklearn.model_selection
+    import sklearn.naive_bayes
+    import sklearn.ensemble
+    import sklearn.metrics
 except ImportError:
     mock_sklearn = types.ModuleType("sklearn")
     sys.modules["sklearn"] = mock_sklearn
 
-for submod, attrs in [
-    ("sklearn.pipeline", {"Pipeline": MagicMock()}),
-    ("sklearn.svm", {"LinearSVC": MagicMock()}),
-    ("sklearn.feature_extraction", {}),
-    ("sklearn.feature_extraction.text", {"TfidfVectorizer": MagicMock()}),
-    ("sklearn.model_selection", {"StratifiedKFold": MagicMock(), "GridSearchCV": MagicMock()}),
-    ("sklearn.naive_bayes", {"MultinomialNB": MagicMock(), "ComplementNB": MagicMock()}),
-    ("sklearn.ensemble", {"RandomForestClassifier": MagicMock()}),
-    ("sklearn.metrics", {"classification_report": MagicMock(return_value="")}),
-]:
-    m = types.ModuleType(submod)
-    for k, v in attrs.items():
-        setattr(m, k, v)
-    sys.modules[submod] = m
-    # Vincula ao módulo pai
-    parts = submod.split(".")
-    if len(parts) == 2:
-        setattr(sys.modules[parts[0]], parts[1], m)
-    elif len(parts) == 3:
-        if parts[1] in dir(sys.modules[parts[0]]):
-            setattr(getattr(sys.modules[parts[0]], parts[1]), parts[2], m)
+    for submod, attrs in [
+        ("sklearn.pipeline", {"Pipeline": MagicMock()}),
+        ("sklearn.svm", {"LinearSVC": MagicMock()}),
+        ("sklearn.feature_extraction", {}),
+        ("sklearn.feature_extraction.text", {"TfidfVectorizer": MagicMock()}),
+        ("sklearn.model_selection", {"StratifiedKFold": MagicMock(), "GridSearchCV": MagicMock()}),
+        ("sklearn.naive_bayes", {"MultinomialNB": MagicMock(), "ComplementNB": MagicMock()}),
+        ("sklearn.ensemble", {"RandomForestClassifier": MagicMock()}),
+        ("sklearn.metrics", {"classification_report": MagicMock(return_value="")}),
+    ]:
+        m = types.ModuleType(submod)
+        for k, v in attrs.items():
+            setattr(m, k, v)
+        sys.modules[submod] = m
+        # Vincula ao módulo pai
+        parts = submod.split(".")
+        if len(parts) == 2:
+            setattr(sys.modules[parts[0]], parts[1], m)
+        elif len(parts) == 3:
+            if parts[1] in dir(sys.modules[parts[0]]):
+                setattr(getattr(sys.modules[parts[0]], parts[1]), parts[2], m)
 
 # 2. Mock seguro de streamlit
 try:

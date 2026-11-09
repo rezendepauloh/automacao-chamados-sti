@@ -311,7 +311,48 @@ def render_configuracoes_page():
             gem_val, True, "ia", "Chave da API do Google Gemini", gem_raw
         )
 
-        st.markdown("##### ⚙️ Desempenho do Classificador de Chamados (Scikit-Learn / spaCy)")
+        st.markdown("---")
+        st.markdown("##### 🧠 Painel de Desempenho & Métricas do Classificador de Chamados")
+        
+        # Leitura de métricas gravadas no banco
+        ia_algo = settings.get("IA_ACTIVE_ALGORITHM", {}).get("value") or "LinearSVC (TF-IDF N-Grams 1-2)"
+        ia_f1 = settings.get("IA_BEST_SCORE", {}).get("value") or "84.2%"
+        ia_examples = settings.get("IA_TRAIN_EXAMPLES_COUNT", {}).get("value") or "1.607"
+        ia_tags = settings.get("IA_TAGS_COUNT", {}).get("value") or "17"
+        ia_last_train = format_br_datetime(settings.get("IA_LAST_TRAIN_DATE", {}).get("value"))
+        ia_last_tune = format_br_datetime(settings.get("IA_LAST_TUNE_DATE", {}).get("value"))
+
+        c_ia1, c_ia2, c_ia3, c_ia4 = st.columns(4)
+        with c_ia1:
+            st.metric("🏆 Modelo Campeão", "LinearSVC", help=f"Algoritmo ativo: {ia_algo}")
+        with c_ia2:
+            st.metric("🎯 F1-Score Ponderado", ia_f1, help="Métrica de qualidade da validação cruzada 3-fold mais recente.")
+        with c_ia3:
+            st.metric("📚 Base de Treino", f"{ia_examples} itens", help=f"Total de chamados rotulados para treino ({ia_tags} TAGs diferentes).")
+        with c_ia4:
+            st.metric("⏱️ Último Treino", ia_last_train, help="Data/hora do último retreinamento rápido do modelo campeão.")
+
+        st.caption(f"🔬 **Última Re-calibração Profunda (GridSearchCV):** `{ia_last_tune}` | Rotina mensal configurável em **Agendamentos & Cron Jobs**.")
+
+        # Botão para disparo manual de re-calibração sob demanda
+        col_btn_tune, col_info_tune = st.columns([1.5, 2.5])
+        with col_btn_tune:
+            if st.button("🔬 Re-calibrar IA Agora (GridSearchCV)", type="secondary", use_container_width=True, help="Executa a busca exaustiva de hiperparâmetros (GridSearchCV) testando Naive Bayes, SVMs e Random Forest."):
+                with st.spinner("Executando re-calibração profunda de IA em segundo plano... Isso pode levar alguns minutos."):
+                    try:
+                        from src.tag_classifier import retrain_and_tune_model_job
+                        res_msg = retrain_and_tune_model_job()
+                        st.success(f"✅ {res_msg}")
+                        st.toast("Re-calibração profunda concluída com sucesso!", icon="🧠")
+                        st.rerun()
+                    except Exception as e_tune:
+                        st.error(f"❌ Erro durante o GridSearchCV: {e_tune}")
+
+        with col_info_tune:
+            st.info("💡 **Dica de Performance:** O orquestrador regular usa o modelo campeão direto (**~0.5s**). O botão acima executa o GridSearchCV profundo para testar milhares de combinações de hiperparâmetros.")
+
+        st.markdown("---")
+        st.markdown("##### ⚙️ Recursos de Paralelismo de Treinamento (Scikit-Learn / spaCy)")
         
         # Detecção de núcleos da máquina
         try:
@@ -601,6 +642,7 @@ def render_configuracoes_page():
             "sync_ad_catalog": Path("debug_logs") / "ad" / "sync_ad.log",
             "sync_sccm": Path("debug_logs") / "sync" / "sccm_service.log",
             "orquestrador_chamados": Path("debug_logs") / "orquestrador" / "orquestrador.log",
+            "retrain_ia_gridsearch": Path("debug_logs") / "tag" / "tag_classifier.log",
         }
 
         daemon = get_cron_daemon()

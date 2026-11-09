@@ -1,16 +1,54 @@
-# Python caches
+# Python caches e temporários
 __pycache__/
 *.py[cod]
 *$py.class
+*.tmp
+*.bak
+.pytest_cache/
+.cache/
+**/.cache/
 
-# Ambientes virtuais
+# Ambientes virtuais e dependências
 .env
 .venv
+.venv/
 env/
 venv/
 ENV/
+bin/
+obj/
+bower_components/
+**/node_modules/
 
-# Arquivos de dados (NÃO SUBIR DADOS REAIS)
+# IDEs e Ferramentas de Agentes
+.vscode/
+.idea/
+.antigravity/
+.npm/
+
+# Builds, Bundles e Frameworks
+dist/
+build/
+**/dist/
+**/build/
+.next/
+**/.next/
+out/
+.nuxt/
+**/.expo/
+
+# Bancos de Dados Locais e Temporários
+chamados.db*
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+.mongodb/
+data/
+db/
+.secret.key
+
+# Arquivos de dados e planilhas (NÃO SUBIR DADOS REAIS)
 *.xlsx
 *.xls
 *.csv
@@ -18,38 +56,36 @@ ENV/
 02 - Dados tratados/
 03 - Dados prontos/
 debug_logs/
-chamados.db*
-*.db
-*.db-wal
-*.db-shm
-.secret.key
 
-# Logs
+# Logs do Sistema
 *.log
 
-# Modelos treinados
+# Modelos treinados de Machine Learning
 models/*.pkl
 models/*.joblib
 
-# VS Code
-.vscode/
+# Arquivos compactados e multimídia gerados (preservando assets do sistema)
+*.zip
+*.tar.gz
+*.gz
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+!assets/**
 
-# Old Scripts
+# Scripts legados e utilitários
 old_scripts/
-
-# motor Selenium
 chromedriver.exe
-
-# Entradas manuais
 manual_entries.py
 
-# Uploads
+# Uploads e diretórios temporários
 uploads/
-
-# Pastas temporárias
 temp/
 
-# Server IP
+# Server IP gerado em runtime
 src/js
 src/js/server-info.js
 
