@@ -33,7 +33,73 @@ def _cfg(key: str, default: str = "") -> str:
             return str(val).strip()
     except Exception:
         pass
-    return os.getenv(key, default)
+    env_val = os.getenv(key)
+    if env_val is not None and str(env_val).strip() != "":
+        return str(env_val).strip()
+    return default
+
+def get_spreadsheet_setting(key: str, default: str = "") -> str:
+    """
+    Retorna a URL ou caminho de uma planilha com estrita prioridade:
+    1. Valor salvo nas Configurações do Sistema (Banco de Dados / system_settings)
+    2. Fallback para a variável no arquivo .env
+    3. Valor default
+    """
+    # 1. Configuração persistida no Banco de Dados
+    try:
+        from src.database.settings_db import get_setting
+        val = get_setting(key)
+        if val is not None and str(val).strip() != "":
+            return str(val).strip()
+    except Exception:
+        pass
+
+    # 2. Fallback: Variável no ambiente (.env)
+    env_val = os.getenv(key)
+    if env_val is not None and str(env_val).strip() != "":
+        return str(env_val).strip()
+
+    # Recarrega do arquivo .env em disco caso não esteja ainda na memória
+    try:
+        from dotenv import dotenv_values
+        env_dict = dotenv_values()
+        if key in env_dict and env_dict[key] and str(env_dict[key]).strip():
+            return str(env_dict[key]).strip()
+    except Exception:
+        pass
+
+    # 3. Default informado
+    return default
+
+def is_sharepoint_url(val: str) -> bool:
+    """Verifica com segurança se o valor informado é uma URL remota HTTP/HTTPS do SharePoint."""
+    if not val:
+        return False
+    v = str(val).strip().lower()
+    return v.startswith("http://") or v.startswith("https://")
+
+def resolve_spreadsheet_path(key: str, default_local_cache_name: str = "") -> Path:
+    """
+    Resolve com segurança o caminho de arquivo para uma planilha.
+    Se a configuração for uma URL do SharePoint (ou vazia com cache local),
+    retorna o caminho local em uploads/<default_local_cache_name>.
+    Se for caminho relativo válido em disco, resolve contra USER_HOME.
+    """
+    val = get_spreadsheet_setting(key)
+    if is_sharepoint_url(val):
+        if default_local_cache_name:
+            return BASE_DIR / "uploads" / default_local_cache_name
+        return BASE_DIR / "uploads" / f"{key.lower()}.xlsx"
+
+    if val:
+        p = Path(val)
+        if p.is_absolute():
+            return p
+        return USER_HOME / p
+
+    if default_local_cache_name:
+        return BASE_DIR / "uploads" / default_local_cache_name
+    return USER_HOME
 
 # -----------------------------------------------------------------------------
 # Instalações antes de rodar
@@ -139,22 +205,22 @@ OUTPUT_DIR_PRONTO     = BASE_DIR / "03 - Dados prontos"
 OUTPUT_DIR_PRONTO.mkdir(exist_ok=True)
 MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
-MASTER_FILE_PATH = USER_HOME / _cfg("SHAREPOINT_RELATIVE_PATH", os.getenv("SHAREPOINT_RELATIVE_PATH", ""))
-DONATIONS_FILE_PATH = USER_HOME / _cfg("DONATIONS_EXCEL_RELATIVE_PATH", os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", ""))
-WARRANTY_FILE_PATH = USER_HOME / _cfg("WARRANTY_EXCEL_RELATIVE_PATH", os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", ""))
-VIAGENS_FILE_PATH = USER_HOME / _cfg("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", ""))
-FERIAS_EXCEL_RELATIVE_PATH = _cfg("FERIAS_EXCEL_RELATIVE_PATH", os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"))
-SHAREPOINT_MATUTINO_URL = _cfg("SHAREPOINT_MATUTINO_URL", os.getenv("SHAREPOINT_MATUTINO_URL", ""))
+MASTER_FILE_PATH = resolve_spreadsheet_path("SHAREPOINT_RELATIVE_PATH", "Chamados_Unificados_Final.xlsx")
+DONATIONS_FILE_PATH = resolve_spreadsheet_path("DONATIONS_EXCEL_RELATIVE_PATH", "doacoes_redistribuicao.xlsx")
+WARRANTY_FILE_PATH = resolve_spreadsheet_path("WARRANTY_EXCEL_RELATIVE_PATH", "garantia_contratos.xlsx")
+VIAGENS_FILE_PATH = resolve_spreadsheet_path("VIAGENS_EXCEL_RELATIVE_PATH", "viagens_bancada.xlsx")
+FERIAS_EXCEL_RELATIVE_PATH = get_spreadsheet_setting("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t")
+SHAREPOINT_MATUTINO_URL = get_spreadsheet_setting("SHAREPOINT_MATUTINO_URL", "")
 
-VIDEO_FAQ_ENV = os.getenv("VIDEO_FAQ_PATH", "")
-IMAGE_FAQ_ENV = os.getenv("IMAGE_FAQ_PATH", "")
+VIDEO_FAQ_ENV = get_spreadsheet_setting("VIDEO_FAQ_PATH", "")
+IMAGE_FAQ_ENV = get_spreadsheet_setting("IMAGE_FAQ_PATH", "")
 
-if VIDEO_FAQ_ENV.startswith("http://") or VIDEO_FAQ_ENV.startswith("https://"):
+if is_sharepoint_url(VIDEO_FAQ_ENV):
     VIDEO_FAQ_URL = VIDEO_FAQ_ENV
 else:
     VIDEO_FAQ_URL = ""
 
-if IMAGE_FAQ_ENV.startswith("http://") or IMAGE_FAQ_ENV.startswith("https://"):
+if is_sharepoint_url(IMAGE_FAQ_ENV):
     IMAGE_FAQ_URL = IMAGE_FAQ_ENV
 else:
     IMAGE_FAQ_URL = ""
@@ -875,10 +941,13 @@ def get_chrome_driver(
     disable_gpu: bool = False
 ):
     """
-    Inicializa o Selenium Chrome Driver de forma unificada e profissional com silenciadores de log,
-    modo incógnito, modo headless e tratamento de tamanho de tela.
+    Função legada: o projeto agora utiliza Playwright nativamente.
+    Mantida com fallback seguro para não quebrar chamadas legadas caso selenium ainda esteja instalado.
     """
-    from selenium import webdriver
+    try:
+        from selenium import webdriver
+    except ImportError:
+        raise RuntimeError("O suporte ao Selenium/ChromeDriver foi descontinuado em favor do Playwright.")
     
     opts = webdriver.ChromeOptions()
     

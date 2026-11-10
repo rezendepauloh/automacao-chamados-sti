@@ -89,11 +89,11 @@ automacao-chamados-sti/
 │   │   ├── sccm_db.py          # Dados integrados de inventário SCCM/MECM
 │   │   └── ...                 # Demais módulos DAO por domínio
 │   │
-│   ├── scrapers/               # Motores de coleta web
-│   │   ├── otrs_scraper_fast.py# Coletor HTTP veloz via requests + BeautifulSoup (sem Selenium)
-│   │   ├── otrs_scraper.py     # Coletor legado Selenium (mantido para contingência)
-│   │   ├── citsmart_scraper.py # Coletor automatizado via Playwright/Chromium
-│   │   └── ...                 # Scrapers de plantões, ramais, unidades, FAQs
+│   ├── scrapers/               # Motores de coleta web unificados (Requests + Playwright)
+│   │   ├── otrs_scraper_fast.py# Coletor HTTP veloz via requests + BeautifulSoup
+│   │   ├── citsmart_scraper.py # Coletor automatizado via Playwright Chromium
+│   │   ├── sharepoint_downloader.py # Downloader híbrido ultrarrápido (requests em cache + Playwright)
+│   │   └── ...                 # Scrapers de plantões, ramais, unidades, OXE, PaperCut e FAQs
 │   │
 │   ├── services/
 │   │   └── cron_scheduler.py   # Daemon de agendamento em segundo plano (tarefas periódicas)
@@ -144,6 +144,13 @@ automacao-chamados-sti/
   ])
   ```
 - **Recalibração Profunda:** O `GridSearchCV` exaustivo deve ser acionado apenas via tarefa periódica mensal (`retrain_ia_gridsearch`) no Cron Daemon ou pelo botão manual de sintonia na aba de Configurações (`--tune`).
+
+### 📊 Resolução Unificada de Planilhas e URLs do SharePoint (`src/config.py`)
+- **Cascata de Prioridade Obrigatória:** Toda consulta a caminhos ou links de planilhas (Doações, Fiscalização, Garantias, Férias, Viagens, Escala Matutina e Chamados) DEVE utilizar o helper `get_spreadsheet_setting(key, default)`:
+  1. **Prioridade 1:** Configurações salvas no Banco de Dados (`system_settings`).
+  2. **Prioridade 2 (Fallback):** Arquivo `.env` (montado em tempo real no Docker via volume).
+  3. **Prioridade 3:** Valor padrão (*default*) especificado no código.
+- **Tratamento Seguro de URLs vs Caminhos Locais:** NUNCA concatenar `USER_HOME / valor` diretamente caso o valor seja uma URL remota (`http://` ou `https://`). Utilize sempre `resolve_spreadsheet_path(key, default_cache_name)` para evitar caminhos corrompidos (`/root/https:/...`), direcionando URLs remotas para o cache local padronizado em `uploads/`.
 
 ### 🔒 Segurança & Cofre de Credenciais (`src/crypto_utils.py`)
 - Senhas sensíveis armazenadas no banco ou arquivos de configuração são cifradas via Fernet.

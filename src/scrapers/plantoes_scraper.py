@@ -24,14 +24,12 @@ import keyring
 from src.config import (
     setup_logging, DEBUG_DIR_PLANTOES,
     SHAREPOINT_MATUTINO_URL, CITSMART_EMAIL, PASSWORD,
-    HEADLESS, EXPLICIT_WAIT, USERNAME, get_chrome_driver, cleanup_old_files
+    HEADLESS, EXPLICIT_WAIT, USERNAME, cleanup_old_files
 )
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 logger = setup_logging(DEBUG_DIR_PLANTOES / "plantoes.log", "plantoes")
 
-
-logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 MESES_PT = {
@@ -204,170 +202,17 @@ def sync_matutino_from_excel(excel_path_or_buffer) -> int:
         
     return len(records)
 
-def download_sharepoint_matutino_file() -> Path | None:
-    url = SHAREPOINT_MATUTINO_URL
-    logger.info(f"🌐 Iniciando tentativa de obtenção da planilha via URL do SharePoint DIT: {url}")
-    
+def download_sharepoint_matutino_file(url: str = None) -> Path | None:
+    from src.config import get_spreadsheet_setting
+    from src.scrapers.sharepoint_downloader import download_sharepoint_file
+
+    if not url:
+        url = get_spreadsheet_setting("SHAREPOINT_MATUTINO_URL", SHAREPOINT_MATUTINO_URL)
+
     output_dir = Path("uploads").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     file_path = output_dir / "escala_periodo_matutino.xlsx"
-    
-    download_url = url + "&download=1" if "?e=" in url else url + "?download=1"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    
-    logger.info(f"📥 Tentando download direto via HTTP GET: {download_url}")
-    try:
-        resp = requests.get(download_url, headers=headers, timeout=15, allow_redirects=True)
-        if resp.status_code == 200 and resp.content.startswith(b'PK'):
-            with open(file_path, "wb") as f:
-                f.write(resp.content)
-            logger.info(f"🎉 SUCESSO NO DOWNLOAD HTTP: Arquivo '.xlsx' salvo ({len(resp.content)} bytes) em '{file_path}'.")
-            return file_path
-        else:
-            logger.info(f"ℹ️ Download HTTP direto retornou página de autenticação ({len(resp.content)} bytes). Iniciando navegador Selenium...")
-    except Exception as e_http:
-        logger.warning(f"⚠️ Tentativa HTTP direto falhou: {e_http}")
-
-    driver = None
-    try:
-        logger.info("🌐 Inicializando Selenium Chrome Driver...")
-        driver = get_chrome_driver(headless=HEADLESS)
-        
-        driver.command_executor._commands["send_command"] = ("POST", '/session/$sessionId/chromium/send_command')
-        params = {'cmd': 'Page.setDownloadBehavior', 'params': {'behavior': 'allow', 'downloadPath': str(output_dir)}}
-        driver.execute("send_command", params)
-        
-        logger.info(f"Navegando até a URL compartilhada do SharePoint...")
-        driver.get(url)
-        time.sleep(4)
-        
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        
-        wait = WebDriverWait(driver, EXPLICIT_WAIT)
-        
-        if "login.microsoftonline.com" in driver.current_url or "login.live.com" in driver.current_url or "login" in driver.current_url:
-            logger.info("🔑 Tela de login institucional detectada. Preenchendo credenciais AD...")
-            
-            user_inputs = driver.find_elements(By.XPATH, "//input[@type='email' or @name='loginfmt' or @type='text']")
-            if user_inputs:
-                user_inputs[0].clear()
-                user_inputs[0].send_keys(CITSMART_EMAIL)
-                logger.info(f"👤 Email digitado: {CITSMART_EMAIL}")
-                
-                submits = driver.find_elements(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
-                if submits:
-                    submits[0].click()
-                    time.sleep(3)
-                    
-            if PASSWORD:
-                pass_inputs = driver.find_elements(By.XPATH, "//input[@type='password']")
-                if pass_inputs:
-                    pass_inputs[0].clear()
-                    pass_inputs[0].send_keys(PASSWORD or "")
-                    logger.info("🔑 Senha da rede preenchida.")
-                    
-                    submits = driver.find_elements(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
-                    if submits:
-                        submits[0].click()
-                        logger.info("🖱️ Botão de login acionado. Aguardando resposta da Microsoft...")
-                        time.sleep(4)
-                        
-            try:
-                stay_btns = driver.find_elements(By.XPATH, "//input[@id='idSIButton9'] | //input[@value='Sim' or @value='Yes'] | //button[contains(text(),'Sim') or contains(text(),'Yes')]")
-                if stay_btns:
-                    stay_btns[0].click()
-                    logger.info("🖱️ Resposta 'Sim' confirmada na tela 'Manter Sessão Iniciada'.")
-                    time.sleep(5)
-            except Exception:
-                pass
-
-        logger.info(f"📍 URL após autenticação: {driver.current_url}")
-        
-        if "sharepoint.com" in driver.current_url:
-            logger.info("🔗 Sessão autenticada no SharePoint! Extraindo cookies para download direto via HTTP...")
-            try:
-                session_auth = requests.Session()
-                session_auth.headers.update(headers)
-                for cookie in driver.get_cookies():
-                    session_auth.cookies.set(
-                        name=cookie['name'],
-                        value=cookie['value'],
-                        domain=cookie.get('domain')
-                    )
-                
-                resp_auth = session_auth.get(download_url, timeout=30, allow_redirects=True)
-                if resp_auth.status_code == 200 and resp_auth.content and (resp_auth.content.startswith(b'PK') or resp_auth.content.startswith(b'\x50\x4b\x03\x04')):
-                    with open(file_path, "wb") as f:
-                        f.write(resp_auth.content)
-                    logger.info(f"🎉 SUCESSO NO DOWNLOAD VIA SESSÃO: Arquivo Excel salvo ({len(resp_auth.content)} bytes) em '{file_path}'.")
-                    return file_path
-                else:
-                    logger.info(f"ℹ️ Download via cookies retornou status {resp_auth.status_code} ({len(resp_auth.content)} bytes). Disparando download via Selenium...")
-            except Exception as e_cookies:
-                logger.warning(f"Tentativa de download via cookies autenticados: {e_cookies}")
-
-            driver.get(download_url)
-            
-            # Aguarda a finalização do download do navegador
-            for _ in range(20):
-                time.sleep(1)
-                for f_item in output_dir.glob("*.xlsx"):
-                    if not f_item.name.endswith(".crdownload") and f_item.stat().st_size > 5000:
-                        logger.info(f"🎉 SUCESSO NO DOWNLOAD SELENIUM: Arquivo '{f_item.name}' baixado com {f_item.stat().st_size} bytes.")
-                        return f_item
-        else:
-            logger.warning("⚠️ O navegador ainda não alcançou o SharePoint. Tentando forçar o acesso direto...")
-            driver.get(download_url)
-            for _ in range(15):
-                time.sleep(1)
-                for f_item in output_dir.glob("*.xlsx"):
-                    if not f_item.name.endswith(".crdownload") and f_item.stat().st_size > 5000:
-                        return f_item
-            
-        # Fallback defensivo: se restou um .crdownload com bytes de Excel válidos
-        for cr_file in output_dir.glob("*.crdownload"):
-            if cr_file.stat().st_size > 5000:
-                try:
-                    with open(cr_file, "rb") as cr_f:
-                        cr_bytes = cr_f.read()
-                    if cr_bytes.startswith(b'PK') or cr_bytes.startswith(b'\x50\x4b\x03\x04'):
-                        with open(file_path, "wb") as f_out:
-                            f_out.write(cr_bytes)
-                        logger.info(f"🎉 Recuperado arquivo Excel completo a partir de '{cr_file.name}' ({len(cr_bytes)} bytes).")
-                        try:
-                            cr_file.unlink()
-                        except Exception:
-                            pass
-                        return file_path
-                except Exception as e_cr:
-                    logger.warning(f"Erro ao verificar crdownload: {e_cr}")
-
-        if file_path.exists() and file_path.stat().st_size > 0:
-            logger.info(f"🎉 SUCESSO NO SELENIUM: Planilha baixada ({file_path.stat().st_size} bytes) em '{file_path}'.")
-            return file_path
-        else:
-            img_path = DEBUG_DIR_PLANTOES / "debug_sharepoint_screen.png"
-            driver.save_screenshot(str(img_path))
-            logger.warning(f"⚠️ Planilha não baixada automaticamente. Print da tela salvo em: '{img_path}'.")
-            
-    except Exception as e_sel:
-        logger.error(f"❌ Erro durante a navegação via Selenium: {e_sel}", exc_info=True)
-    finally:
-        if driver:
-            try:
-                driver.quit()
-                logger.info("🔒 Navegador Selenium encerrado com sucesso.")
-            except:
-                pass
-                
-    if file_path.exists() and file_path.stat().st_size > 0:
-        return file_path
-        
-    return None
+    return download_sharepoint_file(url, file_path)
 
 def sync_matutino_from_sharepoint() -> int:
     print_header("WORKER - SINCRONIZAÇÃO DE PLANTÃO MATUTINO", color=CYAN)
@@ -404,7 +249,6 @@ def scrape_simp_plantoes(ano: int = 2026):
     create_plantoes_lock()
     logger.info(f"🤖 === INICIANDO RASPAGEM SIMP PLANTÕES STI (ANO {ano}) ===")
     
-    driver = None
     records = []
     
     try:
@@ -412,148 +256,113 @@ def scrape_simp_plantoes(ano: int = 2026):
         pwd = PASSWORD
         logger.info(f"👤 Usuário de rede sAMAccountName: '{user}'")
         
-        driver = get_chrome_driver(headless=HEADLESS)
-        logger.info("🌐 Selenium Chrome Driver inicializado com sucesso.")
-        
-        login_url = "https://simp.mpms.mp.br/"
-        logger.info(f"🔗 Conectando à página de login: {login_url}")
-        driver.get(login_url)
-        time.sleep(3)
-        
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        
-        wait = WebDriverWait(driver, EXPLICIT_WAIT)
-        
-        try:
-            inputs = driver.find_elements(By.XPATH, "//input[@type='text' or @type='email' or @name='username' or @id='username' or @name='user']")
-            if inputs and pwd:
-                inputs[0].clear()
-                inputs[0].send_keys(user)
-                logger.info(f"👤 Campo de usuário preenchido com: '{user}'")
-                
-                pass_fields = driver.find_elements(By.XPATH, "//input[@type='password']")
-                if pass_fields:
-                    pass_fields[0].clear()
-                    pass_fields[0].send_keys(pwd)
-                    logger.info("🔑 Campo de senha preenchido.")
-                    
-                    submits = driver.find_elements(By.XPATH, "//button[@type='submit'] | //input[@type='submit'] | //button[contains(text(),'Entrar')]")
-                    if submits:
-                        submits[0].click()
-                        logger.info("🖱️ Botão de login clicado. Aguardando autenticação...")
-                        time.sleep(5)
-        except Exception as e_login:
-            logger.info(f"ℹ️ Etapa de login concluída ou pré-existente: {e_login}")
+        from playwright.sync_api import sync_playwright
 
-        plantao_url = "https://simp.mpms.mp.br/sistemas/Plantao-STI"
-        logger.info(f"🔗 Navegando até o módulo Plantão STI: {plantao_url}")
-        driver.get(plantao_url)
-        time.sleep(4)
-        
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        if iframes:
-            logger.info(f"🖼️ IFRAME DETECTADO! Alternando contexto para o iframe 'frame-sistema-Plantao-STI' ({len(iframes)} iframe(s)...)")
-            driver.switch_to.frame(iframes[0])
-            time.sleep(4)
-        else:
-            logger.info("ℹ️ Nenhum iframe direto. Navegando diretamente para a URL interna: https://simp.mpms.mp.br/sistemas/plantao")
-            driver.get("https://simp.mpms.mp.br/sistemas/plantao")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=HEADLESS,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--ignore-certificate-errors"]
+            )
+            context = browser.new_context(ignore_https_errors=True)
+            page = context.new_page()
+
+            login_url = "https://simp.mpms.mp.br/"
+            logger.info(f"🔗 Conectando à página de login: {login_url}")
+            page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
+            time.sleep(2)
+
+            try:
+                user_input = page.locator("xpath=//input[@type='text' or @type='email' or @name='username' or @id='username' or @name='user']").first
+                if user_input.count() > 0 and pwd:
+                    user_input.fill(user)
+                    logger.info(f"👤 Campo de usuário preenchido com: '{user}'")
+                    
+                    pass_input = page.locator("xpath=//input[@type='password']").first
+                    if pass_input.count() > 0:
+                        pass_input.fill(pwd)
+                        logger.info("🔑 Campo de senha preenchido.")
+                        
+                        submit_btn = page.locator("xpath=//button[@type='submit'] | //input[@type='submit'] | //button[contains(text(),'Entrar')]").first
+                        if submit_btn.count() > 0:
+                            submit_btn.click()
+                            logger.info("🖱️ Botão de login clicado. Aguardando autenticação...")
+                            time.sleep(5)
+            except Exception as e_login:
+                logger.info(f"ℹ️ Etapa de login concluída ou pré-existente: {e_login}")
+
+            plantao_url = "https://simp.mpms.mp.br/sistemas/Plantao-STI"
+            logger.info(f"🔗 Navegando até o módulo Plantão STI: {plantao_url}")
+            page.goto(plantao_url, wait_until="domcontentloaded", timeout=60000)
             time.sleep(4)
             
-        logger.info(f"📍 URL/Contexto ativo no navegador.")
-        
-        img_iframe = DEBUG_DIR_PLANTOES / "debug_simp_iframe.png"
-        driver.save_screenshot(str(img_iframe))
-        logger.info(f"📸 Print do interior do IFRAME salvo em: '{img_iframe}'")
+            iframe_el = page.locator("iframe").first
+            frame = page
+            if iframe_el.count() > 0:
+                logger.info("🖼️ IFRAME DETECTADO! Alternando contexto para o iframe...")
+                frame = page.frame_locator("iframe").first
+            else:
+                logger.info("ℹ️ Nenhum iframe direto. Navegando para URL interna: https://simp.mpms.mp.br/sistemas/plantao")
+                page.goto("https://simp.mpms.mp.br/sistemas/plantao", wait_until="domcontentloaded", timeout=60000)
+                time.sleep(4)
 
-        month_buttons = driver.find_elements(By.XPATH, "//div[contains(@class,'p-selectbutton')]//div[@role='button'] | //div[contains(@class,'p-selectbutton')]//div[contains(@class,'p-button')]")
-        logger.info(f"🗓️ Total de {len(month_buttons)} botões de meses encontrados DENTRO DO IFRAME!")
+            month_buttons = frame.locator("xpath=//div[contains(@class,'p-selectbutton')]//div[@role='button'] | //div[contains(@class,'p-selectbutton')]//div[contains(@class,'p-button')]")
+            btn_count = month_buttons.count()
+            logger.info(f"🗓️ Total de {btn_count} botões de meses encontrados!")
 
-        meses_validos = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+            meses_validos = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 
-        if month_buttons:
-            for btn in month_buttons:
-                try:
-                    mes_nome = btn.text.strip()
-                    if not mes_nome:
-                        mes_nome = btn.get_attribute("aria-label") or ""
-                    mes_nome = mes_nome.strip()
-                    
-                    if not any(m.lower() in mes_nome.lower() for m in meses_validos):
-                        continue
-                        
-                    logger.info(f"🖱️ Clicando no mês: '{mes_nome}'")
-                    driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(1.5)
-                    
-                    rows = driver.find_elements(By.XPATH, "//table[contains(@class,'p-datatable-table')]//tbody/tr | //div[contains(@class,'p-datatable')]//tbody/tr")
-                    logger.info(f"📊 Mês '{mes_nome}': {len(rows)} linhas de plantão encontradas.")
-                    
-                    for r in rows:
-                        cols = r.find_elements(By.TAG_NAME, "td")
-                        if len(cols) >= 5:
-                            periodo_raw = cols[0].text.strip().replace("\n", " ")
-                            if not periodo_raw or "Período" in periodo_raw:
-                                continue
-                                
-                            sdesk = cols[1].text.strip().replace("\n", " | ")
-                            manut = cols[2].text.strip().replace("\n", " | ")
-                            infra = cols[3].text.strip().replace("\n", " | ")
-                            dev = cols[4].text.strip().replace("\n", " | ")
+            if btn_count > 0:
+                for i in range(btn_count):
+                    try:
+                        btn = month_buttons.nth(i)
+                        mes_nome = (btn.text_content() or btn.get_attribute("aria-label") or "").strip()
+                        if not any(m.lower() in mes_nome.lower() for m in meses_validos):
+                            continue
                             
-                            dt_ini, dt_fim = parse_simp_periodo(periodo_raw, ano)
-                            rec = {
-                                "ano": ano,
-                                "mes": mes_nome,
-                                "periodo_str": periodo_raw,
-                                "data_inicio": dt_ini,
-                                "data_fim": dt_fim,
-                                "service_desk": sdesk,
-                                "manutencao": manut,
-                                "infraestrutura": infra,
-                                "desenvolvimento": dev
-                            }
-                            records.append(rec)
-                            logger.info(f"✨ SIMP [{mes_nome}]: {periodo_raw} -> Manutenção: '{manut}'")
-                except Exception as ex_m:
-                    logger.warning(f"⚠️ Aviso ao processar mês '{mes_nome}': {ex_m}")
-        else:
-            logger.warning("⚠️ Botões de meses não localizados no iframe. Extraindo linhas da tabela visível...")
-            rows = driver.find_elements(By.XPATH, "//table//tbody/tr | //div[contains(@class,'p-datatable')]//tbody/tr")
-            for r in rows:
-                cols = r.find_elements(By.TAG_NAME, "td")
-                if len(cols) >= 5:
-                    periodo_raw = cols[0].text.strip().replace("\n", " ")
-                    if not periodo_raw or "Período" in periodo_raw:
-                        continue
-                    dt_ini, dt_fim = parse_simp_periodo(periodo_raw, ano)
-                    rec = {
-                        "ano": ano,
-                        "mes": "",
-                        "periodo_str": periodo_raw,
-                        "data_inicio": dt_ini,
-                        "data_fim": dt_fim,
-                        "service_desk": cols[1].text.strip(),
-                        "manutencao": cols[2].text.strip(),
-                        "infraestrutura": cols[3].text.strip(),
-                        "desenvolvimento": cols[4].text.strip()
-                    }
-                    records.append(rec)
-                    logger.info(f"✨ SIMP: {periodo_raw} -> Manutenção: '{rec['manutencao']}'")
-                    
+                        logger.info(f"🖱️ Clicando no mês: '{mes_nome}'")
+                        btn.click()
+                        time.sleep(1.5)
+                        
+                        rows = frame.locator("xpath=//table[contains(@class,'p-datatable-table')]//tbody/tr | //div[contains(@class,'p-datatable')]//tbody/tr")
+                        r_count = rows.count()
+                        logger.info(f"📊 Mês '{mes_nome}': {r_count} linhas de plantão encontradas.")
+                        
+                        for r_idx in range(r_count):
+                            row = rows.nth(r_idx)
+                            cols = row.locator("td")
+                            if cols.count() >= 5:
+                                periodo_raw = (cols.nth(0).text_content() or "").strip().replace("\n", " ")
+                                if not periodo_raw or "Período" in periodo_raw:
+                                    continue
+                                    
+                                sdesk = (cols.nth(1).text_content() or "").strip().replace("\n", " | ")
+                                manut = (cols.nth(2).text_content() or "").strip().replace("\n", " | ")
+                                infra = (cols.nth(3).text_content() or "").strip().replace("\n", " | ")
+                                dev = (cols.nth(4).text_content() or "").strip().replace("\n", " | ")
+                                
+                                dt_ini, dt_fim = parse_simp_periodo(periodo_raw, ano)
+                                rec = {
+                                    "ano": ano,
+                                    "mes": mes_nome,
+                                    "periodo_str": periodo_raw,
+                                    "data_inicio": dt_ini,
+                                    "data_fim": dt_fim,
+                                    "service_desk": sdesk,
+                                    "manutencao": manut,
+                                    "infraestrutura": infra,
+                                    "desenvolvimento": dev
+                                }
+                                records.append(rec)
+                    except Exception as ex_m:
+                        logger.warning(f"⚠️ Aviso ao processar mês: {ex_m}")
+            browser.close()
+            logger.info("🔒 Navegador fechado com sucesso.")
+
         logger.info(f"✅ TOTAL: {len(records)} plantões semanais extraídos com sucesso do SIMP.")
         
     except Exception as ex:
         logger.error(f"❌ Falha durante a raspagem do SIMP: {ex}", exc_info=True)
     finally:
-        if driver:
-            try:
-                driver.quit()
-                logger.info("🔒 Navegador fechado com sucesso.")
-            except:
-                pass
         remove_plantoes_lock()
                 
     if records:

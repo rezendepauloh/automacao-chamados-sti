@@ -16,16 +16,11 @@ if str(root_dir) not in sys.path:
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import (
     PAPERCUT_URL, PAPERCUT_PRINTER_LIST_URL, PAPERCUT_DEVICE_LIST_URL,
     PAPERCUT_USER, PAPERCUT_PASS, DEBUG_DIR_PAPERCUT, HEADLESS,
-    setup_logging, get_chrome_driver, USER_HOME, INPUT_DIR_BRUTOS,
+    setup_logging, USER_HOME, INPUT_DIR_BRUTOS,
     cleanup_old_files
 )
 from src.database import save_impressoras_to_db
@@ -33,8 +28,6 @@ from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 logger = setup_logging(DEBUG_DIR_PAPERCUT / "papercut_scraper.log", __name__)
 
-
-logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 DOWNLOAD_DIR = USER_HOME / "Downloads"
@@ -312,93 +305,96 @@ def run_papercut_scraper():
 
     cleanup_old_papercut_downloads()
 
-    driver = None
     scraped_success = False
 
     try:
         if PAPERCUT_USER and PAPERCUT_PASS and PAPERCUT_URL:
-            logger.info("🚀 Iniciando navegador Chrome com Selenium...")
-            driver = get_chrome_driver(headless=HEADLESS)
-            logger.info("✅ Navegador Chrome iniciado com sucesso.")
+            logger.info("🚀 Iniciando navegador Chromium com Playwright...")
+            from playwright.sync_api import sync_playwright
 
-            logger.info(f"Navegando para página de login: {PAPERCUT_URL}")
-            driver.get(PAPERCUT_URL)
-            time.sleep(2)
-            
-            logger.info(f"Página de Login -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=HEADLESS,
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--ignore-certificate-errors"]
+                )
+                context = browser.new_context(
+                    ignore_https_errors=True,
+                    accept_downloads=True
+                )
+                page = context.new_page()
 
-            username_fields = driver.find_elements(By.ID, "inputUsername") or driver.find_elements(By.NAME, "inputUsername")
-            password_fields = driver.find_elements(By.ID, "inputPassword") or driver.find_elements(By.NAME, "inputPassword")
-            
-            if username_fields and password_fields:
-                username_fields[0].clear()
-                username_fields[0].send_keys(PAPERCUT_USER)
-                password_fields[0].clear()
-                password_fields[0].send_keys(PAPERCUT_PASS)
-                logger.info(f"Credenciais preenchidas para usuário '{PAPERCUT_USER}'. Submetendo...")
-
-                submit_btn = (driver.find_elements(By.NAME, "$Submit$0") or 
-                              driver.find_elements(By.CSS_SELECTOR, "input.loginSubmit") or 
-                              driver.find_elements(By.CSS_SELECTOR, "input[type='submit']"))
+                logger.info(f"Navegando para página de login: {PAPERCUT_URL}")
+                page.goto(PAPERCUT_URL, wait_until="domcontentloaded", timeout=60000)
+                time.sleep(1)
                 
-                if submit_btn:
-                    submit_btn[0].click()
-                    time.sleep(4)
-                    logger.info(f"Pós-Login -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
+                logger.info(f"Página de Login -> URL Atual: '{page.url}' | Título: '{page.title()}'")
 
-            logger.info(f"Navegando para PrinterList: {PAPERCUT_PRINTER_LIST_URL}")
-            driver.get(PAPERCUT_PRINTER_LIST_URL)
-            time.sleep(3)
-            logger.info(f"PrinterList -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
-            
-            csv_links_printer = (
-                driver.find_elements(By.XPATH, "//a[contains(@href, 'PrinterList/$ReportLink.csv') or contains(@href, 'sp=SCSV')]") or
-                driver.find_elements(By.XPATH, "//img[@alt='CSV' or @title='CSV']/parent::a")
-            )
-            
-            logger.info(f"Links de exportação CSV encontrados em PrinterList: {len(csv_links_printer)}")
-            if csv_links_printer:
-                target_url = csv_links_printer[0].get_attribute('href')
-                logger.info(f"📥 Clicando no link de download CSV do PrinterList: {target_url}")
-                csv_links_printer[0].click()
-                time.sleep(5)
-            else:
-                logger.warning("⚠️ Nenhum link de download CSV encontrado em PrinterList.")
+                user_input = page.locator("#inputUsername, input[name='inputUsername']").first
+                pwd_input = page.locator("#inputPassword, input[name='inputPassword']").first
 
-            logger.info(f"Navegando para DeviceList: {PAPERCUT_DEVICE_LIST_URL}")
-            driver.get(PAPERCUT_DEVICE_LIST_URL)
-            time.sleep(3)
-            logger.info(f"DeviceList -> URL Atual: '{driver.current_url}' | Título: '{driver.title}'")
-            
-            csv_links_device = (
-                driver.find_elements(By.XPATH, "//a[contains(@href, 'DeviceList/$ReportLink.csv') or contains(@href, 'sp=SCSV')]") or
-                driver.find_elements(By.XPATH, "//img[@alt='CSV' or @title='CSV']/parent::a")
-            )
-            
-            logger.info(f"Links de exportação CSV encontrados em DeviceList: {len(csv_links_device)}")
-            if csv_links_device:
-                target_url = csv_links_device[0].get_attribute('href')
-                logger.info(f"📥 Clicando no link de download CSV do DeviceList: {target_url}")
-                csv_links_device[0].click()
-                time.sleep(5)
-            else:
-                logger.warning("⚠️ Nenhum link de download CSV encontrado em DeviceList.")
+                if user_input.count() > 0 and pwd_input.count() > 0:
+                    user_input.fill(PAPERCUT_USER)
+                    pwd_input.fill(PAPERCUT_PASS)
+                    logger.info(f"Credenciais preenchidas para usuário '{PAPERCUT_USER}'. Submetendo...")
 
-            scraped_success = True
-            logger.info("✅ Fluxo Selenium finalizado.")
+                    submit_btn = page.locator("input[name='$Submit$0'], input.loginSubmit, input[type='submit']").first
+                    if submit_btn.count() > 0:
+                        submit_btn.click()
+                        page.wait_for_load_state("domcontentloaded", timeout=30000)
+                        time.sleep(2)
+                        logger.info(f"Pós-Login -> URL Atual: '{page.url}' | Título: '{page.title()}'")
+
+                # 1. Download de PrinterList
+                logger.info(f"Navegando para PrinterList: {PAPERCUT_PRINTER_LIST_URL}")
+                page.goto(PAPERCUT_PRINTER_LIST_URL, wait_until="domcontentloaded", timeout=60000)
+                time.sleep(2)
+                logger.info(f"PrinterList -> URL Atual: '{page.url}' | Título: '{page.title()}'")
+
+                csv_link_printer = page.locator(
+                    "xpath=//a[contains(@href, 'PrinterList/$ReportLink.csv') or contains(@href, 'sp=SCSV')] | //img[@alt='CSV' or @title='CSV']/parent::a"
+                ).first
+
+                if csv_link_printer.count() > 0:
+                    logger.info("📥 Baixando CSV do PrinterList via Playwright...")
+                    with page.expect_download(timeout=30000) as download_info:
+                        csv_link_printer.click()
+                    download = download_info.value
+                    download_target = DOWNLOAD_DIR / "printer_list.csv"
+                    download.save_as(str(download_target))
+                    logger.info(f"✅ Download PrinterList concluído: {download_target}")
+                else:
+                    logger.warning("⚠️ Nenhum link de download CSV encontrado em PrinterList.")
+
+                # 2. Download de DeviceList
+                logger.info(f"Navegando para DeviceList: {PAPERCUT_DEVICE_LIST_URL}")
+                page.goto(PAPERCUT_DEVICE_LIST_URL, wait_until="domcontentloaded", timeout=60000)
+                time.sleep(2)
+                logger.info(f"DeviceList -> URL Atual: '{page.url}' | Título: '{page.title()}'")
+
+                csv_link_device = page.locator(
+                    "xpath=//a[contains(@href, 'DeviceList/$ReportLink.csv') or contains(@href, 'sp=SCSV')] | //img[@alt='CSV' or @title='CSV']/parent::a"
+                ).first
+
+                if csv_link_device.count() > 0:
+                    logger.info("📥 Baixando CSV do DeviceList via Playwright...")
+                    with page.expect_download(timeout=30000) as download_info:
+                        csv_link_device.click()
+                    download = download_info.value
+                    download_target = DOWNLOAD_DIR / "device_list.csv"
+                    download.save_as(str(download_target))
+                    logger.info(f"✅ Download DeviceList concluído: {download_target}")
+                else:
+                    logger.warning("⚠️ Nenhum link de download CSV encontrado em DeviceList.")
+
+                browser.close()
+                scraped_success = True
+                logger.info("✅ Fluxo Playwright finalizado com sucesso.")
 
         else:
-            logger.warning("⚠️ Credenciais ou URL do PaperCut não configuradas no .env. Saltando etapa Selenium.")
+            logger.warning("⚠️ Credenciais ou URL do PaperCut não configuradas no .env. Saltando etapa Playwright.")
 
     except Exception as e:
-        logger.error(f"💥 Falha durante execução do Selenium Scraper: {e}", exc_info=True)
-    finally:
-        if driver:
-            try:
-                driver.quit()
-                logger.info("Navegador Selenium encerrado.")
-            except Exception:
-                pass
+        logger.error(f"💥 Falha durante execução do Playwright Scraper: {e}", exc_info=True)
 
     logger.info("--- Procurando arquivos CSV recém-baixados na pasta Downloads ---")
     

@@ -33,7 +33,6 @@ urllib3.disable_warnings()
 logger = setup_logging(DEBUG_DIR_UNIDADES / "unidades_scraper.log", __name__)
 
 
-logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 def check_unidades_sync_running() -> bool:

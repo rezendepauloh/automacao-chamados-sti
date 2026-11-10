@@ -20,12 +20,11 @@ def modal_config_donations():
     tab_online, tab_upload = st.tabs(["🌐 Link SharePoint / Atualizar Online", "📥 Envio Direto de Planilha"])
 
     with tab_online:
-        from dotenv import load_dotenv
-        load_dotenv(override=True)
-        excel_url_env = os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "").strip()
+        from src.config import get_spreadsheet_setting, is_sharepoint_url
+        excel_url_env = get_spreadsheet_setting("DONATIONS_EXCEL_RELATIVE_PATH", "").strip()
         st.write("Planilha oficial vinculada no SharePoint:")
 
-        if excel_url_env.startswith("http://") or excel_url_env.startswith("https://"):
+        if is_sharepoint_url(excel_url_env):
             st.link_button(
                 "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
                 excel_url_env,
@@ -34,6 +33,8 @@ def modal_config_donations():
                 help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."
             )
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        elif excel_url_env:
+            st.info(f"📂 **Caminho Local Configurado:** `{excel_url_env}`")
 
         if st.button("🚀 Sincronizar pelo Link do SharePoint Agora", type="primary", width='stretch'):
             import sys, subprocess
@@ -93,7 +94,8 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
     """
     Constrói o assunto, o corpo HTML do relatório de preparo de equipamentos
     e um booleano indicando se houve inclusão de observação de entrega completa
-    (com armazenamento HD/SSD e memórias RAM) para máquinas de Doação e/ou Baixa.
+    (com armazenamento HD/SSD e memórias RAM) para máquinas (Doação, Baixa,
+    Redistribuição, Garantia).
     """
     from datetime import datetime
     try:
@@ -124,10 +126,10 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
     html_parts.append("<p>Prezados, boa tarde.</p>")
     html_parts.append(f"<p>Na tarde de hoje (<strong>{formatted_date}</strong>), preparamos um total de <strong>{total_prep} {equip_word}</strong>{intro_breakdown_str}, sendo eles:</p>")
 
-    has_doacao_or_baixa_machines = False
+    has_machines_in_batch = False
     mov_types_with_machines = []
-    machine_keywords = ("computador", "notebook", "workstation", "desktop", "microcomputador", "all in one", "pc")
-    non_machine_types = ("ssd", "hdd", "hd", "leitor biométrico", "leitor biometrico", "telefone", "monitor")
+    machine_keywords = ("computador", "notebook", "workstation", "desktop", "microcomputador", "all in one", "pc", "servidor")
+    non_machine_types = ("ssd", "hdd", "hd", "leitor biométrico", "leitor biometrico", "telefone", "monitor", "switch", "nobreak", "estabilizador")
 
     for mov_type, grp in df_date.groupby('tipo_movimentacao'):
         qtd_grp = len(grp)
@@ -137,8 +139,10 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
 
         html_parts.append(f"<p style='margin-top: 20px; margin-bottom: 8px;'><strong>🔹 Equipamentos para {mov_type.upper()} ({qtd_grp} {qtd_word}{grp_breakdown_str}):</strong></p>")
 
+        ram_vals = [str(v).strip() for v in grp.get('memoria_ram', pd.Series(dtype=object)).tolist() if v is not None and str(v).strip() not in ("", "nan", "None")]
         ssd_vals = [str(v).strip() for v in grp['ssd'].tolist() if v is not None and str(v).strip() not in ("", "nan", "None")]
         obs_vals = [str(v).strip() for v in grp['motivo_baixa'].tolist() if v is not None and str(v).strip() not in ("", "nan", "None")]
+        has_ram = len(ram_vals) > 0
         has_ssd = len(ssd_vals) > 0
         has_obs = len(obs_vals) > 0
 
@@ -155,8 +159,10 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
             f"<th style='{th_style}'><span style=\"color:#ffffff\">Serial Number PC</span></th>",
             f"<th style='{th_style}'><span style=\"color:#ffffff\">Equipamento</span></th>"
         ]
+        if has_ram:
+            headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">Memória RAM</span></th>")
         if has_ssd:
-            headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">SSD</span></th>")
+            headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">SSD/HD</span></th>")
         if has_obs:
             headers_html.append(f"<th style='{th_style}'><span style=\"color:#ffffff\">Motivo/Obs</span></th>")
         headers_html.append("</tr>")
@@ -169,8 +175,15 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
             mod = str(row.get('modelo', '')).strip()
             ser = str(row.get('serial_number', '')).strip()
             eqp = str(row.get('equipamento', '')).strip()
+            ram = str(row.get('memoria_ram', '')).strip()
+            if ram.lower() in ("nan", "none", "null"):
+                ram = ""
             ssd = str(row.get('ssd', '')).strip()
+            if ssd.lower() in ("nan", "none", "null"):
+                ssd = ""
             obs = str(row.get('motivo_baixa', '')).strip()
+            if obs.lower() in ("nan", "none", "null"):
+                obs = ""
 
             bg_style = "background-color: #d9e1f2;" if idx % 2 == 1 else ""
 
@@ -182,6 +195,8 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
                 f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ser}</td>",
                 f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{eqp}</td>"
             ]
+            if has_ram:
+                row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ram}</td>")
             if has_ssd:
                 row_html.append(f"<td style='border: 2px solid #cccccc; padding: 6px 10px; {bg_style}'>{ssd}</td>")
             if has_obs:
@@ -191,6 +206,8 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
             table_html.append("".join(row_html))
 
         colspan_extra = 0
+        if has_ram:
+            colspan_extra += 1
         if has_ssd:
             colspan_extra += 1
         if has_obs:
@@ -203,25 +220,24 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
         table_html.append("</table>")
         html_parts.append("".join(table_html))
 
-        mov_norm = str(mov_type).strip().lower()
-        if mov_norm in ("doação", "doacao", "baixa"):
-            eq_list_lower = [str(e).strip().lower() for e in grp['equipamento'].fillna('').tolist() if str(e).strip()]
-            has_machine_in_grp = any(
-                any(k in eq for k in machine_keywords) or eq not in non_machine_types
-                for eq in eq_list_lower
-            ) or not eq_list_lower
-            if has_machine_in_grp:
-                has_doacao_or_baixa_machines = True
-                label_mov = "Doação" if "doa" in mov_norm else "Baixa"
-                if label_mov not in mov_types_with_machines:
-                    mov_types_with_machines.append(label_mov)
-                html_parts.append(
-                    f"<p style='margin-top: 6px; margin-bottom: 14px; font-size: 12.5px; color: #1f2937;'>"
-                    f"ℹ️ <em><strong>Observação ({label_mov}):</strong> As máquinas relacionadas acima foram conferidas e entregues completas, "
-                    f"acompanhadas de seus respectivos dispositivos de armazenamento (HD/SSD) e pentes de memória RAM instalados.</em></p>"
-                )
+        eq_list_lower = [str(e).strip().lower() for e in grp['equipamento'].fillna('').tolist() if str(e).strip()]
+        has_machine_in_grp = any(
+            any(k in eq for k in machine_keywords) or (eq and eq not in non_machine_types)
+            for eq in eq_list_lower
+        ) or not eq_list_lower
 
-    if has_doacao_or_baixa_machines:
+        if has_machine_in_grp:
+            has_machines_in_batch = True
+            label_mov = str(mov_type).strip().capitalize()
+            if label_mov not in mov_types_with_machines:
+                mov_types_with_machines.append(label_mov)
+            html_parts.append(
+                f"<p style='margin-top: 6px; margin-bottom: 14px; font-size: 12.5px; color: #1f2937;'>"
+                f"ℹ️ <em><strong>Observação ({label_mov}):</strong> As máquinas relacionadas acima foram conferidas e entregues completas, "
+                f"acompanhadas de seus respectivos dispositivos de armazenamento (HD/SSD) e pentes de memória RAM instalados.</em></p>"
+            )
+
+    if has_machines_in_batch:
         tipos_label = " e ".join(mov_types_with_machines)
         html_parts.append(
             f"<div style='margin-top: 18px; padding: 10px 14px; background-color: #f8fafc; border-left: 4px solid #2f5597; border: 1px solid #cbd5e1; font-size: 13px; color: #000000;'>"
@@ -233,7 +249,7 @@ def build_preparo_report_html(date_str: str, df_date: pd.DataFrame) -> tuple[str
 
     html_parts.append("</div>")
     full_html = "\n".join(html_parts)
-    return subject, full_html, has_doacao_or_baixa_machines
+    return subject, full_html, has_machines_in_batch
 
 
 def render_donations_page():
@@ -264,8 +280,8 @@ def render_donations_page():
         "O robô está lendo a planilha do SharePoint. O painel permanece livre para uso!"
     )
     
-    from src.config import DONATIONS_FILE_PATH
-    EXCEL_PATH = str(DONATIONS_FILE_PATH)
+    from src.config import resolve_spreadsheet_path, DONATIONS_FILE_PATH
+    EXCEL_PATH = str(resolve_spreadsheet_path("DONATIONS_EXCEL_RELATIVE_PATH", "doacoes_redistribuicao.xlsx") or DONATIONS_FILE_PATH)
                     
     df = get_donations_data()
     
@@ -310,9 +326,16 @@ def render_donations_page():
     selected_year = st.sidebar.selectbox("Ano da Movimentação", year_options, key="donations_year")
 
     ssd_options = ["Todos"] + sorted(list(df['ssd'].unique()))
-    selected_ssd = st.sidebar.selectbox("SSD", ssd_options, key="donations_ssd")
+    selected_ssd = st.sidebar.selectbox("SSD / Armazenamento", ssd_options, key="donations_ssd")
+
+    ram_unique = sorted([str(x) for x in df.get('memoria_ram', pd.Series(dtype=object)).fillna('').unique() if str(x).strip() and str(x).strip().lower() not in ('nan', 'none')])
+    if ram_unique:
+        ram_options = ["Todos"] + ram_unique
+        selected_ram = st.sidebar.selectbox("Memória RAM", ram_options, key="donations_ram")
+    else:
+        selected_ram = "Todos"
     
-    search_query = st.sidebar.text_input("🔎 Buscar (Patrimônio, Modelo, Chamado)", "", key="donations_search").strip()
+    search_query = st.sidebar.text_input("🔎 Buscar (Patrimônio, Modelo, Chamado, RAM, SSD)", "", key="donations_search").strip()
     
     items_per_page = render_items_per_page_selector(
         key_prefix="redistribuicao",
@@ -351,9 +374,9 @@ def render_donations_page():
         st.code(subject, language="text")
         if has_doacao_or_baixa_machines:
             st.info(
-                "🛡️ **Observação de resguardo incluída automaticamente:** Como há máquinas de **Doação** e/ou **Baixa** nesta data, "
-                "o relatório e o HTML abaixo já contêm a observação expressa de que os equipamentos foram conferidos e entregues "
-                "**completos (com HD/SSD e memórias RAM)**."
+                "🛡️ **Observação de resguardo incluída automaticamente:** As máquinas relacionadas nesta data "
+                "já contêm no relatório e no HTML abaixo a observação expressa de entrega **completa (com memórias RAM e dispositivos de armazenamento HD/SSD)**, "
+                "atendendo às exigências da administração superior e do DMP."
             )
         st.markdown("---")
         
@@ -381,13 +404,19 @@ def render_donations_page():
         df_filtered = df_filtered[df_filtered['Ano'] == selected_year]
     if selected_ssd != "Todos":
         df_filtered = df_filtered[df_filtered['ssd'] == selected_ssd]
+    if selected_ram != "Todos" and 'memoria_ram' in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered['memoria_ram'] == selected_ram]
 
     if search_query:
         query_lower = search_query.lower()
+        ram_series = df_filtered['memoria_ram'].astype(str).str.lower() if 'memoria_ram' in df_filtered.columns else pd.Series('', index=df_filtered.index)
+        ssd_series = df_filtered['ssd'].astype(str).str.lower() if 'ssd' in df_filtered.columns else pd.Series('', index=df_filtered.index)
         df_filtered = df_filtered[
             df_filtered['patrimonio'].str.lower().str.contains(query_lower) |
             df_filtered['modelo'].str.lower().str.contains(query_lower) |
-            df_filtered['chamado'].str.lower().str.contains(query_lower)
+            df_filtered['chamado'].str.lower().str.contains(query_lower) |
+            ram_series.str.contains(query_lower) |
+            ssd_series.str.contains(query_lower)
         ]
 
     st.markdown("---")
@@ -473,7 +502,8 @@ def render_donations_page():
             "tipo_movimentacao": st.column_config.TextColumn("Movimentação"),
             "data_movimentacao": st.column_config.DateColumn("Data da Movimentação", format="DD/MM/YYYY"),
             "chamado": st.column_config.TextColumn("Chamado relacionado"),
-            "ssd": st.column_config.TextColumn("SSD"),
+            "memoria_ram": st.column_config.TextColumn("Memória RAM"),
+            "ssd": st.column_config.TextColumn("SSD / HD"),
             "motivo_baixa": st.column_config.TextColumn("Motivo da Baixa"),
         },
         hide_index=True,

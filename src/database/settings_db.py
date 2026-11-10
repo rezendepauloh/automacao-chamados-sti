@@ -57,7 +57,7 @@ def get_setting(key: str, default: str = None) -> str:
 
         if row:
             val, is_secret = row[0], bool(row[1])
-            if val is None:
+            if val is None or str(val).strip() == "":
                 return default
             if is_secret:
                 return decrypt_value(val)
@@ -141,6 +141,12 @@ def seed_settings_from_env_if_empty(force: bool = False):
     importa automaticamente as variáveis já existentes no .env e no keyring,
     garantindo que o usuário comece com tudo 100% preenchido.
     """
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+    except Exception:
+        pass
+
     setup_settings_table()
     current = get_all_settings(decrypt=False)
 
@@ -219,7 +225,7 @@ def seed_settings_from_env_if_empty(force: bool = False):
         ("DONATIONS_EXCEL_RELATIVE_PATH", os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Doações e Baixas"),
         ("FISCAL_EXCEL_RELATIVE_PATH", os.getenv("FISCAL_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Fiscalização de Contratos"),
         ("WARRANTY_EXCEL_RELATIVE_PATH", os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Garantia"),
-        ("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Viagens da Bancada"),
+        ("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/s/dit-manutencao/IQBQonhEup-USL9RTQTk8W6vAS9SWFl5jhGXAOR_bezve5E?e=PYfupT"), False, "sharepoint", "URL/Caminho da Planilha de Viagens da Bancada"),
         ("FERIAS_EXCEL_RELATIVE_PATH", os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"), False, "sharepoint", "URL/Caminho da Planilha de Férias e Licenças da Bancada"),
         ("SHAREPOINT_MATUTINO_URL", os.getenv("SHAREPOINT_MATUTINO_URL", ""), False, "sharepoint", "URL da Planilha de Escala Matutina"),
         ("VIDEO_FAQ_PATH", os.getenv("VIDEO_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Vídeos FAQ no SharePoint"),

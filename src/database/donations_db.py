@@ -6,7 +6,7 @@ import pandas as pd
 from .connection import get_connection
 
 def setup_donations_table():
-    """Cria a tabela de equipamentos doados se não existir."""
+    """Cria a tabela de equipamentos doados se não existir e garante colunas incrementais."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -19,10 +19,22 @@ def setup_donations_table():
         data_movimentacao TEXT,
         chamado TEXT,
         ssd TEXT,
-        motivo_baixa TEXT
+        motivo_baixa TEXT,
+        memoria_ram TEXT
     )
     """)
     conn.commit()
+
+    # Migração incremental segura caso a tabela já exista sem memoria_ram
+    try:
+        cursor.execute("ALTER TABLE equipamentos_doados ADD COLUMN memoria_ram TEXT")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
     conn.close()
 
 def sync_donations_from_excel(file_path_or_buffer):
@@ -89,11 +101,31 @@ def sync_donations_from_excel(file_path_or_buffer):
         patrimonio = str(row.get('Patrimônio', '')).strip().replace(".0", "")
         chamado = str(row.get('Tem chamado?', '')).strip().replace(".0", "")
         
+        # Memória RAM: busca flexível por variações de nome de coluna
+        mem_ram_val = ""
+        for ram_col in ['Memória RAM', 'Memória Ram', 'Memoria RAM', 'Memoria Ram', 'Memória', 'Memoria', 'RAM', 'Ram']:
+            if ram_col in row and str(row.get(ram_col, '')).strip():
+                mem_ram_val = str(row.get(ram_col, '')).strip()
+                break
+        if mem_ram_val.lower() in ["nan", "none", "null"]:
+            mem_ram_val = ""
+        mem_ram_val = mem_ram_val.replace(".0", "")
+
+        # SSD / Armazenamento: busca flexível
+        ssd_val = ""
+        for ssd_col in ['SSD', 'Ssd', 'HD', 'Hd', 'HD/SSD', 'Armazenamento', 'Disco']:
+            if ssd_col in row and str(row.get(ssd_col, '')).strip():
+                ssd_val = str(row.get(ssd_col, '')).strip()
+                break
+        if ssd_val.lower() in ["nan", "none", "null"]:
+            ssd_val = ""
+        ssd_val = ssd_val.replace(".0", "")
+
         cursor.execute("""
         INSERT INTO equipamentos_doados (
             patrimonio, modelo, serial_number, equipamento, 
-            tipo_movimentacao, data_movimentacao, chamado, ssd, motivo_baixa
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            tipo_movimentacao, data_movimentacao, chamado, ssd, motivo_baixa, memoria_ram
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             patrimonio,
             str(row.get('Modelo', '')).strip(),
@@ -102,8 +134,9 @@ def sync_donations_from_excel(file_path_or_buffer):
             str(row.get('Doação ou Baixa', '')).strip(),
             dt_str,
             chamado,
-            str(row.get('SSD', '')).strip(),
-            str(row.get('Motivo baixa', '')).strip()
+            ssd_val,
+            str(row.get('Motivo baixa', '')).strip(),
+            mem_ram_val
         ))
         added_count += 1
         
@@ -112,9 +145,13 @@ def sync_donations_from_excel(file_path_or_buffer):
     logger.info(f"Sincronização concluída. {added_count} registros importados para a tabela equipamentos_doados.")
 
 def get_donations_data() -> pd.DataFrame:
-    """Retorna todos os equipamentos doados/movimentados da tabela SQLite."""
+    """Retorna todos os equipamentos doados/movimentados da tabela relacional."""
     setup_donations_table()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM equipamentos_doados", conn)
     conn.close()
+    if 'memoria_ram' not in df.columns:
+        df['memoria_ram'] = ""
+    else:
+        df['memoria_ram'] = df['memoria_ram'].fillna("").astype(str).replace({"nan": "", "None": "", "null": ""})
     return df

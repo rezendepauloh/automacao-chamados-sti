@@ -61,17 +61,14 @@ def modal_config_ferias():
     tab_online, tab_upload = st.tabs(["🌐 Link SharePoint / Atualizar Online", "📥 Envio Direto de Planilha"])
 
     with tab_online:
-        from dotenv import load_dotenv
-        load_dotenv(override=True)
-        excel_url = (
-            os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "")
-            or _cfg("FERIAS_EXCEL_RELATIVE_PATH")
-            or FERIAS_EXCEL_RELATIVE_PATH
-            or "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"
+        from src.config import get_spreadsheet_setting, is_sharepoint_url
+        excel_url = get_spreadsheet_setting(
+            "FERIAS_EXCEL_RELATIVE_PATH",
+            "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"
         ).strip()
         st.write("Planilha oficial vinculada no SharePoint:")
 
-        if excel_url.startswith("http://") or excel_url.startswith("https://"):
+        if is_sharepoint_url(excel_url):
             st.link_button(
                 "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
                 excel_url,

@@ -29,10 +29,11 @@ def modal_config_viagens():
     tab_online, tab_upload = st.tabs(["🌐 Link SharePoint / Atualizar Online", "📥 Envio Direto de Planilha"])
 
     with tab_online:
-        excel_url = (_cfg("VIAGENS_EXCEL_RELATIVE_PATH") or os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", "")).strip()
+        from src.config import get_spreadsheet_setting, is_sharepoint_url
+        excel_url = get_spreadsheet_setting("VIAGENS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/s/dit-manutencao/IQBQonhEup-USL9RTQTk8W6vAS9SWFl5jhGXAOR_bezve5E?e=PYfupT").strip()
         st.write("Planilha oficial vinculada no SharePoint:")
 
-        if excel_url.startswith("http://") or excel_url.startswith("https://"):
+        if is_sharepoint_url(excel_url):
             st.link_button(
                 "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
                 excel_url,
@@ -41,6 +42,8 @@ def modal_config_viagens():
                 help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."
             )
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        elif excel_url:
+            st.info(f"📂 **Caminho Local Configurado:** `{excel_url}`")
 
         if st.button("🚀 Sincronizar pelo Link do SharePoint Agora", type="primary", width='stretch'):
             popen_kwargs = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}

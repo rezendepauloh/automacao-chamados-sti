@@ -146,10 +146,10 @@ class TestComponentsAndTabs(unittest.TestCase):
         self.assertEqual(scan_image_faqs(nonexistent), [])
 
     def test_build_preparo_report_html_doacao_and_baixa_observations(self):
-        """Valida que o relatório HTML de preparo inclui observação de entrega completa (HD/SSD e memórias) para Doação e Baixa."""
+        """Valida que o relatório HTML de preparo inclui memória RAM e observação de entrega completa para máquinas de qualquer movimentação."""
         import pandas as pd
 
-        # 1. Quando há máquinas de Doação e Baixa, deve incluir as observações no HTML
+        # 1. Quando há máquinas de Doação e Baixa com RAM e SSD, deve incluir a coluna de Memória RAM e observações
         df_doacao_baixa = pd.DataFrame([
             {
                 "patrimonio": "080111",
@@ -159,6 +159,7 @@ class TestComponentsAndTabs(unittest.TestCase):
                 "tipo_movimentacao": "Doação",
                 "data_movimentacao": "2026-10-29",
                 "chamado": "12345",
+                "memoria_ram": "16 GB (2x 8GB)",
                 "ssd": "240GB",
                 "motivo_baixa": "",
             },
@@ -170,6 +171,7 @@ class TestComponentsAndTabs(unittest.TestCase):
                 "tipo_movimentacao": "Baixa",
                 "data_movimentacao": "2026-10-29",
                 "chamado": "12345",
+                "memoria_ram": "8 GB (1x 8GB)",
                 "ssd": "",
                 "motivo_baixa": "Placa-mãe oxidada",
             },
@@ -177,13 +179,17 @@ class TestComponentsAndTabs(unittest.TestCase):
         subject, html_out, has_obs = build_preparo_report_html("2026-10-29", df_doacao_baixa)
         self.assertTrue(has_obs)
         self.assertIn("29/10/2026", subject)
+        self.assertIn("Memória RAM", html_out)
+        self.assertIn("16 GB (2x 8GB)", html_out)
+        self.assertIn("8 GB (1x 8GB)", html_out)
         self.assertIn("Observação (Doação):", html_out)
         self.assertIn("Observação (Baixa):", html_out)
         self.assertIn("entregues completas", html_out)
         self.assertIn("HD/SSD", html_out)
         self.assertIn("memórias RAM", html_out)
+        self.assertIn("Nota de Conferência e Entrega", html_out)
 
-        # 2. Quando há apenas Redistribuição, não deve incluir a observação de Doação/Baixa
+        # 2. Quando há máquinas de Redistribuição, agora também inclui a nota de resguardo de entrega completa
         df_redist = pd.DataFrame([
             {
                 "patrimonio": "090333",
@@ -193,13 +199,34 @@ class TestComponentsAndTabs(unittest.TestCase):
                 "tipo_movimentacao": "Redistribuição",
                 "data_movimentacao": "2026-10-29",
                 "chamado": "12346",
+                "memoria_ram": "16 GB (2x 8GB)",
                 "ssd": "256GB",
                 "motivo_baixa": "",
             }
         ])
         _, html_redist, has_obs_redist = build_preparo_report_html("2026-10-29", df_redist)
-        self.assertFalse(has_obs_redist)
-        self.assertNotIn("Nota de Conferência e Entrega", html_redist)
+        self.assertTrue(has_obs_redist)
+        self.assertIn("Observação (Redistribuição):", html_redist)
+        self.assertIn("Nota de Conferência e Entrega (Redistribuição)", html_redist)
+
+        # 3. Quando há apenas periféricos (não-computadores), não deve incluir a nota de máquinas
+        df_periferico = pd.DataFrame([
+            {
+                "patrimonio": "099888",
+                "modelo": "BioMini Plus 2",
+                "serial_number": "BIO111",
+                "equipamento": "Leitor biométrico",
+                "tipo_movimentacao": "Redistribuição",
+                "data_movimentacao": "2026-10-29",
+                "chamado": "12347",
+                "memoria_ram": "",
+                "ssd": "",
+                "motivo_baixa": "",
+            }
+        ])
+        _, html_perif, has_obs_perif = build_preparo_report_html("2026-10-29", df_periferico)
+        self.assertFalse(has_obs_perif)
+        self.assertNotIn("Nota de Conferência e Entrega", html_perif)
 
 if __name__ == "__main__":
     unittest.main()

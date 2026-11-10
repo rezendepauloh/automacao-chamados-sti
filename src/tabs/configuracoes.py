@@ -253,49 +253,58 @@ def render_configuracoes_page():
     # -------------------------------------------------------------------------
     elif selected_subtab == "📂 SharePoint & Planilhas":
         st.markdown("#### 📂 Sincronização SharePoint / OneDrive")
-        st.info("Caminhos locais sincronizados ou links compartilhados do SharePoint.")
+        st.info("Prioridade de resolução: **Configurações salvas nesta aba** têm prioridade máxima. Se o campo for deixado em branco, o sistema recorre ao **.env** como fallback.")
 
+        sp_chamados_val = settings.get("SHAREPOINT_RELATIVE_PATH", {}).get("value") or os.getenv("SHAREPOINT_RELATIVE_PATH", r"OneDrive - Ministerio Público do Estado de Mato Grosso do Sul\Documentos SharePoint DIT-Manutenção\Chamados\Chamados_Unificados_Final.xlsx")
         form_values["SHAREPOINT_RELATIVE_PATH"] = (
-            st.text_area("Caminho Relativo da Planilha de Chamados Unificados", value=settings.get("SHAREPOINT_RELATIVE_PATH", {}).get("value", r"OneDrive - Ministerio Público do Estado de Mato Grosso do Sul\Documentos SharePoint DIT-Manutenção\Chamados\Chamados_Unificados_Final.xlsx"), key="cfg_sp_chamados", height=70),
+            st.text_area("Caminho Relativo da Planilha de Chamados Unificados", value=sp_chamados_val, key="cfg_sp_chamados", height=70, help="Caminho relativo a partir da pasta de perfil ou URL do SharePoint."),
             False, "sharepoint", "Caminho relativo da Planilha de Chamados no OneDrive/SharePoint"
         )
         c1, c2 = st.columns(2)
         with c1:
+            val_doacoes = settings.get("DONATIONS_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", "")
             form_values["DONATIONS_EXCEL_RELATIVE_PATH"] = (
-                st.text_input("URL Planilha Doações e Baixas", value=settings.get("DONATIONS_EXCEL_RELATIVE_PATH", {}).get("value", ""), key="cfg_sp_doacoes"),
+                st.text_input("URL Planilha Doações e Baixas", value=val_doacoes, key="cfg_sp_doacoes", help="Link do SharePoint ou caminho local da planilha de Doações e Baixas."),
                 False, "sharepoint", "URL/Caminho da Planilha de Doações e Baixas"
             )
+            val_fiscal = settings.get("FISCAL_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("FISCAL_EXCEL_RELATIVE_PATH", "")
             form_values["FISCAL_EXCEL_RELATIVE_PATH"] = (
-                st.text_input("URL Planilha Fiscalização de Contratos", value=settings.get("FISCAL_EXCEL_RELATIVE_PATH", {}).get("value", ""), key="cfg_sp_fiscal"),
+                st.text_input("URL Planilha Fiscalização de Contratos", value=val_fiscal, key="cfg_sp_fiscal", help="Link do SharePoint ou caminho local da planilha de Fiscalização."),
                 False, "sharepoint", "URL/Caminho da Planilha de Fiscalização de Contratos"
             )
+            val_ferias = settings.get("FERIAS_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t")
             form_values["FERIAS_EXCEL_RELATIVE_PATH"] = (
-                st.text_input("URL Planilha Previsão de Férias e Licenças", value=settings.get("FERIAS_EXCEL_RELATIVE_PATH", {}).get("value", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"), key="cfg_sp_ferias"),
+                st.text_input("URL Planilha Previsão de Férias e Licenças", value=val_ferias, key="cfg_sp_ferias", help="Link do SharePoint da planilha de Férias e Licenças da Bancada."),
                 False, "sharepoint", "URL/Caminho da Planilha de Férias e Licenças da Bancada"
             )
         with c2:
+            val_garantia = settings.get("WARRANTY_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", "")
             form_values["WARRANTY_EXCEL_RELATIVE_PATH"] = (
-                st.text_input("URL Planilha Controle de Garantia", value=settings.get("WARRANTY_EXCEL_RELATIVE_PATH", {}).get("value", ""), key="cfg_sp_garantia"),
+                st.text_input("URL Planilha Controle de Garantia", value=val_garantia, key="cfg_sp_garantia", help="Link do SharePoint ou caminho local da planilha de Controle de Garantia."),
                 False, "sharepoint", "URL/Caminho da Planilha de Garantia"
             )
+            val_viagens = settings.get("VIAGENS_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/s/dit-manutencao/IQBQonhEup-USL9RTQTk8W6vAS9SWFl5jhGXAOR_bezve5E?e=PYfupT")
             form_values["VIAGENS_EXCEL_RELATIVE_PATH"] = (
-                st.text_input("URL Planilha de Viagens da Bancada", value=settings.get("VIAGENS_EXCEL_RELATIVE_PATH", {}).get("value", "https://ministeriopublicoms.sharepoint.com/:x:/s/dit-manutencao/IQBQonhEup-USL9RTQTk8W6vAS9SWFl5jhGXAOR_bezve5E?e=PYfupT"), key="cfg_sp_viagens"),
+                st.text_input("URL Planilha de Viagens da Bancada", value=val_viagens, key="cfg_sp_viagens", help="Link do SharePoint ou caminho local da planilha de Viagens da Bancada."),
                 False, "sharepoint", "URL/Caminho da Planilha de Viagens da Bancada"
             )
+            val_matutino = settings.get("SHAREPOINT_MATUTINO_URL", {}).get("value") or os.getenv("SHAREPOINT_MATUTINO_URL", "")
             form_values["SHAREPOINT_MATUTINO_URL"] = (
-                st.text_input("URL Planilha Escala Matutina", value=settings.get("SHAREPOINT_MATUTINO_URL", {}).get("value", ""), key="cfg_sp_matutino"),
+                st.text_input("URL Planilha Escala Matutina", value=val_matutino, key="cfg_sp_matutino", help="Link do SharePoint da planilha de Escala Matutina."),
                 False, "sharepoint", "URL da Planilha de Escala Matutina"
             )
 
         c3, c4 = st.columns(2)
         with c3:
+            val_videos = settings.get("VIDEO_FAQ_PATH", {}).get("value") or os.getenv("VIDEO_FAQ_PATH", "")
             form_values["VIDEO_FAQ_PATH"] = (
-                st.text_input("Pasta de Vídeos FAQ (SharePoint)", value=settings.get("VIDEO_FAQ_PATH", {}).get("value", ""), key="cfg_sp_videos"),
+                st.text_input("Pasta de Vídeos FAQ (SharePoint)", value=val_videos, key="cfg_sp_videos", help="URL do SharePoint ou pasta local dos Vídeos FAQ."),
                 False, "sharepoint", "URL da pasta de Vídeos FAQ no SharePoint"
             )
         with c4:
+            val_imagens = settings.get("IMAGE_FAQ_PATH", {}).get("value") or os.getenv("IMAGE_FAQ_PATH", "")
             form_values["IMAGE_FAQ_PATH"] = (
-                st.text_input("Pasta de Imagens FAQ (SharePoint)", value=settings.get("IMAGE_FAQ_PATH", {}).get("value", ""), key="cfg_sp_imagens"),
+                st.text_input("Pasta de Imagens FAQ (SharePoint)", value=val_imagens, key="cfg_sp_imagens", help="URL do SharePoint ou pasta local das Imagens FAQ."),
                 False, "sharepoint", "URL da pasta de Imagens FAQ no SharePoint"
             )
 

@@ -47,12 +47,11 @@ def modal_config_garantia():
     tab_online, tab_upload = st.tabs(["🌐 Link SharePoint / Atualizar Online", "📥 Envio Direto de Planilha"])
 
     with tab_online:
-        from dotenv import load_dotenv
-        load_dotenv(override=True)
-        excel_url_env = os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", "").strip()
+        from src.config import get_spreadsheet_setting, is_sharepoint_url
+        excel_url_env = get_spreadsheet_setting("WARRANTY_EXCEL_RELATIVE_PATH", "").strip()
         st.write("Planilha oficial vinculada no SharePoint:")
         
-        if excel_url_env.startswith("http://") or excel_url_env.startswith("https://"):
+        if is_sharepoint_url(excel_url_env):
             st.link_button(
                 "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
                 excel_url_env,
@@ -61,6 +60,8 @@ def modal_config_garantia():
                 help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."
             )
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        elif excel_url_env:
+            st.info(f"📂 **Caminho Local Configurado:** `{excel_url_env}`")
 
         if st.button("🚀 Sincronizar pelo Link do SharePoint Agora", type="primary", width='stretch'):
             import sys, subprocess

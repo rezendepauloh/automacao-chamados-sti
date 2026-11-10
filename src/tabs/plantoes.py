@@ -65,10 +65,13 @@ def modal_importar_matutino():
     st.markdown("### 📤 Upload Manual da Planilha Matutino (DIT)")
     st.caption("Acesse a planilha oficial no SharePoint para consultar ou baixar uma cópia e faça o upload abaixo:")
 
-    if SHAREPOINT_MATUTINO_URL:
+    from src.config import get_spreadsheet_setting, is_sharepoint_url
+    matutino_url = get_spreadsheet_setting("SHAREPOINT_MATUTINO_URL", SHAREPOINT_MATUTINO_URL)
+
+    if is_sharepoint_url(matutino_url):
         st.link_button(
             "🌐 Abrir Planilha no SharePoint (Excel Online) ↗",
-            SHAREPOINT_MATUTINO_URL,
+            matutino_url,
             type="secondary",
             width='stretch',
             help="Abre o arquivo original diretamente no SharePoint / Excel Online em uma nova aba."

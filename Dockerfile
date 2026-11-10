@@ -16,7 +16,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Diretório base de trabalho da aplicação
 WORKDIR /app
 
-# Instalação de dependências do sistema operacional, certificados, Chromium, codecs e PowerShell 7 (pwsh)
+# Instalação de dependências do sistema operacional, certificados, codecs e PowerShell 7 (pwsh)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -24,8 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     libpq-dev \
     libicu-dev \
-    chromium \
-    chromium-driver \
     ffmpeg \
     libavcodec-extra \
     && update-ca-certificates \

@@ -9,13 +9,21 @@ if str(root_dir) not in sys.path:
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import (
-    StaleElementReferenceException
-)
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import (
+        StaleElementReferenceException
+    )
+except ImportError:
+    webdriver = None
+    By = None
+    WebDriverWait = None
+    EC = None
+    StaleElementReferenceException = Exception
+
 import pandas as pd
 import os
 import json
@@ -28,7 +36,7 @@ from config import (
     HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OTRS,
     DOMINIO_MMC, USERNAME, INPUT_DIR_BRUTOS,
     BACKUP_PATH_OTRS, TEMP_PATH_OTRS, setup_logging, save_df_to_excel_formatted,
-    setup_ad_connection, get_chrome_driver, fetch_ad_department, cleanup_old_files
+    setup_ad_connection, fetch_ad_department, cleanup_old_files
 )
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
@@ -36,8 +44,6 @@ HEADERS = ['Chamado#', 'Data Criação', 'Título', 'Cidade - Prédio', 'Unidade
 
 logger = setup_logging(DEBUG_DIR_OTRS / "otrs_scraper.log", __name__)
 
-
-logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 def get_timestamp():

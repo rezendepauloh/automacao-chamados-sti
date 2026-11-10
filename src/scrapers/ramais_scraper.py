@@ -29,7 +29,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = setup_logging(DEBUG_DIR_RAMAIS / "ramais_scraper.log", __name__)
 
 
-logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
 def check_ramais_sync_running() -> bool:

@@ -1,529 +1,354 @@
-# 🤖 Automação e Classificação de Chamados de TI (MPMS)
+# 🏛️ Sistema Bancada STI — Ministério Público do Estado de Mato Grosso do Sul (MPMS)
 
-Este projeto consiste em uma suíte de ferramentas desenvolvidas em Python para automatizar a extração, unificação, sincronização e classificação inteligente de chamados de suporte técnico (Manutenção de TI) provenientes de múltiplas plataformas (OTRS, CitSmart e Central Telefônica OXE), agregando módulos de gestão de impressoras (PaperCut), mapa predial, escalas de plantão, conferência de portarias, vídeos de FAQs, notificações automatizadas e execução remota de scripts de automação PowerShell.
+<div align="center">
 
----
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.42+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-Chromium-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
+![spaCy](https://img.shields.io/badge/spaCy-NLP-09A3D5?style=for-the-badge&logo=spacy&logoColor=white)
+![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-LinearSVC-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)
+![Tests](https://img.shields.io/badge/Testes-100%25%20Passing%20(106%2F106)-brightgreen?style=for-the-badge)
 
-> 📚 **Documentação Técnica Completa:**  
-> A documentação oficial de engenharia, arquitetura, guias práticos operacionais e suíte de testes está unificada no diretório [**`Docs/`**](Docs/README.md).
->
-> 📌 **Diretrizes para Agentes Autônomos de Programação:**  
-> O ciclo de engenharia obrigatório (Avaliar ➔ Planejar ➔ Testar ➔ Documentar) e diretrizes de desenvolvimento encontram-se em [**`AGENTS.md`**](AGENTS.md).
+**Plataforma Integrada de Gestão de Suporte Técnico, Esteira de Chamados de TI, Automação Corporativa e Inteligência Artificial.**
 
----
+[Central de Documentação (Docs)](Docs/README.md) • [Diretrizes de Engenharia (AGENTS.md)](AGENTS.md) • [Guia de Deploy Docker](Docs/guias/implantacao_docker_producao.md)
 
-## 🚀 Funcionalidades
-
-### 1. Web Scraping & Automação (RPA)
-
-- **Extração Robusta & Híbrida (Selenium + Captura XHR):** Loga nos portais de suporte (OTRS e CitSmart) e na Central Telefônica OXE via Selenium. No CitSmart e no OXE, utiliza interceptação de rede (XHR/Rede) e requisições em lote paralelo (`Promise.all`) diretamente na API interna, processando milhares de registros em segundos.
-- **BeautifulSoup & Requests (unidades_scraper.py):** Arquitetura nativa ultra-leve com `requests` e `BeautifulSoup` para varredura em tempo real de todas as ~280 páginas de promotorias do site institucional, obtendo o prédio físico exato com 100% de precisão.
-- **Mapeamento de IP e Localidade por SCCM (WMI):** Integração avançada via WMI (Windows Management Instrumentation) consultando silenciosamente o servidor SCCM. Descobre o IP exato da máquina do usuário na rede para mapeamento hiper-preciso da localidade física usando ranges de sub-redes CIDR.
-- **Cache Inteligente Completo (Descrições, Unidades e IPs):** No OTRS, CitSmart e OXE, o robô memoriza os dados já obtidos em execuções anteriores. Isso previne centenas de consultas repetidas ao SCCM, Active Directory (LDAP) e cliques lentos no Selenium, reduzindo o tempo de resposta a praticamente zero milissegundos.
-- **Autolimpeza Preventiva de Disco & Rotação de Logs:**
-  - _Arquivos_: Função automatizada `cleanup_old_files` que monitora e mantém no máximo os 10 arquivos mais recentes em `01 - Dados Brutos`, `02 - Dados tratados` e `03 - Dados prontos`.
-  - _Logs_: Configuração nativa via `RotatingFileHandler` que limita os arquivos de log a 5 MB e preserva apenas os 3 históricos mais recentes.
-- **Unificação:** Consolida dados de sistemas legados e novos em um formato tabular padronizado.
-
-### 2. Inteligência Artificial (NLP) e Machine Learning Contínuo
-
-- **Classificação Automática:** Utiliza IA para ler a descrição do chamado e predizer a categoria (TAG) correta (ex: "IMPRESSORA", "REDE", "SOFTWARE").
-- **Pipeline de NLP Especializado em TI:**
-  - Limpeza de texto avançada com `spaCy` (remoção de stop words, pontuação).
-  - Regras de negócio customizadas para preservar termos técnicos (ex: _ssd_, _memoriaram_, _enderecoip_) e numerações cruciais.
-- **Arena de Algoritmos Otimizada com Paralelismo (`GridSearchCV`):** O sistema treina e compara múltiplos modelos (`LinearSVC`, `RandomForestClassifier`, `MultinomialNB`, `ComplementNB`) avaliando centenas de combinações de hiperparâmetros em busca do melhor _F1-Weighted_.
-- **Paralelismo Inteligente (`ML_N_JOBS`):**
-  - Execução concorrente acelerada via `joblib` com suporte nativo a ambientes Linux (WSL) e contêineres Docker via *forking* POSIX.
-  - Modo `auto` (padrão): detecta a quantidade de CPUs lógicas disponíveis no contêiner e aloca `max(1, cores - 1)` workers, reservando 1 núcleo para garantir que o painel Streamlit e os serviços de background permaneçam fluidos.
-  - Modo `-1` (máximo desempenho): mobiliza 100% dos núcleos disponíveis para retreinamento ultra-rápido (~1.88x a 2.02x de aceleração em relação ao modo sequencial).
-  - Controle dinâmico e flexível diretamente na aba **🤖 Inteligência Artificial & ML** do painel de Configurações, com persistência no banco SQLite/Postgres e suporte a variável de ambiente `.env`.
-- **Retreinamento Autônomo:** O sistema monitora a data de modificação da base de treino (`st_mtime`). Se novos chamados forem adicionados pelo usuário ou sincronizados pelo banco, a IA detecta a mudança e se retreina automaticamente na próxima execução.
-
-### 3. Engenharia de Dados & Integração Segura com Excel
-
-- **Sincronização _Append-Only_:** O sistema identifica chamados inéditos e os insere cirurgicamente no final da Planilha Master de produção, **sem sobrescrever** observações, andamentos ou edições manuais feitas pela equipe.
-- **Proteção contra Trava de Leitura (SharePoint / OneDrive):** Utilização de cópias voláteis com `tempfile` e `shutil.copy2` para contornar bloqueios de arquivo em uso no Windows (`PermissionError`) durante a leitura e sincronização em segundo plano de todas as planilhas do sistema (Doações/Redistribuição, Controle de Garantias e Fiscalização de Contratos SAJ).
-- **Tratamento de Anomalias:** Proteção contra vazamento de memória e erros de conversão do Pandas para o Excel (como o erro `65535` em células vazias).
-- **Automação Visual Win32:** Uso nativo do COM (`pywin32`) para formatar a planilha Master (autofit de colunas, quebra de texto, pintura de linhas baseada em TAGs) de forma 100% invisível no background.
-
-### 4. Execução Stealth (Invisível) & Arquitetura Descentralizada
-
-- **Orquestrador Mestre de Chamados (`orquestrador.py`):** Roda via `pythonw.exe` com a flag `CREATE_NO_WINDOW`, garantindo processamento 100% em background focado estritamente na esteira de chamados de TI (Coleta OTRS → Coleta CitSmart → Pré-processamento → Classificação de TAGs por IA).
-- **Arquitetura Descentralizada por Módulos:** Cada aba/módulo independente (Portarias, Impressoras, Garantias, Fiscalização, Doações, Unidades) possui seu próprio sub-robô worker assíncrono disparado diretamente pela interface do Streamlit, permitindo livre uso do painel enquanto a coleta executa e exibindo logs em tempo real.
-
-### 5. Gestão Centralizada, Dashboard Modular & Navegação por URL
-
-- **Arquitetura Modular em Camadas (`dashboard.py`):** O dashboard principal é estruturado como um orquestrador conciso com separação completa em pastas:
-  - `assets/css/styles.css`: Estilos globais e refinamentos de UI (com popover responsivo auto-ajustável de altura).
-  - `src/components/`: Componentes reutilizáveis (cabeçalho/popover, alertas, status de logs, paginação `pagination.py`).
-  - `src/tabs/`: Módulos de páginas isolados (`chamados.py`, `unidades.py`, `central_telefonica.py`, `plantoes.py`, `calendario_geral.py`, `mapas.py`, `redistribuicao.py`, `fiscalizacao.py`, `viagens.py`, `garantia.py`, `links_faqs.py`, `portarias.py`, `impressoras.py`, `scripts_automacao.py`, `notificacoes.py`, `configuracoes.py`).
-
-- **Navegação Persistente por URL (Query Parameters):** Sincronização bidirecional completa da página ativa e sub-abas via URL (`?tab=slug&subtab=slug`). Suporta F5 e compartilhamento de links diretos sem perder o foco do trabalho.
-- **Painel Interativo Premium (Streamlit):** Interface gráfica web responsiva para acompanhamento dos chamados em tempo real, com ordenação inteligente de datas e filtros dinâmicos de Status, Unidade, Usuário e TAG de IA.
-- **Persistência Relacional (SQLite):** Dados consolidados no banco relacional `chamados.db`.
-
-### 6. Módulo da Central Telefônica (OXE Alcatel-Lucent)
-
-- **Extração Acelerada via API REST (`oxe_scraper.py`):** Requisições em lote paralelo (`Promise.all`) via navegador que reduzem a coleta de 1.831 ramais de ~10 minutos para menos de 10 segundos. Captura todos os atributos de `Subscriber` e `Tsc_IP_subscriber` (Grupo de Captura, Categoria Rede Pública, Centro de Custo, IP, MAC Address).
-- **Pré-processamento & Classificação (`preprocess_oxe.py`):** Normaliza a lista, formata o Nome Exibido, padroniza MAC Address e classifica a categoria do dispositivo (_Telefone IP Físico_, _Softphone_, _Analógico_, _Virtual_), persistindo na tabela relacional `central_telefonica` do SQLite.
-- **Interface e Modal Ficha Técnica (`central_telefonica.py`):** Cards de métricas KPI, busca textual, filtros por Categoria e Tipo de Estação, além de modal interativo (`@st.dialog`) acionado pela seleção da linha com expansores categorizados e visualização do dicionário JSON da API.
-
-### 7. Módulo de Doação & Redistribuição de Máquinas
-
-- **Inventário de Movimentações:** Aba dedicada no painel para visualização e análise de equipamentos destinados a doação, redistribuição, garantia ou baixados.
-- **Gráficos Temporais e KPIs:** Métricas de acompanhamento de estoque e gráficos dinâmicos de distribuição por tipo e histórico por ano.
-- **Gerador de Relatórios para Chamados (Rich Text HTML):** Ferramenta integrada na barra lateral que gera automaticamente textos formatados com tabelas estilizadas em HTML (Zebra Striping).
-
-### 8. Base de Conhecimento, FAQs, Vídeos & Galeria de Imagens FAQ
-
-- **Sincronização em Lote via Playwright (`faq_scraper.py`):** Bot headless com `Playwright` que varre as páginas institucionais de tutoriais do SharePoint, extrai a árvore de conteúdo em HTML limpo e armazena na tabela relacional `faqs` do SQLite.
-- **Visualizador de Vídeos FAQ Local/SharePoint:** Aba de vídeos com varredura recursiva de pastas, categorização automática por subpastas, reprodução em modal e botão de execução nativa via Windows (`os.startfile`) para suporte total a codecs de celular/Teams (H.265/HEVC).
-- **Galeria de Imagens FAQ (Tutoriais):** Varredura recursiva em diretórios sincronizados por SharePoint/OneDrive (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`) com agrupamento automático por Pasta/Tutorial. Possui visualizador em modal interativo (`@st.dialog`) em formato de carrossel de fotos (navegação `⬅️`/`➡️` persistente sem fechar o modal, limite visual de altura `max-height: 480px` com `object-fit: contain` e atalho para abertura no visualizador nativo do Windows via `os.startfile`).
-- **Sub-Navegação Sincronizada por URL:** Interface com sub-abas sincronizadas por query parameters (`?tab=faq&subtab=sharepoint|videos|imagens|links`).
-
-### 9. Conferência de Portarias dos Membros da Bancada
-
-- **Integração com a API de Atos e Normas do MPMS:** Consulta automatizada para os servidores da bancada.
-- **Sanitização Unicode & HTML:** Limpeza de tags HTML (`<strong>`), acentos e hífens Unicode quebrados (`\u0096`, `\u2013`), além de deduplicação inteligente.
-- **Modal de Detalhes & Download de PDF:** Visualizador completo da ementa, diário oficial e download direto do PDF do anexo (`/download/{atocod}`).
-
-### 10. Escala de Plantões, Calendário Geral & Integração com o Microsoft Outlook
-
-- **Calendário Geral Unificado (FullCalendar v6):** Visão centralizada com filtros rápidos para Registros Manuais, Plantões Matutinos, Plantões Semanais, Contratos de Garantia, Portarias da Bancada (Férias/Fiscais), Viagens e Chamados Técnicos (OTRS e CitSmart).
-- **Exportação Universal para o Microsoft Outlook (RFC 5545 iCalendar):**
-  - _Download de Arquivo `.ics`_: Botão com 1 clique na interface que exporta os eventos selecionados com títulos padronizados, descrições detalhadas, categorias, alarmes e localidades para importação em qualquer calendário do Outlook.
-  - _Assinatura Dinâmica da Web (`Inscrever-se da Web`)_:
-    - No ambiente corporativo (Red Hat / Produção), a aplicação publica o arquivo consolidado de eventos em rota estática (`/app/static/calendario.ics`).
-    - **Sincronização 100% Autônoma:** No Outlook (Web, Desktop ou Mobile), basta clicar em *Adicionar calendário > Inscrever-se da Web* e colar a URL da aplicação (`https://<servidor-bancada-mpms>/app/static/calendario.ics`).
-    - **Zero Duplicidade:** Todos os eventos possuem identificador persistente e padronizado (`UID:{id}@bancada-sti.mpms.mp.br`). Quando o Outlook sincroniza, ele atualiza ou adiciona eventos novos sem jamais gerar registros repetidos.
-  - _Atualização Automatizada via Daemon_: O motor em segundo plano (`cron_scheduler`) atualiza o arquivo `.ics` publicado a cada 2 horas ou sempre que os robôs sincronizarem plantões, portarias ou viagens.
-- **Coleta Autônoma (`plantoes_scraper.py`):** Bot de sincronização das escalas de Plantão Matutino (PGJ) e Plantão Semanal (SIMP).
-- **Sub-Navegação Persistente:** Suporte a query parameters (`?tab=plantoes&subtab=agenda|matutino|semanal`).
-
-### 11. Sistema Unificado de Notificações, Alertas & Paginação
-
-- **Notificações de Novas Portarias:** Gera alerta automaticamente no banco sempre que uma nova portaria é identificada pelo orquestrador.
-- **Lembretes Antecipados de Plantão:**
-  - _Plantão Matutino_: Notificação emitida 1 dia útil antes (se o plantão for na segunda-feira, a notificação é emitida na **sexta-feira**).
-  - _Plantão Semanal_: Notificação emitida na **segunda-feira** da semana do plantão SIMP.
-- **Alertas visuais Toast & Badge no Header:** Notificações em balão (`st.toast`) ao abrir o sistema e contador dinâmico de pendências no menu (`🔔 Central de Notificações (3)`).
-- **Central de Gerenciamento & Paginação (`notificacoes.py` + `pagination.py`):** Interface com busca/filtros por tipo e status, seletor dinâmico de itens por página no sidebar (`5, 10, 20, 50, 100`) e régua de navegação no rodapé.
-
-### 12. Gestão de Impressoras & Dispositivos (PaperCut)
-
-- **Coleta e Tratamento Autônomo (`papercut_scraper.py`):** Automação via Selenium que loga no sistema de gerenciamento de impressões PaperCut, navega até as listagens de impressoras e dispositivos multifuncionais (MFDs) e efetua a exportação dos relatórios em CSV.
-- **Unificação Inteligente 360° & Desduplicação por Nome Canônico:** Fusão automática dos relatórios `printer_lists.csv` (Filas) e `devices_lists.csv` (MFDs) combinando IP de rede do dispositivo físico, nome do servidor de impressão, localização e modelo detalhado do equipamento em um registro único sem duplicatas.
-- **Diagnóstico de Conectividade em Tempo Real (Ping Integrado):** Teste nativo de conectividade ICMP (`ping_host`) disponível diretamente no modal de detalhes da impressora (`@st.dialog`), exibindo alertas Toast e o log detalhado de saída do terminal em um accordion expansível.
-- **Tratamento de Encodings e Limpeza Automática:** Processamento inteligente com detecção de encodings (`latin1`, `utf-8-sig`), leitura estruturada de delimitadores (`;`), rotação de 10 backups e remoção de temporários em Downloads.
-- **Visualização & Filtros no Dashboard (`impressoras.py`):** Interface dedicada no painel com cards KPI em tempo real (Total de Ativos, Filas, MFDs, Status OK e Alertas/Erros), busca textual e filtros dinâmicos por Tipo, Status, Localização e Modelo.
-
-### 13. Módulo de Scripts de Automação PowerShell & Relatórios Interativos
-
-- **Execução Remota de Rotinas de TI (`scripts_automacao.py`):**
-  - _Analisador de Dispositivos_: Coleta inventário de hardware, BIOS, discos, drivers e programas de máquinas remotas via CIM/WSMan, gerando relatórios ricos em HTML, PDF e Excel.
-  - _Manutenção e Limpeza Remota_: Limpeza remota de temporários, Prefetch, Lixeira, cache de atualizações, Windows.old, Delivery Optimization, Crash Dumps e otimização/defrag de disco.
-  - _Remoção de Perfis de Usuário_: Purga remota de contas e pastas de usuários inativos (`C:\Users`) via `Win32_UserProfile` e `StdRegProv`.
-- **Relatórios HTML Dinâmicos e Interativos (`GeradorHtml.ps1`):**
-  - _Design Moderno e Responsivo_: Identificação visual completa no cabeçalho com modelo e nome da máquina.
-  - _Ordenação Interativa de Tabelas (`<th>`)_: Clique em qualquer coluna para ordenar dados numéricos, datas (formato pt-BR) e texto.
-  - _Filtros de Pesquisa por Tabela (`.table-filter`)_: Inputs de busca individuais para seções de alta densidade (Programas, Serviços, Processos e Drivers).
-  - _ScrollSpy & Sub-links de Gráficos_: Menu lateral com classe `.active` dinâmica e links diretos para seções de tabelas e para cada gráfico individual.
-  - _Seções Accordion Expansíveis (`.section-card`)_: Todos os cards podem ser recolhidos ou expandidos ao clicar no título ou no ícone `▼`.
-  - _Scrollbars Personalizadas_: Estilização elegante de barras de rolagem para Chrome, Edge, Safari (`::-webkit-scrollbar`) e Firefox (`scrollbar-width`).
-  - _Gráficos Interativos_: Visualizações completas com Chart.js (slots de RAM, discos, espaço por perfil, programas por ano, tipo de inicialização de serviços, consumo de RAM por processo e origem de drivers) e fallback offline em CSS.
-- **Download Direto para a Máquina do Usuário (Pronto para Docker):**
-  - Botões de download instantâneo para relatórios **HTML (`.html`)**, **PDF (`.pdf`)** e **Excel (`.xlsx`)** na interface web Streamlit, permitindo que o usuário salve os arquivos diretamente na sua máquina local mesmo se a aplicação rodar em um contêiner Docker/Linux no Red Hat.
-- **Background Task Persistence (Execução Assíncrona):** Dispara o script em uma thread/processo em segundo plano desacoplada do navegador. Permite que o usuário navegue por outras abas do dashboard ou pressione **F5** sem interromper o script no Windows.
-- **Detecção Dinâmica do PowerShell Engine:** Detecta automaticamente a presença do `pwsh.exe` (PowerShell Core 7+) no sistema; caso contrário, faz o fallback seguro para o `powershell.exe` (Windows PowerShell 5.1).
-- **Auto-Fix de Credenciais DPAPI (`cred_admin.xml`):** Identifica falhas de criptografia DPAPI e regenera automaticamente os arquivos de credenciais usando as credenciais administrativas do `SCCM_ADMIN_USER` salvas no Keyring do Windows.
-
-
-### 14. Módulo de Viagens da Bancada STI
-
-- **Cronograma Integrado de Viagens (`viagens.py`):**
-  - _Calendário Interativo (FullCalendar v6)_: Visualização das viagens da equipe por períodos (multi-dias com ajuste automático de término inclusivo), detalhando localidade, técnicos escalados, número de chamados e datas.
-  - _Modal de Detalhes Dinâmico_: Exibição instantânea dos dados ao clicar no evento (Destino, Técnico, Chamado, Saída e Retorno).
-  - _Tabela Filtrável e Paginada_: Listagem tabular com busca em tempo real por técnico, destino e chamados, com exportação para Excel (`.xlsx`) e seletor dinâmico de itens por página.
-  - _Sincronização com o SharePoint_: Download direto HTTP e fallback para automação com Selenium ou caminho local no OneDrive corporativo, com persistência na tabela `viagens`.
-  - _Integração com o Calendário Geral_: Camada de ativação/desativação dedicada (`Viagens da Bancada`) integrada com a pesquisa global unificada.
-
-### 15. Disparador Local Windows via Protocol Handler (`bancada://`)
-
-- **Execução Desacoplada do Navegador:**
-  - Registro de protocolo URI customizado no Windows (`bancada://run?tool=...&target=...`) acionado diretamente por hiperlinks na interface web Streamlit.
-  - Instalador rápido em lote (`instalar_disparador_windows.cmd`) e registro de chaves (`instalar_protocolo_bancada.reg`).
-  - Lançador nativo em PowerShell (`bancada-launcher.ps1`) com elevação de privilégios (`Start-Process -Verb RunAs`) executado em janela oculta.
-  - Detecção inteligente do interpretador: seleciona automaticamente o PowerShell 7+ (`pwsh.exe`) se disponível, com fallback transparente para o Windows PowerShell 5.1 (`powershell.exe`).
-  - Abertura automática de relatórios gerados no navegador padrão sem bloqueios de permissão do container.
-
-### 16. Painel Central de Configurações & Cofre de Credenciais Criptografado
-
-- **Substituição Segura do `.env` (`configuracoes.py` & `settings_db.py`):**
-  - Gerenciamento unificado de todas as variáveis do sistema diretamente pelo painel web, organizado por abas temáticas (*Rede / AD*, *SCCM*, *PaperCut*, *Telefonia OXE*, *SharePoint & Planilhas*, *Portais & URLs*, *Inteligência Artificial*).
-  - Criptografia simétrica com **Fernet (AES-128)** e derivação de chave de máquina via **PBKDF2HMAC** para todos os campos sensíveis (senhas e tokens de API).
-  - Fallback automático para variáveis de ambiente `.env` e Keyring, garantindo compatibilidade reversa e portabilidade para PostgreSQL / Red Hat.
-
-### 17. Catálogo Unificado de Unidades, Ramais (PDF / Intranet) & Monitoramento de Robôs
-
-- **Extrator de Ramais Telefônicos da Intranet (`ramais_scraper.py`):** Autenticação automatizada via `requests.Session()` com credenciais do sistema (`USERNAME` / `PASSWORD`), busca dinâmica das URLs e download em memória dos PDFs oficiais de ramais (Comarcas do Interior e Capital/PGJ).
-- **Processamento Inteligente de PDF (`pdfplumber`):** Varredura linha a linha e extração estruturada de tabelas relacionando comarcas, prédios, setores, membros e seus respectivos números telefônicos na tabela relacional `ramais_mpms` do SQLite.
-- **Relação Unificada com Gestão Interativa (`unidades.py`):** Consolidação da lista oficial do Portal Web com as Unidades Manuais locais (badges de origem `📌 Manual` e `🌐 Portal Web`).
-- **Modal Interativo (`@st.dialog`) & Edição por Seleção de Linha:** Ao clicar em qualquer linha da tabela (`on_select="rerun"`):
-  - _Registro Manual_: Abre formulário preenchido permitindo edição em tempo real de todos os atributos com salvamento ou exclusão direta.
-  - _Registro do Portal_: Exibe a ficha completa formatada em modo de leitura.
-- **Acompanhamento de Robôs em Segundo Plano (Accordions & Logs):** Indicadores no sidebar com botões desabilitados durante a execução, acompanhamento do progresso através de `st.expander` com leitor de logs em tempo real e notificação em balão `st.toast` ao concluir.
-
-### 18. Módulo de Árvore e Consulta do Active Directory (AD / LDAP)
-
-- **Conexão Corporativa Multiplataforma (`ldap3`):**
-  - Integração nativa 100% Python via protocolo LDAPv3 sobre TCP (portas 389 e 636 LDAPS) com bind autenticado via UPN (`user@domain`).
-  - Totalmente compatível com **Linux WSL (Ubuntu)**, contêineres **Docker** e futura migração para **Red Hat Enterprise Linux (RHEL)**, sem dependências legadas de APIs Windows COM (`pyad`/`win32com`).
-  - Credenciais seguras gerenciadas dinamicamente via cofre criptografado (`AD_USER`, `AD_PASSWORD`, `AD_DOMAIN`, `AD_MMC`).
-- **Arquitetura de Cache Relacional em Alta Performance (`ad_db.py`):**
-  - Armazenamento local das Unidades Organizacionais (OUs), Usuários e Grupos de Segurança no banco relacional (compatível com SQLite e PostgreSQL).
-  - Garante navegação instantânea e zero sobrecarga aos Domain Controllers corporativos a cada requisição no Streamlit.
-- **Árvore Interativa das Unidades Organizacionais (GoJS OrgChart & People View):**
-  - Visualização em diagrama hierárquico interativo com renderização HTML/JS via GoJS (`streamlit.components.v1.html`).
-  - Injeção de nó raiz corporativo centralizador unificando todas as OUs de topo da floresta do Active Directory.
-  - **Cards Corporativos Ricos (Estilo OrgChart Editor & FamilyTree):**
-    - Contadores instantâneos de pessoas (`👥 X users`), computadores (`💻 Y comps`) e sub-unidades (`📁 Z`).
-    - Exibição inline dos usuários alocados na Unidade Organizacional com Nome Completo, Cargo, E-mail institucional (`✉️`) e Ramal Telefônico (`📞`).
-  - Expansão e recolhimento dinâmico de nós, centralização automática de zoom e busca em tempo real com realce de nós correspondentes e abertura do caminho até a raiz.
-- **Gestão de Contas de Usuários:**
-  - Métricas de topo com contadores de usuários ativos e contas bloqueadas/desativadas (detecção de flags de bitwise do `userAccountControl` do Active Directory).
-  - Filtros dinâmicos por status de conta, departamento e busca textual em tempo real por Login (`sAMAccountName`), Nome Completo ou E-mail.
-  - Tabela interativa com seleção de linha (`on_select='rerun'`) e modal nativo (`@st.dialog`) com **Ficha Completa do Usuário**:
-    - **Identificação & Crachá:** Nome Completo, Login de Rede, Badge de Status e destaque para o **ID do Cartão / Crachá RFID PaperCut (`pager`)** para liberação de impressões.
-    - **Organização:** Cargo (`title`), Lotação (`department`), Empresa (`company`), Escritório/Sala (`physicalDeliveryOfficeName`), Superior/Gestor Imediato (`manager`) e Descrição (`description`).
-    - **Comunicação:** E-mail com link `mailto:`, Ramal/Telefone (`telephoneNumber`) e Celular (`mobile`).
-    - **Auditoria & Segurança:** Data de Criação (`whenCreated`), Último Logon (`lastLogonTimestamp`) formatado em `DD/MM/AAAA HH:MM:SS`, OU pai, Distinguished Name (DN) e decodificação amigável de flags UAC.
-    - **Associações:** Tabela expansível listando todos os **Grupos de Segurança** aos quais o usuário pertence (`memberOf`).
-  - Proteção e sanitização automática contra caracteres de controle restritos (`IllegalCharacterError`) na exportação direta para planilha Excel (`.xlsx`) e CSV com fallback.
-- **Gestão de Computadores & Servidores (`objectClass=computer`):**
-  - Monitoramento e inventário das estações de trabalho e servidores ingressados no domínio Active Directory.
-  - Indicadores KPI em tempo real: Total de Máquinas, Máquinas Ativas, Máquinas Desativadas e Servidores de Rede.
-  - Painel retrátil de **Distribuição de Sistemas Operacionais** no parque computacional com contagem e percentual.
-  - **Filtros Avançados:**
-    - Categoria de Máquina (*Todas*, *Estações de Trabalho*, *Servidores*).
-    - Status (*Todos*, *Ativos*, *Desativados*).
-    - Auditoria de Inatividade / Último Logon (*> 30 dias*, *> 90 dias*, *> 180 dias*, *Sem Logon Registrado*).
-    - Multi-select de Sistemas Operacionais (Windows 10, Windows 11, Windows Server, etc.).
-    - Busca textual em tempo real por Nome, DNS FQDN, Descrição ou Responsável (`managedBy`).
-  - Tabela com paginação inteligente e seleção de linha (`on_select='rerun'`) abrindo modal nativo (`@st.dialog`) com a **Ficha Completa da Máquina**:
-    - **Ações Rápidas com 1 Clique (Protocolo `bancada://`):**
-      - 🖥️ **Conexão Remota (RDP):** dispara o MSTSC diretamente para o hostname do computador.
-      - 📂 **Compartilhamento Administrativo (C$):** abre o Explorer local do Windows em `\\hostname\c$`.
-      - ⚡ **Teste de Ping (ICMP):** dispara ping contínuo no console do Windows.
-    - **Identificação & Rede:** Nome da Máquina (`name`/`sAMAccountName`), FQDN / DNS Hostname (`dNSHostName`), Status e flags UAC (ex: `WORKSTATION_TRUST_ACCOUNT`).
-    - **Sistema Operacional & Hardware:** Sistema Operacional (`operatingSystem`), Versão / Build (`operatingSystemVersion`), Descrição/Função e Responsável (`managedBy`).
-    - **Auditoria & Domínio:** Data de Ingresso no Domínio (`whenCreated`), Última Atividade / Logon (`lastLogonTimestamp`), OU de alocação e Distinguished Name (DN) completo.
-  - Exportação direta dos computadores em planilhas Excel (`.xlsx`) e arquivos CSV (`.csv`).
-- **Auditoria de Grupos de Segurança:**
-  - Listagem dos grupos de segurança e escopos do domínio corporativo.
-  - Modal interativo (`@st.dialog`) exibindo os membros associados ao grupo com status da conta, departamento, ID do cartão RFID (`pager`) e ramal/telefone.
-- **Painel de Diagnóstico & Sincronização:**
-  - Métricas de cache corporativo com contadores de OUs, Usuários, Computadores/Servidores e Grupos.
-  - Ferramenta de teste de latência e conectividade com o DC e botão de sincronização manual com barra de progresso em tempo real.
-
-### 19. Módulo de Inventário SCCM (Ativos, Conformidade & Controle Remoto)
-
-- **Consulta Remota WMI/CIM Multiplataforma (`sccm_service.py`):**
-  - Conexão segura ao servidor SCCM (`srv-1046.in.mpe.ms.gov.br`) no namespace `root\sms\site_PGJ` utilizando credenciais administrativas salvas no cofre (`SCCM_ADMIN_USER` / `SCCM_ADMIN_PASSWORD`) com autenticação DCOM `PacketPrivacy`.
-  - **Sincronização Híbrida via Protocol Handler (`bancada://run?tool=sccm_sync`):** Devido à ausência de DCOM PacketPrivacy nativo no Linux/pwsh, a sincronização pode ser acionada diretamente da interface via `bancada://` para executar no PowerShell da sua estação Windows local, extraindo em segundos os milhares de registros e disponibilizando `sccm_inventory.json` para importação imediata (`import_sccm_inventory_json`).
-- **Estrutura de Sub-abas (Espelhamento do Console MECM/SCCM):**
-  - 💻 **Dispositivos (`SMS_R_System` / `SMS_CM_RES_COLL_SMS00001`):** Inventário completo das 2.800+ estações e servidores com Hostname, Último Usuário logado, IP(s) válidos, Endereço MAC, Fabricante, Modelo, Versão e Build do Windows, Versão do Cliente SCCM e Site do Active Directory.
-  - 👤 **Usuários (`SMS_R_User`):** Catálogo de utilizadores gerenciados, grupos associados e Distinguished Name.
-  - 📁 **Coleções de Dispositivos & Usuários (`SMS_Collection`):** Monitoramento de todas as 400+ coleções dinâmicas de dispositivos (Tipo 2) e coleções de usuários (Tipo 1) com contagem de membros em tempo real.
-  - 🛡️ **Configurações & Conformidade:** Painel diagnóstico da saúde dos agentes SCCM, listando estações ativas e identificando máquinas sem comunicação recente para intervenção preventiva da bancada.
-- **Ações Remotas com 1 Clique via Protocol Handler (`bancada://`):**
-  - 🎮 **Controle Remoto Oficial SCCM (`tool=cmrc`):** Dispara instantaneamente o executável oficial `CmRcViewer.exe` instalado no Windows para abrir a sessão de assistência remota sem precisar navegar no console do SCCM.
-  - 🖥️ **Conexão RDP (`tool=rdp`):** Conecta via Área de Trabalho Remota (MSTSC).
-  - 📂 **Explorer C$ (`tool=explorer`):** Acessa o compartilhamento administrativo `\\hostname\c$`.
-  - ⚡ **Teste de Ping (`tool=ping`):** Dispara teste contínuo de latência ICMP.
-- **Cache Relacional de Alta Performance (`sccm_db.py`):**
-  - Armazenamento estruturado no banco relacional (`chamados.db` / PostgreSQL), permitindo que buscas, filtros e abertura de fichas técnicas ocorram em milissegundos.
-  - Sincronização em segundo plano via interface ou agendada pelo `cron_scheduler`.
-
-### 20. Componentes Globais Reutilizáveis (Subtabs & Calendário Master)
-
-- **Sub-Navegação por Abas Nativas (`src/components/subtabs.py`):** Componente padronizado com isolamento CSS que simula abas nativas para rádios do Streamlit, garantindo sincronização imediata dos estados com os query parameters da URL (`?subtab=slug`).
-- **Cards KPI / Métricas Padronizados (`src/components/metric_cards.py`):** Componente unificado para exibição de indicadores de desempenho (`render_metric_card` e `render_metric_cards`), integrando-se aos temas visual claro/escuro via variáveis CSS, eliminando blocos de HTML inline redundantes e padronizando todas as abas da aplicação (Active Directory, Chamados, Telefonia OXE, Impressoras PaperCut, Garantias, Viagens, Portarias, Redistribuição e Fiscalização).
-- **Motor Centralizado de Calendário Master (`src/components/calendar.py`):** Função `render_master_calendar` que encapsula o FullCalendar v6 com modal dinâmico inteligente, adaptação automática de temas claro/escuro (incluindo o popover do "+X mais"), estilização vermelha `#ff4b4b` para abas ativas e exibição completa de chamados técnicos, plantões, garantias, portarias e viagens.
-- **Fechamento Automático de Chamados Ausentes (`close_missing_tickets_by_base`):** Mecanismo de sincronização relacional no SQLite que identifica chamados encerrados nos portais de origem e atualiza seu status para `'Fechado'`, com trava de segurança por volume mínimo (`active_ids >= 3`).
-- **Conformidade com a API Moderna do Streamlit:** Migração global de parâmetros legados de largura para `width='stretch'` e componentes de HTML customizados para `st.components.v1.html(...)`.
-
-### 19. Notificações Inteligentes no WhatsApp (Evolution API Docker)
-
-- **Container Dedicado da Evolution API (`docker-compose.yml`):**
-  - Integração nativa com a instância `bancada_evolution_api` em Docker (porta `8080`), conectada ao PostgreSQL da bancada.
-  - Conexão do telefone institucional da Bancada STI (`+55 67 98478-2034`).
-- **Pareamento Visual por QR Code no Navegador:**
-  - Aba de configurações `📱 WhatsApp & Alertas (Evolution)` com geração de QR Code base64 dinâmico na tela do Streamlit.
-  - Status em tempo real da conexão (`🟢 Conectado`, `🟡 Aguardando Leitura`, `⚪ Desconectado`), permitindo parear o celular funcional ou desconectar com 1 clique.
-- **Disparos Automáticos D-1 às 12:00 (Dias Úteis):**
-  - _Regra de Dias Úteis_: Eventos de Terça a Sexta avisam no dia anterior útil ($D-1$ às 12:00); eventos de Sábado, Domingo ou Segunda são disparados na **Sexta-feira anterior às 12:00**.
-  - _Plantões Matutinos e Semanais_: Avisos direcionados e personalizados pelo primeiro nome do técnico escalado.
-  - _Viagens da Bancada_: Alertas com destino, datas de saída/retorno e chamado vinculado para todos os servidores da bancada que irão viajar.
-  - _Novas Portarias_: Avisos instantâneos com número do ato e resumo da ementa sempre que os integrantes forem citados no Diário Oficial.
-- **Fuzzy Matching Inteligente & Destinatários Exclusivos:**
-  - Mapeamento flexível de nomes (`member_matcher.py`) que reconhece apelidos e abreviações das planilhas.
-  - Envio restrito e seguro exclusivamente para os servidores autorizados.
-  - Registro de auditoria contra envios duplicados (`whatsapp_disparos_log`).
-
-### 20. Sistema de Agendamentos & Cron Jobs em Segundo Plano
-
-- **Motor Autônomo em Background (`src/services/cron_scheduler.py`):**
-  - Thread daemon nativa (`BancadaCronDaemon`) inicializada automaticamente pelo entrypoint do container (`init.py`).
-  - Execução contínua em segundo plano sem depender do usuário manter o navegador aberto.
-  - Verificação a cada 30 segundos dos intervalos e horários configurados no banco de dados relacional.
-  - Controle atômico de concorrência com travas de processo (`.lock`) por tarefa.
-- **Gestão Visual Completa (`⚙️ Configurações > ⏰ Agendamentos & Cron Jobs`):**
-  - _Modo Recorrente_: Configuração flexível de intervalos em minutos, horas ou dias.
-  - _Modo Horário Fixo Diário_: Configuração de horário exato (ex: `12:00`) com filtro opcional de dias úteis.
-  - _Controle Individual_: Chave liga/desliga independente para cada rotina automática.
-  - _Disparo Imediato_: Botão **`🚀 Executar Agora`** para acionamento sob demanda em thread isolada.
-  - _Acompanhamento em Tempo Real_: Accordion dinâmico que exibe as últimas linhas de log ao vivo enquanto a tarefa é processada em segundo plano.
-- **Rotinas Automáticas Integradas (13 Tarefas Desacopladas):**
-  1. **Alertas WhatsApp (`whatsapp_d1`):** Disparos automáticos D-1 às 12:00 em dias úteis para plantões, viagens e portarias.
-  2. **Varredura de Portarias (`sync_portarias`):** Monitoramento diário da API de Atos e Normas do MPMS gerando alertas na central.
-  3. **Plantão Matutino DIT (`sync_plantoes_matutino`):** Download da planilha do SharePoint e sincronização de escalas matutinas.
-  4. **Plantão Semanal SIMP (`sync_plantoes_semanal`):** Raspagem das escalas semanais do SIMP via web com notificações antecipadas.
-  5. **Fiscalização de Contratos (`sync_fiscalizacao`):** Sincronização da planilha corporativa de contratos SAJ/TI do SharePoint.
-  6. **Controle de Garantias (`sync_garantia`):** Sincronização da planilha de termos e prazos de garantia de equipamentos.
-  7. **Viagens da Bancada (`sync_viagens`):** Atualização periódica do cronograma oficial de viagens técnicas da equipe.
-  8. **Doações & Redistribuições (`sync_doacoes`):** Sincronização do inventário de máquinas destinadas a doação ou redistribuição.
-  9. **Catálogo de Unidades (`sync_unidades`):** Varredura das comarcas e procuradorias no portal institucional do MPMS.
-  10. **Catálogo de Ramais (`sync_ramais`):** Download dos PDFs de telefonia da Intranet e extração de ramais no banco.
-  11. **Central Telefônica OXE (`sync_oxe`):** Coleta e unificação de ramais, usuários, endereços IP e MAC addresses da central Alcatel.
-  12. **Impressoras PaperCut (`sync_papercut`):** Extração de relatórios de filas e MFDs com unificação 360° no banco.
-  13. **Coleta & Classificação de Chamados TI (`orquestrador_chamados`):** Robô de extração OTRS/CitSmart e classificação de tags por IA.
-- **Auditoria & Histórico (`cron_logs`):**
-  - Registro de auditoria com rastreamento de início, término, duração em segundos, status (`🟢 Sucesso`, `🔴 Erro`, `⏳ Executando`) e mensagem de retorno de cada execução.
-
-## 🛠️ Tecnologias Utilizadas
-
-- **Linguagem:** Python 3.11+ & PowerShell 5.1+ / 7+ (pwsh)
-- **Bibliotecas Principais:**
-  - `selenium`: Navegação web automatizada para logins e sistemas dinâmicos.
-  - `playwright`: Raspagem em lote em alta performance de tutoriais e artigos do SharePoint em headless mode.
-  - `pdfplumber`: Leitura profunda e extração tabular de documentos PDF em memória.
-  - `requests` & `beautifulsoup4`: Varredura estática ultra-veloz de portais institucionais públicos e sanitização de HTML.
-  - `pandas`: Análise, manipulação e alinhamento inteligente de DataFrames.
-  - `scikit-learn`: Treinamento pesado, tuning de hiperparâmetros e classificação.
-  - `spacy`: Processamento de linguagem natural (NLP) e lematização.
-  - `pywin32`, `keyring` & `WMI`: Automação nativa do Microsoft Excel, cofre de senhas do Windows e consultas profundas ao servidor SCCM/CIM.
-  - `streamlit`: Construção do dashboard web moderno, rápido e interativo.
-  - `sqlite3`: Banco de dados relacional embutido de altíssimo desempenho.
-  - `python-dotenv`: Gerenciamento seguro de variáveis de ambiente.
+</div>
 
 ---
 
-## 📂 Estrutura do Projeto
+## 📋 Sumário Executivo
+
+- [1. Visão Geral](#-1-visão-geral)
+- [2. Arquitetura do Sistema](#-2-arquitetura-do-sistema)
+- [3. Módulos & Funcionalidades](#-3-módulos--funcionalidades)
+  - [3.1 Esteira de Chamados & Extração Híbrida (OTRS / CitSmart)](#31-esteira-de-chamados--extração-híbrida-otrs--citsmart)
+  - [3.2 Inteligência Artificial & Pipeline Campeão (spaCy + LinearSVC)](#32-inteligência-artificial--pipeline-campeão-spacy--linearsvc)
+  - [3.3 Central Telefônica Alcatel-Lucent OXE](#33-central-telefônica-alcatel-lucent-oxe)
+  - [3.4 Gestão de Bancada, Doações & Redistribuição](#34-gestão-de-bancada-doações--redistribuição)
+  - [3.5 Controle de Garantias & Fiscalização de Contratos SAJ](#35-controle-de-garantias--fiscalização-de-contratos-saj)
+  - [3.6 Escala de Plantões, Férias, Viagens & Calendário Geral Outlook](#36-escala-de-plantões-férias-viagens--calendário-geral-outlook)
+  - [3.7 Parque de Impressoras & Multifuncionais PaperCut](#37-parque-de-impressoras--multifuncionais-papercut)
+  - [3.8 Catálogo de Unidades & Ramais Institucionais](#38-catálogo-de-unidades--ramais-institucionais)
+  - [3.9 Active Directory (LDAP) & Organograma Interativo GoJS](#39-active-directory-ldap--organograma-interativo-gojs)
+  - [3.10 Inventário SCCM / MECM & Ações Rápidas Remotas](#310-inventário-sccm--mecm--ações-rápidas-remotas)
+  - [3.11 Automação Remota PowerShell & Disparador Local `bancada://`](#311-automação-remota-powershell--disparador-local-bancada)
+  - [3.12 Notificações Inteligentes WhatsApp (Evolution API)](#312-notificações-inteligentes-whatsapp-evolution-api)
+  - [3.13 Motor de Agendamentos Daemon (Cron Scheduler)](#313-motor-de-agendamentos-daemon-cron-scheduler)
+  - [3.14 Cofre de Credenciais Criptografado & Configurações](#314-cofre-de-credenciais-criptografado--configurações)
+- [4. Estrutura de Diretórios](#-4-estrutura-de-diretórios)
+- [5. Como Executar (Docker Compose)](#-5-como-executar-docker-compose)
+- [6. Suíte de Testes Automatizados](#-6-suíte-de-testes-automatizados)
+- [7. Central de Documentação Técnica](#-7-central-de-documentação-técnica)
+
+---
+
+## 🎯 1. Visão Geral
+
+O **Sistema Bancada STI** foi concebido e arquitetado para atender integralmente às demandas de suporte técnico de primeiro, segundo e terceiro níveis do setor de Tecnologia da Informação do **Ministério Público do Estado de Mato Grosso do Sul (MPMS)**.
+
+A plataforma unifica fontes heterogêneas de dados corporativos (sistemas de chamados legados e modernos, inventários de rede WMI/CIM, centrais telefônicas, servidores de impressão, controladores de domínio Active Directory e planilhas dinâmicas no Microsoft SharePoint/OneDrive) em uma interface unificada, reativa e moderna desenvolvida em **Streamlit**.
+
+---
+
+## 🏛️ 2. Arquitetura do Sistema
+
+O ecossistema opera de forma 100% containerizada via **Docker Compose**, desacoplando aplicação, persistência e mensageria:
+
+```mermaid
+graph TD
+    subgraph Host_Windows_Linux["Host (Windows / WSL / Linux)"]
+        UI["Usuário / Navegador Web<br/>(Porta 8501)"]
+        PH["Protocol Handler bancada://<br/>(CmRcViewer, MSTSC, C$, Ping)"]
+    end
+
+    subgraph Docker_Compose["Docker Compose Stack"]
+        subgraph Web_App["bancada_streamlit_app (Python 3.11)"]
+            ST["Interface Streamlit (dashboard.py)"]
+            ETR["Orquestrador de Chamados (orquestrador.py)"]
+            IA["Motor IA Campeão (LinearSVC + spaCy)"]
+            CRON["BancadaCronDaemon (cron_scheduler.py)"]
+            SCRAPERS["Scrapers Unificados<br/>(Requests HTTP + Playwright Chromium)"]
+        end
+
+        subgraph Database["bancada_postgres_db (PostgreSQL 15)"]
+            PG[("PostgreSQL 15 Alpine<br/>(tickets, sccm, cron, ad, cache)")]
+        end
+
+        subgraph Evolution["bancada_evolution_api"]
+            EVO["Evolution API v1.8+<br/>(WhatsApp Bot & Notificações D-1)"]
+        end
+    end
+
+    UI --> ST
+    ST --> PG
+    ETR --> PG
+    CRON --> PG
+    CRON --> EVO
+    SCRAPERS --> ST
+    ST -.-> PH
+```
+
+### Características Fundamentais:
+1. **Camada DAO Híbrida (`src/database/`):** Conexão primária em **PostgreSQL 15** com pool de conexões otimizado, mantendo compatibilidade transparente com **SQLite** local para desenvolvimento isolado ou contingência.
+2. **Motor Web Desacoplado & Leve:** Substituição completa do legado Selenium pelo ecossistema moderno **HTTP Requests** (para varreduras ultrarrápidas de OTRS, portarias e SharePoint) e **Playwright Chromium** (para portais dinâmicos com autenticação por sessão e XHR).
+3. **Persistência Segura & Live Reload:** Volumes mapeados no Docker para código-fonte (`src/`, `assets/`, `dashboard.py`), banco relacional (`postgres_data`), dados brutos/tratados e cofre criptografado.
+
+---
+
+## 🚀 3. Módulos & Funcionalidades
+
+### 3.1 Esteira de Chamados & Extração Híbrida (OTRS / CitSmart)
+- **OTRS Scraper Rápido (`otrs_scraper_fast.py`):** Motor baseado em requisições multithreaded nativas via `requests.Session` e parsing com `BeautifulSoup`. O tempo de coleta dos chamados foi reduzido de **~4 minutos para menos de 10 segundos**.
+- **CitSmart Scraper Moderno (`citsmart_scraper.py`):** Automação com Playwright Chromium que realiza a autenticação corporativa, interceptação de rede assíncrona da rota interna `/tb_ticket_queue/list` e fallback via DOM/iframe em milissegundos.
+- **Deduplicação & Fechamento Automático:** O sistema detecta chamados encerrados nos portais e atualiza automaticamente o status no banco relacional para `Fechado`, garantindo visibilidade precisa da fila de atendimento ativa.
+
+### 3.2 Inteligência Artificial & Pipeline Campeão (spaCy + LinearSVC)
+- **Pré-processamento em Lote com spaCy:** Higienização de texto via `nlp.pipe(batch_size=256, n_process=1, disable=["parser", "ner"])`, normalizando pontuação, stop words e preservando termos técnicos essenciais (como *ssd*, *memoriaram*, *enderecoip*).
+- **Enriquecimento Multivariável de Features:** A função `compose_ticket_text` consolida Título, Unidade, Descrição e Comentários para compor o vetor semântico preditivo.
+- **Classificador Campeão LinearSVC:**
+  ```python
+  Pipeline([
+      ('tfidf', TfidfVectorizer(ngram_range=(1, 2), max_df=0.7, min_df=1)),
+      ('clf', LinearSVC(C=1.0, class_weight='balanced', random_state=42, dual=False))
+  ])
+  ```
+- **Recalibração Mensal via GridSearchCV:** Rotina agendada no Cron Daemon que reavalia múltiplos classificadores (`LinearSVC`, `RandomForest`, `MultinomialNB`, `ComplementNB`) e reajusta hiperparâmetros automaticamente sem intervenção manual.
+
+### 3.3 Central Telefônica Alcatel-Lucent OXE
+- **Extração Acelerada via API REST (`oxe_scraper.py`):** Execução via Playwright com chamadas assíncronas `page.evaluate()` diretamente na API interna da central OXE, baixando 1.800+ ramais em menos de 10 segundos.
+- **Normalização e Ficha Técnica:** Classificação em tempo real de dispositivos (*Telefone IP Físico*, *Softphone*, *Analógico*, *Virtual*), extração de MAC Addresses, IPs e centro de custos com modal interativo.
+
+### 3.4 Gestão de Bancada, Doações & Redistribuição
+- **Inventário de Movimentações:** Controle de ativos de hardware destinados a baixa, descarte sustentável, doação a entidades parceiras ou redistribuição entre promotorias.
+- **Gerador de Relatórios e Termos:** Geração com 1 clique de despachos técnicos e tabelas estilizadas em HTML (Zebra Striping) prontas para inserção em processos administrativos do SEI/SAJ.
+
+### 3.5 Controle de Garantias & Fiscalização de Contratos SAJ
+- **Downloader Híbrido SharePoint (`sharepoint_downloader.py`):** Download HTTP autenticado ultrarrápido com reaproveitamento de cookies da sessão do Office 365 e contingência automática via Playwright Chromium.
+- **Resolução Inteligente de Caminhos:** Cascata de prioridade unificada (`system_settings` no BD ➔ `.env` ➔ padrão seguro), evitando corrupção de URLs e garantindo cache local em `uploads/`.
+
+### 3.6 Escala de Plantões, Férias, Viagens & Calendário Geral Outlook
+- **Calendário Geral Unificado (FullCalendar v6):** Visão corporativa unificada agregando plantões matutinos (PGJ), plantões semanais (SIMP), viagens técnicas, portarias de férias/fiscais e garantias.
+- **Assinatura Universal Outlook (RFC 5545 iCalendar):**
+  - Exportação direta de arquivo `.ics` com 1 clique.
+  - Publicação de rota estática para inscrição na web (`https://.../app/static/calendario.ics`), permitindo sincronização automática no Outlook Desktop, Web e Mobile sem duplicidade de eventos (UIDs persistentes).
+
+### 3.7 Parque de Impressoras & Multifuncionais PaperCut
+- **Coleta Automatizada (`papercut_scraper.py`):** Playwright Chromium headless que efetua login seguro no PaperCut MF e exporta relatórios CSV via eventos nativos de download (`page.expect_download`).
+- **Unificação 360° & Diagnóstico de Rede:** Fusão inteligente de filas de impressão e dispositivos físicos, com botão de teste de conectividade ICMP (Ping) em tempo real integrado no modal do equipamento.
+
+### 3.8 Catálogo de Unidades & Ramais Institucionais
+- **Extrator de Ramais em PDF (`ramais_scraper.py` + `pdfplumber`):** Download dos PDFs de telefonia da Intranet e extração tabular de setores, membros e ramais da Capital e do Interior.
+- **Web Scraping de Unidades (`unidades_scraper.py`):** Varredura leve em ~280 páginas institucionais com `requests` e `BeautifulSoup`, identificando endereços físicos e comarcas.
+
+### 3.9 Active Directory (LDAP) & Organograma Interativo GoJS
+- **Integração Nativa Python (`ldap3`):** Conexão LDAPv3 sobre portas 389/636 (LDAPS) com suporte completo a Linux, WSL e Docker (livre de dependências COM/pywin32).
+- **Organograma Dinâmico GoJS:** Visualização em árvore hierárquica das Unidades Organizacionais (OUs), detalhando quantitativo de servidores, computadores e fichas cadastrais completas com crachá RFID PaperCut (`pager`).
+
+### 3.10 Inventário SCCM / MECM & Ações Rápidas Remotas
+- **Conformidade de Hardware & Software:** Catálogo de 2.800+ estações e servidores com fabricante, modelo, versão do Windows, último logon, IPs e versões de agentes SCCM.
+- **Atalhos Operacionais com 1 Clique (`bancada://`):**
+  - 🎮 **CmRcViewer:** Inicia a assistência remota oficial do SCCM.
+  - 🖥️ **RDP (MSTSC):** Conexão por Área de Trabalho Remota.
+  - 📂 **Explorer C$:** Abertura direta do compartilhamento de rede `\\hostname\c$`.
+  - ⚡ **Ping ICMP:** Diagnóstico de rede em janela de console.
+
+### 3.11 Automação Remota PowerShell & Disparador Local `bancada://`
+- **Scripts de Manutenção (`src/scripts_powershell/`):**
+  - *Analisador de Dispositivos*: Coleta profunda de hardware, BIOS, discos, drivers e software via CIM/WSMan, gerando relatórios ricos em HTML interativo, PDF e Excel.
+  - *Limpeza & Manutenção Remota*: Purga de temporários, Prefetch, Lixeira, Windows.old e otimização de disco.
+  - *Purga de Perfis Inativos*: Remoção remota de contas órfãs em `C:\Users`.
+- **Compatibilidade Rigorosa:** Todos os scripts `.ps1` utilizam codificação **UTF-8 com BOM** (`utf-8-sig`) e suporte a PowerShell 7+ (`pwsh`) e Windows PowerShell 5.1 legado.
+
+### 3.12 Notificações Inteligentes WhatsApp (Evolution API)
+- **Container Dedicado Evolution API:** Conectado ao PostgreSQL com pareamento via QR Code diretamente na interface web do Streamlit.
+- **Disparos Automáticos D-1 às 12:00:** Lembretes proativos em dias úteis para plantonistas, itinerários de viagens técnicas e novas portarias de membros da equipe.
+
+### 3.13 Motor de Agendamentos Daemon (Cron Scheduler)
+- **Thread Daemon Nativa (`BancadaCronDaemon`):** Opera em segundo plano no contêiner web independente de sessões abertas no navegador.
+- **14 Rotinas Desacopladas:** Sincronização periódica de chamados, planilhas do SharePoint, plantões SIMP/PGJ, WhatsApp, portarias e inventários com travas atômicas (`.lock`) e log de auditoria.
+
+### 3.14 Cofre de Credenciais Criptografado & Configurações
+- **Criptografia Simétrica Fernet (AES-128-CBC + HMAC-SHA256):** Senhas corporativas salvas no banco com derivação de chave de máquina via PBKDF2HMAC.
+- **Fallback Transparente e Seguro:** Na ausência de chave ou troca de ambiente, o sistema evita falhas fatais e recorre automaticamente ao Keyring do sistema ou variáveis `.env`.
+
+---
+
+## 📂 4. Estrutura de Diretórios
 
 ```text
-automated-OTRS-and-CitSmart/
-├── assets/
-│   └── css/styles.css                # Estilos CSS globais da aplicação (com ajuste responsivo de UI)
-├── debug_logs/                       # Logs organizados por módulo (otrs, citsmart, oxe, papercut, plantoes, viagens, etc.)
-├── models/                           # Modelos de Machine Learning e classificadores treinados serializados (.joblib)
-├── uploads/                          # Diretório de arquivos enviados, anexos e mídias temporárias
-├── 01 - Dados Brutos/                # Planilhas e relatórios brutos baixados pelos robôs
-├── 02 - Dados tratados/              # Dados intermediários limpos e normalizados
-├── 03 - Dados prontos/               # Bases consolidadas prontas para consumo
+automacao-chamados-sti/
+├── 00-iniciar.cmd                    # Lançador rápido Windows para Docker
+├── 00-iniciar.sh                     # Lançador principal Linux / WSL (Docker Compose + Menu)
+├── AGENTS.md                         # Diretrizes universais de engenharia e ciclo de desenvolvimento
+├── Dockerfile                        # Imagem Python 3.11-slim com Playwright Chromium e spaCy
+├── docker-compose.yml                # Orquestração: Streamlit (8501), PostgreSQL (5432) e Evolution API (8080)
+├── dashboard.py                      # Ponto de entrada do dashboard web Streamlit
+├── init.py                           # Entrypoint do contêiner (inicia Cron Daemon e Streamlit)
+├── orquestrador.py                   # Pipeline ETL de chamados (Scrapers -> NLP -> IA -> BD)
+├── requirements.txt                  # Dependências Python de produção (sem Selenium)
+├── sistema-bancada.desktop           # Atalho para o menu de aplicativos desktop do Linux
+│
+├── Docs/                             # 📚 Central Unificada de Documentação Técnica
+│   ├── README.md                     # Índice mestre de documentação com hyperlinks
+│   ├── arquitetura/                  # Decisões de arquitetura, banco híbrido, segurança e IA
+│   ├── guias/                        # Manuais operacionais (Docker, esteira, bancada, utilitários)
+│   ├── testes/                       # Estrutura de testes, runner mestre e mocks universais
+│   └── issues/                       # Backlog oficial, marcos entregues e roadmap do projeto
+│
+├── assets/                           # Identidade visual, favicons e estilos CSS customizados
+├── 01 - Dados Brutos/                # Arquivos brutos baixados pelos robôs e scrapers
+├── 02 - Dados tratados/              # Dados intermediários normalizados
+├── 03 - Dados prontos/               # Bases prontas e consolidadas
+├── debug_logs/                       # Logs segmentados por módulo e rotação periódica
+├── models/                           # Modelos de Machine Learning e classificadores (.joblib)
+├── uploads/                          # Diretório de cache local seguro de planilhas e mídias
+│
 ├── src/
-│   ├── components/                   # Componentes reutilizáveis do frontend (header, subtabs, calendar, pagination, status_banner)
-│   ├── database/                     # Camada modular de banco de dados SQLite/Postgres (12 módulos relacionais e conexões)
-│   ├── js/                           # Arquivos estáticos de suporte ao cliente JS (server-info.js)
-│   ├── protocol_handler/             # Disparador nativo local Windows (bancada://, instalador .cmd, registro .reg, launcher .ps1)
-│   ├── scrapers/                     # Bots e raspadores automatizados (otrs, citsmart, oxe, papercut, plantoes, ramais, unidades, faq)
-│   ├── scripts_powershell/           # Scripts de automação remota modularizados (analisador, manutencao, perfis)
-│   ├── services/                     # Serviços de background e integrações (cron_scheduler.py, evolution_client.py, member_matcher.py)
-│   ├── syncs/                        # Workers assíncronos de sincronização (doações, fiscalização, garantia, plantões, portarias, viagens, whatsapp)
-│   ├── tabs/                         # Módulos de páginas isolados por funcionalidade no dashboard Streamlit (16 abas completas)
-│   ├── config.py                     # Configurações centralizadas, logging e carregador do cofre/ambiente
-│   ├── crypto_utils.py               # Utilitários de criptografia Fernet (AES-128) e derivação PBKDF2 para senhas
-│   ├── manual_entries.py             # Base de dados de entradas e cadastros manuais de unidades
-│   ├── preprocess_chamados.py        # Limpeza e padronização dos chamados de TI
-│   ├── preprocess_oxe.py             # Tratamento e normalização dos ramais do OXE
-│   ├── salvar_senha.py               # Utilitário interativo de credenciais e cofre de senhas (Keyring)
-│   ├── tag_classifier.py             # Classificador de IA com NLP (spaCy + Scikit-Learn)
-│   └── terminal.py                   # Formatador de logs com cores ANSI para o terminal
-├── tests/                            # Suíte de testes unitários automatizados (NLP, scrapers, banco e tabs)
-├── .env.example                      # Template de variáveis de ambiente
-├── .env                              # Variáveis de ambiente locais (não commitado)
-├── .dockerignore                     # Filtro de arquivos excluídos do contexto da imagem Docker
-├── 00-iniciar.sh                     # Lançador principal Linux / WSL para Docker
-├── 00-iniciar.cmd                    # Lançador principal Windows (duplo clique) para Docker
-├── sistema-bancada.desktop           # Atalho para o menu de aplicativos desktop do Linux / Ubuntu
-├── Dockerfile                        # Especificação da imagem Docker containerizada
-├── Dockerfile-MP-RedHat              # Especificação de imagem Docker para ambiente Red Hat Enterprise Linux
-├── docker-compose.yml                # Orquestrador Docker dos serviços web, postgres e evolution-api
-├── requirements.txt                  # Lista de dependências Python (pip)
-├── chamados.db                       # Banco de dados SQLite relacional local
-├── init.py                           # Entrypoint do container (inicia o daemon de cron e o Streamlit)
-├── dashboard.py                      # Orquestrador central do Streamlit Dashboard
-└── orquestrador.py                   # Script mestre de coleta e classificação de chamados executado em background
+│   ├── config.py                     # Configurações centralizadas, logging e resolução de planilhas
+│   ├── crypto_utils.py               # Criptografia Fernet (AES-128) com fallback transparente
+│   ├── tag_classifier.py             # Pipeline de IA: spaCy batch, LinearSVC campeão e GridSearchCV
+│   │
+│   ├── database/                     # Camada DAO relacional híbrida (PostgreSQL / SQLite)
+│   │   ├── connection.py             # Gerenciador de conexão com pool (get_db_connection)
+│   │   ├── tickets_db.py             # Persistência e consultas de chamados
+│   │   ├── cron_db.py                # Gestão de agendamentos e logs do Cron Daemon
+│   │   ├── sccm_db.py                # Dados de ativos e inventário do SCCM
+│   │   ├── ad_db.py                  # Cache de Unidades Organizacionais e contas do Active Directory
+│   │   ├── settings_db.py            # Configurações dinâmicas do sistema persistidas no banco
+│   │   └── ...                       # Módulos DAO de plantões, ramais, garantias e viagens
+│   │
+│   ├── scrapers/                     # Motores de coleta web unificados (Requests + Playwright)
+│   │   ├── otrs_scraper_fast.py      # Coletor HTTP veloz via requests + BeautifulSoup
+│   │   ├── citsmart_scraper.py       # Coletor automatizado via Playwright Chromium headless
+│   │   ├── sharepoint_downloader.py  # Downloader híbrido ultrarrápido (HTTP cache + Playwright)
+│   │   ├── papercut_scraper.py       # Coletor de impressoras via Playwright nativo
+│   │   ├── oxe_scraper.py            # Coletor de ramais OXE via Playwright + API REST
+│   │   ├── plantoes_scraper.py       # Raspador de plantões SIMP via Playwright
+│   │   ├── ramais_scraper.py         # Extrator de PDFs de ramais com pdfplumber
+│   │   └── unidades_scraper.py       # Coletor de promotorias do portal institucional
+│   │
+│   ├── services/                     # Serviços de segundo plano
+│   │   ├── cron_scheduler.py         # BancadaCronDaemon com execução autônoma
+│   │   ├── evolution_client.py       # Cliente da Evolution API para WhatsApp
+│   │   └── member_matcher.py         # Algoritmo de fuzzy matching de técnicos
+│   │
+│   ├── syncs/                        # Workers assíncronos das rotinas de sincronização
+│   ├── tabs/                         # 16 abas funcionais modulares da interface Streamlit
+│   └── scripts_powershell/           # Automações remotas em PowerShell (UTF-8 com BOM)
+│
+├── tests/                            # Suíte unificada de testes automatizados
+│   ├── run_all.py                    # Runner mestre de validação com relatório ANSI
+│   ├── test_helpers.py               # Mocks universais para execução isolada
+│   ├── unit/                         # Testes unitários (BD, IA campeã, crypto, ausência de Selenium)
+│   ├── integration/                  # Testes de integração (calendários ICS, variáveis de ambiente)
+│   ├── components/                   # Testes de abas e componentes Streamlit
+│   ├── scripts/                      # Testes de integridade de scripts PowerShell
+│   └── services/                     # Testes dos workers de serviço (Cron Daemon)
+│
+└── util/
+    ├── migracoes/                    # Scripts de migração de schema (SQLite -> PostgreSQL)
+    └── comparar_scrapers.py          # Benchmark comparativo de performance
 ```
 
 ---
 
-## 📦 Como Executar a Aplicação (100% Docker)
+## 📦 5. Como Executar (Docker Compose)
 
-O sistema opera de forma totalmente containerizada através do **Docker Compose**, eliminando a necessidade de gerenciar ambientes virtuais (`venv`) ou instalar bibliotecas Python no sistema operacional host.
+O sistema foi desenhado para operação **100% conteinerizada**, garantindo paridade total entre ambientes de desenvolvimento e produção.
 
----
-
-### 🪟 1. Execução no Windows (via Docker no WSL)
+### 🐧 No Linux / WSL (Ubuntu):
 
 1. **Clone o repositório:**
-   ```cmd
-   git clone https://github.com/rezendepauloh/automacao-chamados-sti.git
-   cd automacao-chamados-sti
-   ```
-
-2. **Configure as Variáveis de Ambiente:**
-   Copie `.env.example` para `.env`:
-   ```cmd
-   copy .env.example .env
-   ```
-
-3. **Inicie o sistema via Atalho Batch:**
-   Basta dar duplo clique em `00-iniciar.cmd` ou executar no prompt:
-   ```cmd
-   00-iniciar.cmd
-   ```
-   > O script repassa a execução automaticamente para o Docker dentro do WSL, exibindo o banner estilizado, o QR Code de rede e os logs em tempo real. Pressionar <kbd>CTRL</kbd> + <kbd>C</kbd> encerra os containers automaticamente.
-
----
-
-### 🐧 2. Execução no WSL Linux (Ubuntu)
-
-1. **Clone o repositório no WSL:**
    ```bash
    git clone https://github.com/rezendepauloh/automacao-chamados-sti.git
    cd automacao-chamados-sti
    ```
 
-2. **Conceda permissões de execução e confie no lançador Desktop:**
-   ```bash
-   chmod +x 00-iniciar.sh sistema-bancada.desktop
-   gio set sistema-bancada.desktop metadata::trusted true 2>/dev/null || true
-   ```
-
-3. **Configure as Variáveis de Ambiente:**
+2. **Configure o ambiente:**
    ```bash
    cp .env.example .env
+   chmod +x 00-iniciar.sh
    ```
 
-4. **Inicie o sistema via Script Shell (`00-iniciar.sh`):**
-   O script verifica se a imagem já foi construída (subindo instantaneamente sem rebuilds), transmite os logs e encerra todos os containers com <kbd>CTRL</kbd> + <kbd>C</kbd>:
+3. **Inicie o sistema com o assistente interativo:**
    ```bash
    ./00-iniciar.sh
    ```
 
-5. **Parâmetros Utilitários de Inicialização:**
-   - **Configurar/Atualizar Senhas Seguras (Keyring):**
-     ```bash
-     ./00-iniciar.sh --config-senhas
-     # ou abreviado:
-     ./00-iniciar.sh -s
-     ```
-     > 🔑 **O que faz:** Abre o assistente interativo `salvar_senha.py` dentro do container Docker. Ele verifica se já existem senhas salvas para OTRS, CitSmart, SCCM Admin, PaperCut ou OXE, permitindo atualizar ou manter as credenciais no cofre persistente (`~/.local/share/python_keyring`). As senhas são digitadas com caracteres ocultos por segurança.
-
-   - **Executar Suíte de Testes Automatizados:**
-     ```bash
-     ./00-iniciar.sh --tests
-     # ou abreviado:
-     ./00-iniciar.sh -t
-     ```
-     > 🧪 **O que faz:** Executa a suíte unificada de testes de banco de dados, criptografia, regras de negócio, serviços do SCCM, componentes e scripts PowerShell com output formatado e colorido no terminal.
-
-   - **Forçar Reconstrução da Imagem Docker:**
-     ```bash
-     ./00-iniciar.sh --build
-     # ou abreviado:
-     ./00-iniciar.sh -b
-     ```
-     > 🛠️ **O que faz:** Reconstrói a imagem Docker do zero para incorporar alterações no `Dockerfile` ou no `requirements.txt`. Pode ser combinado com o configurador de senhas (ex: `./00-iniciar.sh --build -s`).
-
-6. **(Opcional) Atalho para o Menu de Aplicativos do Linux / Desktop:**
-   ```bash
-   cp sistema-bancada.desktop ~/.local/share/applications/
-   ```
-
-7. **Gerenciamento manual via Docker Compose:**
-   ```bash
-   # Construir a imagem
-   docker compose build
-
-   # Subir os containers em segundo plano
-   docker compose up -d web
-
-   # Executar configurador de senhas manualmente no container
-   docker compose run --rm web python src/salvar_senha.py
-
-   # Ver logs em tempo real
-   docker compose logs -f web
-
-   # Parar os containers
-   docker compose down
-   ```
+4. **Atalhos por Linha de Comando:**
+   - `./00-iniciar.sh -s` : Abre o configurador interativo de senhas no cofre.
+   - `./00-iniciar.sh -t` : Executa a suíte completa de testes automatizados.
+   - `./00-iniciar.sh -b` : Força a reconstrução limpa das imagens Docker.
 
 ---
 
-### 🐳 3. Estrutura de Containers (WSL / Debian)
+### 🪟 No Windows:
 
-O projeto conta com arquitetura pronta para execução universal em containers orquestrada pelo **Docker Compose**:
-
-- **`web` (`bancada_streamlit_app`):** Container principal baseado em `Dockerfile` (`python:3.11-slim`) com Playwright/Chromium headless, healthcheck ativo, fuso horário brasileiro (`America/Campo_Grande`), bypass de SSL corporativo e Live-Reload mapeado para `src/`, `assets/`, `dashboard.py` e `init.py`.
-- **`db` (`bancada_postgres_db`):** Banco relacional PostgreSQL 15 Alpine (`postgres:15-alpine`), garantindo persistência estruturada de dados através do volume dedicado `postgres_data`.
-- **`evolution-api` (`bancada_evolution_api`):** API integrada para WhatsApp (`evoapicloud/evolution-api`), conectada ao PostgreSQL para gerenciar sessões, QR Code e envio assíncrono de mensagens e alertas.
-- **Volumes Persistentes:** Banco de dados SQLite (`chamados.db`), instâncias Evolution (`evolution_instances`, `evolution_store`), cofre de senhas do Linux (`~/.local/share/python_keyring`), pastas de dados (`01`, `02`, `03`, `models`, `debug_logs`, `uploads`).
+Basta dar um duplo clique em **`00-iniciar.cmd`** na raiz do projeto. O script inicializa automaticamente os contêineres Docker através do WSL e exibe o painel de status no terminal.
 
 ---
 
-## 🧪 Suíte de Testes Automatizados (run_all.py)
+### 🐳 Comandos Manuais Docker Compose:
 
-O Sistema Bancada STI possui um sistema completo e modular de validação automatizada, espelhando a arquitetura de testes com relatório colorido e métricas em milissegundos.
+```bash
+# Subir toda a stack em segundo plano
+docker compose up -d
 
-### 📁 Estrutura de Suítes de Teste (`tests/`)
+# Visualizar logs em tempo real do Streamlit
+docker compose logs -f web
 
-- **`tests/run_all.py`**: Executor unificado da suíte completa de testes com relatório ANSI formatado (`✔ PASS`, `✖ FAIL`, `⚡ SKIP`).
-- **`tests/test_helpers.py`**: Camada universal de mocks isolados (Pandas, Streamlit, Keyring, Scikit-Learn, spaCy), permitindo execução tanto no host quanto no container Docker sem falhas de dependência.
-- **`tests/unit/`**:
-  - `test_database.py`: Criação de tabelas, inserção, consulta e CRUD das tabelas de cache do SCCM (`sccm_cache_devices`, `sccm_cache_users`, `sccm_cache_collections`) e Plantões.
-  - `test_crypto.py`: Validação de criptografia simétrica Fernet (AES-128-CBC + HMAC-SHA256) das credenciais do cofre, reversibilidade, fallback para texto plano e máscaras de segredos.
-  - `test_tag_classifier.py`: Limpeza de saudações/assinaturas OTRS, normalização para regex e rotinas de detecção física.
-- **`tests/services/`**:
-  - `test_services.py`: Sincronização do SCCM, importação e validação de `sccm_inventory.json` e reconciliação dos técnicos da bancada (`member_matcher`).
-- **`tests/components/`**:
-  - `test_components.py`: Validação do banner de status do orquestrador, cálculo de rotas Dijkstra dos mapas de rede, formatação de portarias e integrantes autorizados.
-- **`tests/scripts/`**:
-  - `test_scripts.py`: Validação estática de integridade dos scripts PowerShell (`bancada-launcher.ps1`, `sccm_sync.ps1`, `Manutencao.ps1`, etc.), ferramentas suportadas e chaves do arquivo `.reg`.
-- **`tests/integration/`**:
-  - `test_integration.py`: Geração de calendários RFC 5545 `.ics` unificados e paridade das chaves de ambiente do `.env.example`.
+# Recarregar apenas a aplicação após alterações
+docker compose restart web
 
-### 🚀 Como Executar os Testes
+# Parar os serviços preservando os dados dos volumes
+docker compose down
+```
 
-1. **Via Menu Interativo (`00-iniciar.sh`):**
-   Execute `./00-iniciar.sh` e escolha a opção **`6`**.
+---
 
-2. **Via Linha de Comando Direta:**
-   ```bash
-   ./00-iniciar.sh --tests
-   # ou abreviado:
-   ./00-iniciar.sh -t
-   ```
+## 🧪 6. Suíte de Testes Automatizados
 
-3. **Direto via Python:**
-   ```bash
-   python3 tests/run_all.py
-   ```
+O repositório conta com uma política de integridade contínua: **qualquer modificação exige 100% de sucesso na suíte de testes (0 falhas, 0 erros)**.
 
-4. **Dentro do Contêiner Docker:**
-   ```bash
-   docker compose run --rm -v "$(pwd)/tests:/app/tests" web python tests/run_all.py
-   ```
+Para rodar todos os testes dentro do contêiner Docker:
 
+```bash
+docker exec bancada_streamlit_app python tests/run_all.py
+```
 
+### Exemplo de Saída:
+```text
+=================================================================
+RESUMO GERAL DA VALIDAÇÃO DO SISTEMA BANCADA STI:
+• Total de Testes Executados : 106
+• Sucesso Total              : 106
+• Falhas                     : 0
+• Erros                      : 0
+• Duração Total              : ~58s
+=================================================================
+🎉 PARABÉNS! TODOS OS TESTES PASSARAM COM 100% DE SUCESSO!
+```
 
+---
+
+## 📚 7. Central de Documentação Técnica
+
+Para guias detalhados, especificações de engenharia e manuais passo a passo, explore a documentação na pasta **[`Docs/`](Docs/README.md)**:
+
+| Diretório | Descrição | Link |
+| :--- | :--- | :--- |
+| **Arquitetura** | Modelagem do banco híbrido, pipeline de IA, segurança e DCOM | [Docs/arquitetura/](Docs/arquitetura/) |
+| **Guias** | Manuais operacionais, deploy Docker em produção e esteira de chamados | [Docs/guias/](Docs/guias/) |
+| **Testes** | Arquitetura de testes automatizados, mocks universais e validações | [Docs/testes/](Docs/testes/) |
+| **Issues & Backlog** | Histórico consolidado de sprints, marcos entregues e roadmap | [Docs/issues/](Docs/issues/) |
+| **Diretrizes AGENTS** | Ciclo de 4 etapas obrigatório para agentes de programação | [AGENTS.md](AGENTS.md) |
+
+---
+
+<div align="center">
+Desenvolvido para o <b>Setor de Tecnologia da Informação — MPMS</b>.<br/>
+<i>Promovendo eficiência, estabilidade e inteligência nas rotinas de TI.</i>
+</div>

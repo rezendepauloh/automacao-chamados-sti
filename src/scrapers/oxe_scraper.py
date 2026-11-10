@@ -15,141 +15,66 @@ import json
 import logging
 from datetime import datetime
 import pandas as pd
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import (
     OXE_URL, OXE_USER, OXE_PASS,
     HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OXE,
     setup_logging, save_df_to_excel_formatted,
-    get_chrome_driver, cleanup_old_files
+    cleanup_old_files
 )
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 
 logger = setup_logging(DEBUG_DIR_OXE / "oxe_scraper.log", __name__)
 
-logging.getLogger('selenium.webdriver.remote.remote_connection').setLevel(logging.WARNING)
 logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
 
-def salvar_screenshot(driver, nome_etapa: str):
+def salvar_screenshot(page, nome_etapa: str):
     try:
         ts = datetime.now().strftime("%H-%M-%S")
         filename = f"debug_oxe_{ts}_{nome_etapa}.png"
         filepath = DEBUG_DIR_OXE / filename
-        driver.save_screenshot(str(filepath))
+        page.screenshot(path=str(filepath))
         logger.debug(f"📸 Screenshot salvo em: {filepath.name}")
     except Exception as e:
         logger.warning(f"Não foi possível salvar screenshot '{nome_etapa}': {e}")
 
-def initial_config():
-    driver = get_chrome_driver(headless=HEADLESS, disable_gpu=True)
-    wait = WebDriverWait(driver, timeout=EXPLICIT_WAIT, poll_frequency=0.2)
-    return driver, wait
-
-def realizar_login_oxe(driver, wait):
+def realizar_login_oxe(page):
     target_url = OXE_URL if OXE_URL.endswith("/") else f"{OXE_URL}/"
     login_full_url = f"{target_url}#/login"
     
     logger.info(f"Navegando para a página de login do OXE: {login_full_url}")
-    driver.get(login_full_url)
+    page.goto(login_full_url, wait_until="domcontentloaded", timeout=60000)
     time.sleep(2)
-
-    logger.info("Injetando interceptador de cabeçalhos de autenticação XHR/Fetch...")
-    driver.execute_script("""
-        (function() {
-            if (window.__xhr_patched__) return;
-            window.__xhr_patched__ = true;
-            window.__captured_auth_token__ = null;
-
-            var oldSetHeader = XMLHttpRequest.prototype.setRequestHeader;
-            XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
-                if (header && (header.toLowerCase() === 'authorization' || header.toLowerCase() === 'x-auth-token' || header.toLowerCase() === 'token')) {
-                    window.__captured_auth_token__ = value;
-                    console.log("🔥 [CAPTURED AUTH TOKEN XHR]", header, value);
-                }
-                return oldSetHeader.apply(this, arguments);
-            };
-
-            var oldFetch = window.fetch;
-            window.fetch = function(resource, init) {
-                if (init && init.headers) {
-                    var h = init.headers;
-                    if (h instanceof Headers) {
-                        if (h.get('authorization')) window.__captured_auth_token__ = h.get('authorization');
-                    } else if (typeof h === 'object') {
-                        for (var k in h) {
-                            if (k.toLowerCase() === 'authorization') window.__captured_auth_token__ = h[k];
-                        }
-                    }
-                }
-                return oldFetch.apply(this, arguments);
-            };
-        })();
-    """)
-
-    try:
-        page_src = driver.page_source.lower()
-        if "details-button" in page_src or "err_cert" in page_src or "privacidade" in page_src or "particular" in page_src:
-            logger.info("Detectada tela de aviso de segurança do Chrome. Ignorando certificado...")
-            btn_details = driver.find_element(By.ID, "details-button")
-            btn_details.click()
-            time.sleep(0.8)
-            btn_proceed = driver.find_element(By.ID, "proceed-link")
-            btn_proceed.click()
-            time.sleep(3)
-    except Exception as cert_err:
-        logger.debug(f"Bypass de certificado via DOM não foi necessário: {cert_err}")
 
     logger.info("Aguardando formulário de login...")
     try:
-        user_field = wait.until(EC.element_to_be_clickable((By.ID, "username")))
-    except TimeoutException:
-        try:
-            if "details-button" in driver.page_source:
-                driver.find_element(By.ID, "details-button").click()
-                time.sleep(0.5)
-                driver.find_element(By.ID, "proceed-link").click()
-                time.sleep(3)
-        except Exception:
-            pass
-        logger.warning("Campo #username não localizado por ID. Tentando por seletor alternativo...")
-        user_field = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='text']")))
+        user_input = page.locator("#username, input[type='text']").first
+        user_input.wait_for(state="visible", timeout=30000)
+        user_input.fill(OXE_USER)
+    except Exception as e:
+        logger.warning(f"Aviso ao preencher usuário OXE: {e}")
 
-    user_field.clear()
-    user_field.send_keys(OXE_USER)
-    driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true })); arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", user_field)
-
-    pwd_field = driver.find_element(By.ID, "password")
-    pwd_field.clear()
-    pwd_field.send_keys(OXE_PASS)
-    driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true })); arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", pwd_field)
+    try:
+        pwd_input = page.locator("#password, input[type='password']").first
+        pwd_input.fill(OXE_PASS)
+    except Exception as e:
+        logger.warning(f"Aviso ao preencher senha OXE: {e}")
 
     logger.info(f"Efetuando login no OXE com o usuário '{OXE_USER}'...")
-    login_btn = driver.find_element(By.ID, "login-button")
-    try:
+    login_btn = page.locator("#login-button, button[type='submit']").first
+    if login_btn.count() > 0:
         login_btn.click()
-    except Exception:
-        driver.execute_script("arguments[0].click();", login_btn)
-
-    try:
-        form = driver.find_element(By.TAG_NAME, "form")
-        driver.execute_script("arguments[0].dispatchEvent(new Event('submit', { bubbles: true }));", form)
-    except Exception:
-        pass
 
     time.sleep(3)
-    logger.info(f"URL após login: {driver.current_url}")
+    logger.info(f"URL após login: {page.url}")
     
     logger.info("Aguardando gravação de tokens de sessão no storage...")
     token_capturado = None
     for attempt in range(15):
-        token_capturado = driver.execute_script(
-            "return sessionStorage.getItem('id_token') || localStorage.getItem('id_token') || window.__captured_auth_token__;"
+        token_capturado = page.evaluate(
+            "() => sessionStorage.getItem('id_token') || localStorage.getItem('id_token') || window.__captured_auth_token__;"
         )
         if token_capturado:
             logger.info(f"🔑 Token capturado com sucesso! (Tamanho: {len(token_capturado)})")
@@ -157,8 +82,8 @@ def realizar_login_oxe(driver, wait):
         time.sleep(0.5)
 
     if not token_capturado:
-        salvar_screenshot(driver, "falha_login_token")
-        storage_dump = driver.execute_script("""
+        salvar_screenshot(page, "falha_login_token")
+        storage_dump = page.evaluate("""() => {
             var res = { session: {}, local: {} };
             try {
                 for(var i=0; i<sessionStorage.length; i++){
@@ -173,74 +98,70 @@ def realizar_login_oxe(driver, wait):
                 }
             } catch(e){}
             return res;
-        """)
+        }""")
         logger.warning(f"⚠️ Token não encontrado. Conteúdo atual dos Storages: {storage_dump}")
 
     try:
-        elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'UTILIZADORES', 'utilizadores'), 'utilizadores') or contains(text(), 'Subscriber')]")
-        if elements:
-            logger.info(f"Encontrado item de menu de Utilizadores ({len(elements)}). Clicando para inicializar...")
-            driver.execute_script("arguments[0].click();", elements[0])
+        elements = page.locator("xpath=//*[contains(translate(text(), 'UTILIZADORES', 'utilizadores'), 'utilizadores') or contains(text(), 'Subscriber')]")
+        if elements.count() > 0:
+            logger.info(f"Encontrado item de menu de Utilizadores ({elements.count()}). Clicando para inicializar...")
+            elements.first.click()
             time.sleep(2)
     except Exception as nav_err:
         logger.debug(f"Interação de menu opcional: {nav_err}")
 
-def fetch_oxe_api_js(driver, api_endpoint: str):
-    js_code = f"""
-        var callback = arguments[arguments.length - 1];
-        
+def fetch_oxe_api_js(page, api_endpoint: str):
+    js_code = """async (endpoint) => {
         var idToken = sessionStorage.getItem('id_token') || localStorage.getItem('id_token') || window.__captured_auth_token__;
 
-        if (!idToken) {{
-            for (var s of [sessionStorage, localStorage]) {{
+        if (!idToken) {
+            for (var s of [sessionStorage, localStorage]) {
                 if (!s) continue;
-                for (var i = 0; i < s.length; i++) {{
+                for (var i = 0; i < s.length; i++) {
                     var k = s.key(i);
-                    if (k.toLowerCase().includes('token')) {{
+                    if (k.toLowerCase().includes('token')) {
                         idToken = s.getItem(k);
                         if (idToken) break;
-                    }}
-                }}
+                    }
+                }
                 if (idToken) break;
-            }}
-        }}
+            }
+        }
 
-        if (!idToken) {{
-            callback({{ status: 'error', message: 'Nenhum id_token encontrado no sessionStorage/localStorage' }});
-            return;
-        }}
+        if (!idToken) {
+            return { status: 'error', message: 'Nenhum id_token encontrado no sessionStorage/localStorage' };
+        }
 
         var tokenBearer = idToken.startsWith('Bearer ') ? idToken : 'Bearer ' + idToken;
         var tokenRaw = idToken.replace(/^Bearer\\s+/i, '');
 
-        function tryFetch(authHeaderValue, isRetry) {{
-            fetch('{api_endpoint}', {{
+        try {
+            var response = await fetch(endpoint, {
                 method: 'GET',
-                headers: {{
+                headers: {
                     'Accept': 'application/json, text/plain, */*',
-                    'Authorization': authHeaderValue
-                }}
-            }})
-            .then(function(response) {{
-                if (response.status === 401 && !isRetry) {{
-                    var nextToken = (authHeaderValue === tokenBearer) ? tokenRaw : tokenBearer;
-                    tryFetch(nextToken, true);
-                }} else if (!response.ok) {{
-                    throw new Error('HTTP status ' + response.status);
-                }} else {{
-                    return response.json().then(function(data) {{
-                        callback({{ status: 'success', data: data }});
-                    }});
-                }}
-            }})
-            .catch(function(err) {{
-                callback({{ status: 'error', message: err.toString() }});
-            }});
-        }}
-
-        tryFetch(tokenBearer, false);
-    """
-    res = driver.execute_async_script(js_code)
+                    'Authorization': tokenBearer
+                }
+            });
+            if (response.status === 401) {
+                response = await fetch(endpoint, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json, text/plain, */*',
+                        'Authorization': tokenRaw
+                    }
+                });
+            }
+            if (!response.ok) {
+                return { status: 'error', message: 'HTTP ' + response.status };
+            }
+            var data = await response.json();
+            return { status: 'success', data: data };
+        } catch (err) {
+            return { status: 'error', message: err.toString() };
+        }
+    }"""
+    res = page.evaluate(js_code, api_endpoint)
     if res and res.get("status") == "success":
         return res.get("data")
     else:
@@ -248,85 +169,75 @@ def fetch_oxe_api_js(driver, api_endpoint: str):
         logger.debug(f"Erro na requisição JS para {api_endpoint}: {err_msg}")
         return None
 
-def fetch_oxe_batch_subscriber_details_js(driver, ramais_list: list) -> dict:
+def fetch_oxe_batch_subscriber_details_js(page, ramais_list: list) -> dict:
     if not ramais_list:
         return {}
 
-    js_code = """
-        var callback = arguments[arguments.length - 1];
-        var ramais = arguments[0];
+    js_code = """async (ramais) => {
         var idToken = sessionStorage.getItem('id_token') || localStorage.getItem('id_token') || window.__captured_auth_token__ || '';
         var tokenBearer = idToken.startsWith('Bearer ') ? idToken : (idToken ? 'Bearer ' + idToken : '');
 
         var results = {};
-        var promises = ramais.map(function(num_ramal) {
-            var url = '/api/mgt/1.0/Node/1/Subscriber/' + num_ramal;
-            return fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json, text/plain, */*',
-                    'Authorization': tokenBearer
+        var promises = ramais.map(async function(num_ramal) {
+            try {
+                var url = '/api/mgt/1.0/Node/1/Subscriber/' + num_ramal;
+                var res = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json, text/plain, */*',
+                        'Authorization': tokenBearer
+                    }
+                });
+                if (res.ok) {
+                    var data = await res.json();
+                    if (data) results[num_ramal] = data;
                 }
-            })
-            .then(function(res) {
-                if (res.ok) return res.json();
-                return null;
-            })
-            .then(function(data) {
-                if (data) results[num_ramal] = data;
-            })
-            .catch(function(e) {});
+            } catch(e) {}
         });
 
-        Promise.all(promises).then(function() {
-            callback({ status: 'success', data: results });
-        });
-    """
-    res = driver.execute_async_script(js_code, ramais_list)
+        await Promise.all(promises);
+        return { status: 'success', data: results };
+    }"""
+    res = page.evaluate(js_code, ramais_list)
     if res and res.get("status") == "success":
         return res.get("data", {})
     return {}
 
-def fetch_oxe_batch_tsc_ip_js(driver, ramais_list: list) -> dict:
+def fetch_oxe_batch_tsc_ip_js(page, ramais_list: list) -> dict:
     if not ramais_list:
         return {}
 
-    js_code = """
-        var callback = arguments[arguments.length - 1];
-        var ramais = arguments[0];
+    js_code = """async (ramais) => {
         var idToken = sessionStorage.getItem('id_token') || localStorage.getItem('id_token') || window.__captured_auth_token__ || '';
         var tokenBearer = idToken.startsWith('Bearer ') ? idToken : (idToken ? 'Bearer ' + idToken : '');
 
         var results = {};
-        var promises = ramais.map(function(num_ramal) {
-            var url = '/api/mgt/1.0/Node/1/Subscriber/' + num_ramal + '/Tsc_IP_subscriber/' + num_ramal;
-            return fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json, text/plain, */*',
-                    'Authorization': tokenBearer
+        var promises = ramais.map(async function(num_ramal) {
+            try {
+                var url = '/api/mgt/1.0/Node/1/Subscriber/' + num_ramal + '/Tsc_IP_subscriber/' + num_ramal;
+                var res = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json, text/plain, */*',
+                        'Authorization': tokenBearer
+                    }
+                });
+                if (res.ok) {
+                    var data = await res.json();
+                    if (data) results[num_ramal] = data;
                 }
-            })
-            .then(function(res) {
-                if (res.ok) return res.json();
-                return null;
-            })
-            .then(function(data) {
-                if (data) results[num_ramal] = data;
-            })
-            .catch(function(e) {});
+            } catch(e) {}
         });
 
-        Promise.all(promises).then(function() {
-            callback({ status: 'success', data: results });
-        });
-    """
-    res = driver.execute_async_script(js_code, ramais_list)
+        await Promise.all(promises);
+        return { status: 'success', data: results };
+    }"""
+    res = page.evaluate(js_code, ramais_list)
     if res and res.get("status") == "success":
         return res.get("data", {})
     return {}
 
-def extrair_dados_assinantes(driver):
+def extrair_dados_assinantes(page):
     subscribers_endpoint = (
         "/api/mgt/1.0/Node/1/Subscriber?attributes="
         "Annu_Name,Annu_First_Name,UTF8_Phone_Book_Name,UTF8_Phone_Book_First_Name,"
@@ -336,7 +247,7 @@ def extrair_dados_assinantes(driver):
     )
     
     logger.info("Solicitando lista principal de utilizadores/assinantes à API do OXE...")
-    subscribers = fetch_oxe_api_js(driver, subscribers_endpoint)
+    subscribers = fetch_oxe_api_js(page, subscribers_endpoint)
     
     if not subscribers or not isinstance(subscribers, list):
         logger.error("A API do OXE não retornou a lista de assinantes esperada.")
@@ -351,7 +262,7 @@ def extrair_dados_assinantes(driver):
     chunk_size = 100
     for i in range(0, len(todos_ramais), chunk_size):
         chunk = todos_ramais[i:i + chunk_size]
-        res_chunk = fetch_oxe_batch_subscriber_details_js(driver, chunk)
+        res_chunk = fetch_oxe_batch_subscriber_details_js(page, chunk)
         if res_chunk:
             subscriber_details_map.update(res_chunk)
         logger.info(f"⚡ Lote Detalhes {i + len(chunk)}/{len(todos_ramais)} processado.")
@@ -372,7 +283,7 @@ def extrair_dados_assinantes(driver):
     tsc_ip_map = {}
     for i in range(0, len(ramais_ip_candidatos), chunk_size):
         chunk = ramais_ip_candidatos[i:i + chunk_size]
-        res_chunk = fetch_oxe_batch_tsc_ip_js(driver, chunk)
+        res_chunk = fetch_oxe_batch_tsc_ip_js(page, chunk)
         if res_chunk:
             tsc_ip_map.update(res_chunk)
         logger.info(f"⚡ Lote IP {i + len(chunk)}/{len(ramais_ip_candidatos)} processado.")
@@ -458,61 +369,68 @@ def scrape_oxe():
         logger.error("❌ A senha do OXE (OXE_PASS) não foi configurada!")
         return False
 
-    driver = None
-
     try:
-        driver, wait = initial_config()
-        realizar_login_oxe(driver, wait)
+        from playwright.sync_api import sync_playwright
 
-        dados = extrair_dados_assinantes(driver)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=HEADLESS,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--ignore-certificate-errors"]
+            )
+            context = browser.new_context(ignore_https_errors=True)
+            page = context.new_page()
 
-        if not dados:
-            logger.error("Nenhum registro foi coletado da Central Telefônica.")
-            return False
+            def handle_req(request):
+                for h, v in request.headers.items():
+                    if h.lower() in ['authorization', 'x-auth-token', 'token']:
+                        try:
+                            page.evaluate("(val) => { window.__captured_auth_token__ = val; }", v)
+                        except Exception:
+                            pass
+            page.on("request", handle_req)
 
-        out_dir = Path("01 - Dados Brutos")
-        out_dir.mkdir(exist_ok=True)
-        ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        excel_file = out_dir / f"Central_Telefonica_OXE_{ts}.xlsx"
+            realizar_login_oxe(page)
+            dados = extrair_dados_assinantes(page)
+            browser.close()
 
-        df = pd.DataFrame(dados)
+            if not dados:
+                logger.error("Nenhum registro foi coletado da Central Telefônica.")
+                return False
 
-        widths = {
-            "Ramal": 12,
-            "Nome / Titular": 25,
-            "Complemento": 25,
-            "Tipo de Estação": 25,
-            "Subtipo": 18,
-            "Função / Role": 20,
-            "Grupo de Captura": 18,
-            "Cat. Rede Pública": 18,
-            "Login Externo": 18,
-            "Item": 8, "Extension": 12, "Node": 8, "SetType": 18,
-            "DirName": 30, "SubNet": 10, "Domain": 10, "AnnuName": 30
-        }
+            out_dir = Path("01 - Dados Brutos")
+            out_dir.mkdir(exist_ok=True)
+            ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            excel_file = out_dir / f"Central_Telefonica_OXE_{ts}.xlsx"
 
-        save_df_to_excel_formatted(
-            df, excel_file, sheet_name="Central Telefônica",
-            widths=widths
-        )
+            df = pd.DataFrame(dados)
 
-        logger.info(f"✅ SUCESSO! Total de {len(dados)} ramais salvos em: {excel_file.name}")
+            widths = {
+                "Ramal": 12,
+                "Nome / Titular": 25,
+                "Complemento": 25,
+                "Tipo de Estação": 25,
+                "Subtipo": 18,
+                "Função / Role": 20,
+                "Grupo de Captura": 18,
+                "Cat. Rede Pública": 18,
+                "Login Externo": 18,
+                "Item": 8, "Extension": 12, "Node": 8, "SetType": 18,
+                "DirName": 30, "SubNet": 10, "Domain": 10, "AnnuName": 30
+            }
 
-        cleanup_old_files(out_dir, "Central_Telefonica_OXE_*.xlsx", keep_count=10)
-        return True
+            save_df_to_excel_formatted(
+                df, excel_file, sheet_name="Central Telefônica",
+                widths=widths
+            )
+
+            logger.info(f"✅ SUCESSO! Total de {len(dados)} ramais salvos em: {excel_file.name}")
+
+            cleanup_old_files(out_dir, "Central_Telefonica_OXE_*.xlsx", keep_count=10)
+            return True
 
     except Exception as e:
         logger.error(f"❌ Erro crítico no Scraper OXE: {e}", exc_info=True)
-        if driver:
-            salvar_screenshot(driver, "erro_critico")
         return False
-
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
 
 def check_oxe_sync_running() -> bool:
     import tempfile
