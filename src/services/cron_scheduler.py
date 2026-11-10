@@ -68,8 +68,8 @@ def execute_task_by_id(task_id: str) -> str:
         "sync_ramais": "automated_ramais_sync.lock",
         "sync_oxe": "oxe_scraper.lock",
         "sync_papercut": "papercut_scraper.lock",
-        "sync_plantoes_matutino": "automated_plantoes_sync.lock",
-        "sync_plantoes_semanal": "automated_plantoes_sync.lock",
+        "sync_plantoes_matutino": "plantoes_matutino_sync.lock",
+        "sync_plantoes_semanal": "plantoes_semanal_sync.lock",
         "sync_ferias": "ferias_sync.lock",
         "sync_sharepoint_catalog": "sharepoint_catalog_sync.lock",
         "sync_ad_catalog": "ad_sync.lock",
@@ -201,9 +201,10 @@ def execute_task_by_id(task_id: str) -> str:
             return msg
 
         elif task_id == "orquestrador_chamados":
-            from src.components.status_banner import check_orquestrador_running
-            if check_orquestrador_running():
-                return "Orquestrador já está em execução em outra thread/processo."
+            from src.components.status_banner import check_process_running
+            orq_lock_file = Path(tempfile.gettempdir()) / "automated_otrs_citsmart.lock"
+            if check_process_running(orq_lock_file):
+                return "Orquestrador já está em execução em outro processo ativo."
             import subprocess
             proc = subprocess.run([sys.executable, "orquestrador.py"], capture_output=True, text=True)
             if proc.returncode != 0:

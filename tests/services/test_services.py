@@ -172,6 +172,57 @@ class TestServices(unittest.TestCase):
         # Limpeza
         recent_file.unlink(missing_ok=True)
 
+    def test_orquestrador_no_self_deadlock_in_cron(self):
+        """Valida que o orquestrador não entra em auto-bloqueio quando executado pelo Cron Daemon."""
+        from src.services.cron_scheduler import execute_task_by_id, get_cron_daemon
+        import subprocess
+
+        daemon = get_cron_daemon()
+        # Simula o daemon executando a tarefa orquestrador_chamados
+        daemon._executing_tasks.add("orquestrador_chamados")
+
+        try:
+            # Com processo mockado que retorna sucesso
+            fake_proc = MagicMock()
+            fake_proc.returncode = 0
+            fake_proc.stdout = "Sucesso"
+            fake_proc.stderr = ""
+
+            with patch("src.components.status_banner.check_process_running", return_value=False), \
+                 patch("subprocess.run", return_value=fake_proc) as mock_subproc:
+
+                msg = execute_task_by_id("orquestrador_chamados")
+                self.assertEqual(msg, "Orquestrador de chamados executado com sucesso.")
+                mock_subproc.assert_called_once()
+        finally:
+            daemon._executing_tasks.discard("orquestrador_chamados")
+
+    def test_orquestrador_detects_real_external_process_lock(self):
+        """Valida que o orquestrador detecta quando há um processo externo REAL rodando."""
+        from src.services.cron_scheduler import execute_task_by_id
+
+        with patch("src.components.status_banner.check_process_running", return_value=True):
+            msg = execute_task_by_id("orquestrador_chamados")
+            self.assertIn("já está em execução em outro processo ativo", msg)
+
+    def test_cron_concurrency_isolation(self):
+        """Valida que o cron daemon bloqueia execução dupla da MESMA tarefa, mas permite tarefas DIFERENTES concorrentes."""
+        from src.services.cron_scheduler import BancadaCronDaemon
+        from datetime import datetime
+
+        daemon = BancadaCronDaemon()
+        daemon._executing_tasks = {"sync_garantia"}
+
+        # Tarefa sync_garantia já está em execução -> _should_run deve ser False
+        row_garantia = {"task_id": "sync_garantia", "ativo": 1, "tipo_agendamento": "intervalo", "intervalo_valor": 1, "intervalo_unidade": "horas"}
+        self.assertFalse(daemon._should_run(row_garantia, datetime.now()))
+
+        # Tarefa sync_doacoes NÃO está em execução -> _should_run deve permitir execução
+        row_doacoes = {"task_id": "sync_doacoes", "ativo": 1, "tipo_agendamento": "intervalo", "intervalo_valor": 1, "intervalo_unidade": "horas", "ultima_execucao": None}
+        self.assertTrue(daemon._should_run(row_doacoes, datetime.now()))
+
+        daemon._executing_tasks.clear()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -36,10 +36,14 @@ Na aba **⚙️ Configurações** do dashboard:
 
 ---
 
-## 🔒 4. Arquitetura de Processo Único & Lock de Concorrência
+## 🔒 4. Arquitetura de Processo Único & Isolamento de Concorrência
 
-Para evitar que múltiplos processos em segundo plano (como o processo mestre `init.py` e o servidor web `dashboard.py`) disparem as mesmas rotinas concorrentemente:
-1. **Lock Global de Daemon (`DAEMON_LOCK_FILE`):** O `BancadaCronDaemon` registra o PID do processo primário. Instâncias secundárias entram automaticamente em modo cliente (apenas leitura e disparos manuais sob demanda), prevenindo duplicação de loops.
-2. **Proteção de Tarefas em Execução:** A limpeza de tarefas marcadas como `'executando'` é restrita ao boot do sistema (`cleanup_interrupted_cron_tasks`), impedindo que consultas corriqueiras da interface alterem indevidamente o status de tarefas ativas para erro.
-3. **Detecção Inteligente do Orquestrador:** Se uma instância do orquestrador já estiver em andamento, novas tentativas do cron reconhecem a atividade concorrente e registram aviso informativo sem gerar falhas espúrias no histórico.
+Para garantir que tarefas em segundo plano executem de forma fluida, sem colisão e sem interferir umas nas outras:
+
+1. **Lock Global de Daemon (`DAEMON_LOCK_FILE`):** O `BancadaCronDaemon` registra o PID do processo primário. Instâncias secundárias entram automaticamente em modo cliente (apenas leitura e disparos manuais sob demanda), prevenindo duplicação de loops de agendamento.
+2. **Execução Concorrente em Threads Isoladas:** Cada tarefa disparada pelo cron é executada em sua própria thread assíncrona (`threading.Thread`). Uma rotina de longa duração (como a recalibração da IA ou raspagem do SIMP) **não bloqueia** o daemon de executar outras tarefas em seus horários programados.
+3. **Locks Dedicados por Domínio (`.lock`):** Cada tarefa possui seu próprio arquivo de lock temporário (ex: `portarias_sync.lock`, `donations_sync.lock`, `garantia_sync.lock`, `plantoes_matutino_sync.lock`, `plantoes_semanal_sync.lock`). Dessa forma, tarefas distintas nunca bloqueiam umas às outras.
+4. **Isolamento de Concorrência da Mesma Tarefa (`_executing_tasks`):** O daemon monitora o conjunto `_executing_tasks`. Se uma tarefa já estiver em andamento, o agendador não dispara uma segunda execução simultânea da mesma tarefa.
+5. **Orquestrador de Chamados sem Auto-Bloqueio:** O orquestrador opera como subprocesso desacoplado. O despachante do cron verifica exclusivamente se há outro processo ativo (`check_process_running`) no arquivo de lock do SO (`automated_otrs_citsmart.lock`), impedindo falsos positivos de auto-bloqueio entre a thread do daemon e o processo executor.
+6. **Proteção Contra Tarefas Interrompidas:** A limpeza de registros marcados como `'executando'` ocorre apenas no boot inicial (`cleanup_interrupted_cron_tasks`), recuperando graciosamente qualquer tarefa interrompida por desligamento do contêiner.
 
