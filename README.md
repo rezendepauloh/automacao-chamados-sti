@@ -199,9 +199,12 @@ automacao-chamados-sti/
 │   └── issues/                       # Backlog oficial, marcos entregues e roadmap do projeto
 │
 ├── assets/                           # Identidade visual, favicons e estilos CSS customizados
-├── 01 - Dados Brutos/                # Arquivos brutos baixados pelos robôs e scrapers
-├── 02 - Dados tratados/              # Dados intermediários normalizados
-├── 03 - Dados prontos/               # Bases prontas e consolidadas
+├── data/                             # Diretório centralizado de dados (volume Docker ./data:/app/data)
+│   ├── 01 - Dados Brutos/            # Arquivos brutos baixados pelos robôs e scrapers
+│   ├── 02 - Dados tratados/          # Dados intermediários normalizados
+│   ├── 03 - Dados prontos/           # Bases prontas e consolidadas
+│   ├── calendario.ics                # Calendário consolidado gerado automaticamente
+│   └── chamados.db                   # Opcional: criado sob demanda apenas se DB_TYPE=sqlite
 ├── debug_logs/                       # Logs segmentados por módulo e rotação periódica
 ├── models/                           # Modelos de Machine Learning e classificadores (.joblib)
 ├── uploads/                          # Diretório de cache local seguro de planilhas e mídias

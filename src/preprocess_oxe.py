@@ -67,7 +67,7 @@ def preprocess_oxe() -> bool:
 
     files = sorted(INPUT_DIR_BRUTOS.glob("Central_Telefonica_OXE_*.xlsx"), key=lambda f: f.stat().st_mtime)
     if not files:
-        logger.error("Nenhum arquivo bruto 'Central_Telefonica_OXE_*.xlsx' encontrado em 01 - Dados Brutos.")
+        logger.error("Nenhum arquivo bruto 'Central_Telefonica_OXE_*.xlsx' encontrado em data/01 - Dados Brutos.")
         return False
 
     latest_file = files[-1]
@@ -152,7 +152,7 @@ def preprocess_oxe() -> bool:
     df_tratado = pd.DataFrame(registros_tratados)
 
 
-    # 2. Exporta para 02 - Dados tratados
+    # 2. Exporta para data/02 - Dados tratados
     ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     out_file = OUTPUT_DIR_TRATADOS / f"Central_Telefonica_OXE_Tratados_{ts}.xlsx"
 
@@ -189,7 +189,7 @@ def preprocess_oxe() -> bool:
     # Limpeza de backups antigos (mantém 10 recentes)
     cleanup_old_files(OUTPUT_DIR_TRATADOS, "Central_Telefonica_OXE_Tratados_*.xlsx", keep_count=10)
 
-    # 3. Salva no banco de dados SQLite chamados.db
+    # 3. Salva no banco de dados (PostgreSQL / SQLite data/chamados.db)
     salvar_banco_dados(df_tratado)
 
     return True

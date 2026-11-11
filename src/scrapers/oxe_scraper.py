@@ -19,7 +19,7 @@ import pandas as pd
 from src.components.status_banner import check_process_running, read_log_lines
 from src.config import (
     OXE_URL, OXE_USER, OXE_PASS,
-    HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OXE,
+    HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_OXE, INPUT_DIR_BRUTOS,
     setup_logging, save_df_to_excel_formatted,
     cleanup_old_files
 )
@@ -397,8 +397,8 @@ def scrape_oxe():
                 logger.error("Nenhum registro foi coletado da Central Telefônica.")
                 return False
 
-            out_dir = Path("01 - Dados Brutos")
-            out_dir.mkdir(exist_ok=True)
+            out_dir = INPUT_DIR_BRUTOS
+            out_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             excel_file = out_dir / f"Central_Telefonica_OXE_{ts}.xlsx"
 

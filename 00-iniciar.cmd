@@ -50,6 +50,29 @@ timeout /t 1 >nul
 goto :show_menu
 
 :setup_docker_and_ip
+if not exist ".env" (
+    if exist ".env.example" (
+        copy /Y ".env.example" ".env" >nul
+        echo [!] Arquivo .env nao encontrado. Criado automaticamente a partir de .env.example.
+    )
+)
+for %%D in (
+    "data"
+    "data\01 - Dados Brutos"
+    "data\02 - Dados tratados"
+    "data\03 - Dados prontos"
+    "models"
+    "debug_logs"
+    "uploads"
+    "uploads\faq"
+    "uploads\faq\videos"
+    "uploads\faq\imagens"
+    "uploads\temp"
+    "src\js"
+) do (
+    if not exist %%D mkdir %%D
+)
+
 set "LOCAL_IP="
 for /f "tokens=4" %%a in ('route print ^| findstr "\<0.0.0.0\>"') do (
     if not defined LOCAL_IP set "LOCAL_IP=%%a"

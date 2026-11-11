@@ -35,7 +35,7 @@ from src.components.pagination import (
 )
 from src.components.metric_cards import render_metric_cards
 
-DB_PATH = root_dir / "chamados.db"
+from src.database.connection import DB_PATH
 
 TAG_COLORS = {
     "BACKUP": "#dd5358",

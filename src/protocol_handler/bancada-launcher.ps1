@@ -175,12 +175,12 @@ try {
 
         # Se existir caminho de projeto acessível no WSL, copia diretamente
         $wslCandidates = @(
-            "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\01 - Dados Brutos\sccm_inventory.json"
+            "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\data\01 - Dados Brutos\sccm_inventory.json",
+            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\data\01 - Dados Brutos\sccm_inventory.json"
         )
         foreach ($targetWsl in $wslCandidates) {
             try {

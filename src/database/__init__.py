@@ -1,4 +1,5 @@
 from .connection import DB_PATH, get_connection, ensure_database_indexes
+from .bootstrap import initialize_database, setup_faq_tables
 
 from .ramais_db import (
     setup_ramais_table,
@@ -272,5 +273,7 @@ __all__ = [
     "atualizar_senha",
     "excluir_senha",
     "get_senhas_stats",
-    "CATEGORIAS_PADRAO"
+    "CATEGORIAS_PADRAO",
+    "initialize_database",
+    "setup_faq_tables"
 ]

@@ -14,9 +14,11 @@ O Sistema Bancada STI adota uma arquitetura de banco de dados híbrida para conc
    - Utiliza pool de conexões gerenciado via `psycopg2.pool.SimpleConnectionPool` para alta concorrência sem estouro de conexões.
    - Suporta concorrência real entre o dashboard Streamlit, o Cron Daemon e o Orquestrador.
 2. **SQLite 3 (Fallback & Contingência Local):**
-   - Arquivo `chamados.db` mantido no disco.
+   - Arquivo `data/chamados.db`, criado automaticamente sob demanda apenas quando `DB_TYPE=sqlite`.
    - Utilizado de forma transparente caso o PostgreSQL esteja inacessível ou se `DB_TYPE=sqlite` for explicitamente configurado no `.env`.
    - O wrapper `get_db_connection()` detecta o driver e retorna uma conexão compatível.
+
+> **Bootstrap Automático em Novas Instalações:** Na inicialização do contêiner (`init.py`), a função `initialize_database()` (`src/database/bootstrap.py`) aguarda o PostgreSQL ficar saudável e cria de forma idempotente todas as tabelas do sistema, configurações padrão (`.env`), agendamentos de cron e índices de performance.
 
 ---
 
@@ -103,7 +105,7 @@ CREATE INDEX IF NOT EXISTS idx_chamados_cidade_predio ON chamados (cidade_predio
 ## 🔄 5. Scripts de Migração (`util/migracoes/`)
 
 Para mover bases e atualizar schemas com segurança:
-- `util/migracoes/migrar_sqlite_para_postgres.py`: Migrador universal que lê todas as tabelas do `chamados.db` SQLite e insere em lote no PostgreSQL com reconstrução de sequências e índices.
+- `util/migracoes/migrar_sqlite_para_postgres.py`: Migrador universal que lê todas as tabelas do `data/chamados.db` SQLite e insere em lote no PostgreSQL com reconstrução de sequências e índices.
 - `util/migracoes/fix_db_dates.py`: Repara datas legadas no formato brasileiro ou com dia/mês invertidos.
 - `util/migracoes/migrate_manual_entries.py`: Migra dados estáticos de código para a tabela relacional `unidades_manuais`.
 

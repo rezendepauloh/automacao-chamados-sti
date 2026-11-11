@@ -341,7 +341,7 @@ def run_unidades_scraper(fast: bool = False):
     print_header("SCRAPER UNIDADES - CATÁLOGO MPMS", color=CYAN)
     logger.info("🤖 Iniciando raspagem e catálogo de Unidades e Promotorias...")
 
-    out_file = BASE_DIR / "01 - Dados Brutos" / "unidades_mpms.xlsx"
+    out_file = INPUT_DIR_BRUTOS / "unidades_mpms.xlsx"
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
     if fast:

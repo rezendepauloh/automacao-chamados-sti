@@ -66,6 +66,7 @@ def setup_ad_tables():
         updated_at TEXT
     )
     """)
+    conn.commit()
 
     # Migrações seguras (caso a tabela já tenha sido criada anteriormente)
     new_cols = [
@@ -148,6 +149,7 @@ def setup_ad_tables():
         error_message TEXT
     )
     """)
+    conn.commit()
 
     # Migração segura para total_computers caso a tabela ad_sync_meta já exista
     try:

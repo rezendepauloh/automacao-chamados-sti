@@ -5,9 +5,9 @@ import re
 from datetime import datetime
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = ROOT_DIR / "chamados.db"
+DB_PATH = ROOT_DIR / "data" / "chamados.db"
 if not DB_PATH.exists():
-    DB_PATH = Path("chamados.db")
+    DB_PATH = Path("data") / "chamados.db"
 TODAY = datetime.now()
 
 def fix_invert_dates():

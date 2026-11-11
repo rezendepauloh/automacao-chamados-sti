@@ -75,11 +75,20 @@ automacao-chamados-sti/
 │   ├── testes/                 # Documentação da suíte de testes e mocks universais
 │   └── issues/                 # Backlog oficial, marcos entregues e roadmap do projeto
 │
+├── data/                       # 📦 Diretório centralizado de dados (volume Docker ./data:/app/data)
+│   ├── 01 - Dados Brutos/      # Coletas brutas (OTRS, CitSmart, OXE, SCCM, Unidades)
+│   ├── 02 - Dados tratados/    # Bases intermediárias higienizadas e normalizadas
+│   ├── 03 - Dados prontos/     # Bases consolidadas e classificadas pela IA
+│   ├── calendario.ics          # Calendário consolidado gerado automaticamente
+│   └── chamados.db             # Opcional: criado sob demanda apenas em fallback SQLite (DB_TYPE=sqlite)
+│
 ├── src/
+│   ├── config.py               # Configurações, logging, resolução de planilhas e ensure_project_directories()
 │   ├── crypto_utils.py         # Criptografia simétrica Fernet com fallback transparente
 │   ├── tag_classifier.py       # Pipeline de IA: spaCy batch, modelo campeão LinearSVC e GridSearchCV
 │   │
 │   ├── database/               # Camada DAO híbrida (PostgreSQL padrão / SQLite fallback)
+│   │   ├── bootstrap.py        # Inicialização automática e idempotente de todas as tabelas/índices/seeds
 │   │   ├── connection.py       # Gerenciador de conexão com pool (get_db_connection)
 │   │   ├── tickets_db.py       # Persistência e consultas de chamados
 │   │   ├── cron_db.py          # Gestão de agendamentos de tarefas do Cron Daemon

@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- Script de Limpeza e Correção de Localidades com 'nan' e 'Não encontrado no AD'
--- Banco: chamados.db
+-- Banco: data/chamados.db
 -- ==============================================================================
 
 -- 1. Remove registros espúrios com ID 'nan' ou nulo

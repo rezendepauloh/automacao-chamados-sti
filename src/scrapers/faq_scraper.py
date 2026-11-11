@@ -13,10 +13,8 @@ if str(root_dir) not in sys.path:
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-db_path = root_dir / "chamados.db"
-
 from src.config import setup_logging, DEBUG_DIR_FAQ
-from src.database.connection import get_connection
+from src.database.connection import DB_PATH as db_path, get_connection
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 logger = setup_logging(DEBUG_DIR_FAQ / "faq_scraper.log", __name__)
@@ -33,7 +31,7 @@ def init_faq_schema():
             tipo_faq TEXT NOT NULL,
             url TEXT NOT NULL UNIQUE,
             conteudo TEXT,
-            data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
+            data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     cursor.execute("PRAGMA table_info(faqs)")

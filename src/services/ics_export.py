@@ -421,7 +421,7 @@ def fetch_all_unified_calendar_events(bancada_only: bool = True, ano: int = None
 def update_published_ics_file(target_path: str = None) -> str:
     """
     Gera o calendário consolidado da Bancada STI e salva em um arquivo estático para acesso web contínuo.
-    Por padrão salva em 'src/js/calendario.ics' e na raiz pública.
+    Por padrão salva em 'src/js/calendario.ics' e em 'data/calendario.ics'.
     """
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent
@@ -432,7 +432,7 @@ def update_published_ics_file(target_path: str = None) -> str:
     # Caminhos onde o arquivo fica disponível
     destinos = [
         root / "src" / "js" / "calendario.ics",
-        root / "calendario.ics"
+        root / "data" / "calendario.ics"
     ]
     if target_path:
         destinos.append(Path(target_path))

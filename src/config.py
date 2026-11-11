@@ -197,12 +197,16 @@ MAX_RETRIES = 5     # Número de tentativas por página
 # Diretórios
 # -----------------------------------------------------------------------------
 
-INPUT_DIR_BRUTOS      = BASE_DIR / "01 - Dados Brutos"
-INPUT_DIR_BRUTOS.mkdir(exist_ok=True)
-OUTPUT_DIR_TRATADOS   = BASE_DIR / "02 - Dados tratados"
-OUTPUT_DIR_TRATADOS.mkdir(exist_ok=True)
-OUTPUT_DIR_PRONTO     = BASE_DIR / "03 - Dados prontos"
-OUTPUT_DIR_PRONTO.mkdir(exist_ok=True)
+DATA_DIR              = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+INPUT_DIR_BRUTOS      = DATA_DIR / "01 - Dados Brutos"
+INPUT_DIR_BRUTOS.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR_TRATADOS   = DATA_DIR / "02 - Dados tratados"
+OUTPUT_DIR_TRATADOS.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR_PRONTO     = DATA_DIR / "03 - Dados prontos"
+OUTPUT_DIR_PRONTO.mkdir(parents=True, exist_ok=True)
+SQLITE_DB_PATH        = DATA_DIR / "chamados.db"
+CALENDAR_ICS_PATH     = DATA_DIR / "calendario.ics"
 MODEL_DIR             = BASE_DIR / "models"
 MODEL_DIR.mkdir(exist_ok=True)
 MASTER_FILE_PATH = resolve_spreadsheet_path("SHAREPOINT_RELATIVE_PATH", "Chamados_Unificados_Final.xlsx")
@@ -377,6 +381,65 @@ DEBUG_DIR_FERIAS.mkdir(parents=True, exist_ok=True)
 DEBUG_DIR_AD = BASE_DIR / "debug_logs" / "ad"
 DEBUG_DIR_AD.mkdir(parents=True, exist_ok=True)
 
+
+def ensure_project_directories(base_dir: Path = None) -> list[Path]:
+    """
+    Garante a existência de toda a estrutura de diretórios de runtime do sistema
+    (data, uploads, models, debug_logs e src/js), permitindo inicialização limpa em novas máquinas.
+    """
+    root = Path(base_dir) if base_dir else BASE_DIR
+    data_root = root / "data"
+    dirs = [
+        data_root,
+        data_root / "01 - Dados Brutos",
+        data_root / "02 - Dados tratados",
+        data_root / "03 - Dados prontos",
+        root / "models",
+        root / "uploads",
+        root / "uploads" / "faq" / "videos",
+        root / "uploads" / "faq" / "imagens",
+        root / "uploads" / "temp",
+        root / "src" / "js",
+        root / "debug_logs",
+    ]
+    if base_dir is None:
+        dirs.extend([
+            DEBUG_DIR_GARANTIA,
+            DEBUG_DIR_OTRS,
+            DEBUG_DIR_CITSMART,
+            DEBUG_DIR_PREPROCESS,
+            DEBUG_DIR_TAG,
+            DEBUG_DIR_SYNC,
+            DEBUG_DIR_DONATIONS,
+            DEBUG_DIR_ORQUESTRADOR,
+            DEBUG_DIR_UNIDADES,
+            DEBUG_DIR_RAMAIS,
+            DEBUG_DIR_LEAFLET,
+            DEBUG_DIR_FAQ,
+            DEBUG_DIR_PLANTOES,
+            DEBUG_DIR_PAPERCUT,
+            DEBUG_DIR_OXE,
+            DEBUG_DIR_SCRIPTS,
+            DEBUG_DIR_FISCALIZACAO,
+            DEBUG_DIR_VIAGENS,
+            DEBUG_DIR_FERIAS,
+            DEBUG_DIR_AD,
+        ])
+    else:
+        for sub in [
+            "garantia", "otrs", "citsmart", "preprocess", "tag", "sync",
+            "donations", "orquestrador", "unidades", "ramais", "leaflet",
+            "faq", "plantoes", "papercut", "oxe", "scripts", "fiscalizacao",
+            "viagens", "ferias", "ad",
+        ]:
+            dirs.append(root / "debug_logs" / sub)
+
+    for d in dirs:
+        d.mkdir(parents=True, exist_ok=True)
+    return dirs
+
+
+ensure_project_directories()
 
 
 LOG_FILE_ORQUESTRADOR = DEBUG_DIR_ORQUESTRADOR / "orquestrador.log"

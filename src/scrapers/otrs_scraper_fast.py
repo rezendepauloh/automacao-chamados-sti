@@ -313,8 +313,8 @@ class OTRSClient:
 
 def brute_data(data):
     df = pd.DataFrame(data, columns=HEADERS).dropna(subset=['Chamado#'], how='all')
-    out_dir = Path("01 - Dados Brutos")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = INPUT_DIR_BRUTOS
+    out_dir.mkdir(parents=True, exist_ok=True)
     ts = get_timestamp()
     file = out_dir / f"Chamados_OTRS_{ts}.xlsx"
 
@@ -347,8 +347,8 @@ def scrape_otrs_fast(max_pages: int = None, max_workers: int = 5) -> bool:
     
     # Carrega cache existente
     cache = {}
-    out_dir = Path("01 - Dados Brutos")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = INPUT_DIR_BRUTOS
+    out_dir.mkdir(parents=True, exist_ok=True)
     existing_files = sorted(out_dir.glob("Chamados_OTRS_*.xlsx"))
     if existing_files:
         latest = existing_files[-1]

@@ -49,17 +49,28 @@ def get_local_ip() -> str:
     return "localhost"
 
 def setup_environment(local_ip: str) -> None:
-    """Configura arquivos de suporte pré-inicialização."""
+    """Configura arquivos, diretórios e schema de banco de dados pré-inicialização."""
+    # Garante criação de toda a árvore de pastas de dados, uploads, modelos e logs
+    try:
+        from src.config import ensure_project_directories
+        ensure_project_directories()
+    except Exception:
+        pass
+
     # Garante criação da pasta js e do arquivo server-info.js
     js_dir = ROOT_DIR / "src" / "js"
     js_dir.mkdir(parents=True, exist_ok=True)
     server_info_file = js_dir / "server-info.js"
     server_info_file.write_text(f"window.BANCADA_LOCAL_IP = '{local_ip}';\n", encoding="utf-8")
-    
-    # Garante arquivo do banco de dados SQLite local
-    db_file = ROOT_DIR / "chamados.db"
-    if not db_file.exists():
-        db_file.touch()
+
+    # Inicializa todas as tabelas, configurações e índices no banco ativo (PostgreSQL ou SQLite fallback)
+    try:
+        from src.database.bootstrap import initialize_database
+        summary = initialize_database()
+        if summary.get("errors"):
+            print(f" {YELLOW}[!] Avisos na inicialização do banco: {', '.join(summary['errors'])}{RESET}")
+    except Exception as e_db:
+        print(f" {YELLOW}[!] Aviso ao inicializar schema do banco de dados: {e_db}{RESET}")
 
     # Substitui o favicon padrão do Streamlit pelo favicon oficial da Bancada STI
     try:
@@ -84,13 +95,18 @@ def print_banner(local_ip: str, port: int) -> None:
     full_url = f"http://{local_ip}:{port}/"
     local_url = f"http://localhost:{port}/"
     db_mode = os.getenv("DB_TYPE", "sqlite").upper()
+    db_label = (
+        f"{db_mode} ({os.getenv('POSTGRES_HOST', 'db')}:{os.getenv('POSTGRES_PORT', '5432')}/{os.getenv('POSTGRES_DB', 'chamados')})"
+        if db_mode in ["POSTGRES", "POSTGRESQL"]
+        else f"{db_mode} (data/chamados.db)"
+    )
 
     print("")
     print(f"{CYAN}╔══════════════════════════════════════════════════════════════════════╗{RESET}")
     print(f"{CYAN}║                    S I S T E M A   B A N C A D A                     ║{RESET}")
     print(f"{CYAN}║             Automação de Chamados STI — Streamlit Dashboard          ║{RESET}")
     print(f"{CYAN}╚══════════════════════════════════════════════════════════════════════╝{RESET}")
-    print(f" {CYAN}●{RESET} {BOLD}Banco de Dados{RESET}       : {GREEN}{db_mode} (chamados.db centralizado){RESET}")
+    print(f" {CYAN}●{RESET} {BOLD}Banco de Dados{RESET}       : {GREEN}{db_label}{RESET}")
     print(f" {CYAN}●{RESET} {BOLD}Porta do Servidor{RESET}    : {WHITE}{port}{RESET}")
     print(f" {CYAN}●{RESET} {BOLD}Acesso no Computador{RESET} : {CYAN}{local_url}{RESET}")
     print(f" {CYAN}●{RESET} {BOLD}Acesso Celular/Tablet{RESET}: {GREEN}{full_url}{RESET}")

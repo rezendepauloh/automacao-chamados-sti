@@ -216,7 +216,7 @@ def process_otrs(ts: str) -> pd.DataFrame:
     files = sorted(INPUT_DIR_BRUTOS.glob("Chamados_OTRS_*.xlsx"))
     
     if not files:
-        log("Nenhum arquivo OTRS encontrado em '01 - Dados Brutos'.", symbol="⚠️", color=YELLOW)
+        log("Nenhum arquivo OTRS encontrado em 'data/01 - Dados Brutos'.", symbol="⚠️", color=YELLOW)
         logger.info("Nenhum arquivo OTRS encontrado")
         return pd.DataFrame()
     path = files[-1]
@@ -258,7 +258,7 @@ def process_citsmart(ts: str) -> pd.DataFrame:
     files = sorted(INPUT_DIR_BRUTOS.glob("Chamados_CitSmart_*.xlsx"))
     
     if not files:
-        log("Nenhum arquivo CitSmart encontrado em '01 - Dados Brutos'.", symbol="⚠️", color=YELLOW)
+        log("Nenhum arquivo CitSmart encontrado em 'data/01 - Dados Brutos'.", symbol="⚠️", color=YELLOW)
         logger.info("Nenhum arquivo CitSmart encontrado")
         return pd.DataFrame()
     path = files[-1]

@@ -51,6 +51,10 @@ detect_ip() {
 }
 
 load_env_file() {
+    if [ ! -f .env ] && [ -f .env.example ]; then
+        cp .env.example .env
+        echo -e "${C_YELLOW}[!] Arquivo .env não encontrado. Criado automaticamente a partir de .env.example.${C_RESET}"
+    fi
     if [ -f .env ]; then
         local env_port
         env_port=$(grep -E '^[[:space:]]*STREAMLIT_PORT[[:space:]]*=' .env | tail -n 1 | cut -d '=' -f 2 | tr -d ' "\r\n')
@@ -58,7 +62,21 @@ load_env_file() {
             PORT="$env_port"
         fi
     fi
-    PORT="${PORT:-8502}"
+    PORT="${PORT:-8501}"
+}
+
+ensure_host_directories() {
+    mkdir -p \
+        ~/.local/share/python_keyring \
+        "data/01 - Dados Brutos" \
+        "data/02 - Dados tratados" \
+        "data/03 - Dados prontos" \
+        models \
+        debug_logs \
+        uploads/faq/videos \
+        uploads/faq/imagens \
+        uploads/temp \
+        src/js
 }
 
 open_browser() {
@@ -176,10 +194,8 @@ stream_interactive_logs() {
 start_system() {
     local force_build="${1:-false}"
     load_env_file
+    ensure_host_directories
     detect_ip
-
-    mkdir -p ~/.local/share/python_keyring
-    touch chamados.db
 
     clear
     echo -e "${C_CYAN}Iniciando Sistema Bancada (Porta: ${PORT} | IP: ${HOST_IP})...${C_RESET}"
@@ -204,6 +220,7 @@ start_system() {
 
 config_senhas() {
     load_env_file
+    ensure_host_directories
     detect_ip
     clear
     echo -e "${C_CYAN}Abrindo assistente de senhas no container interativo...${C_RESET}"
@@ -215,6 +232,7 @@ config_senhas() {
 
 run_orquestrador() {
     load_env_file
+    ensure_host_directories
     detect_ip
     clear
     echo -e "${C_CYAN}Executando orquestrador de chamados e sincronização...${C_RESET}"

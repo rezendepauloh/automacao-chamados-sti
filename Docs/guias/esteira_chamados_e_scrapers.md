@@ -55,5 +55,5 @@ Falhas de Sessão / Timeout 0% falhas             Frequentes no Chrome
 
 A plataforma CitSmart possui renderização dinâmica pesada baseada em Single Page Application (SPA).
 - O módulo [`src/scrapers/citsmart_scraper.py`](../../src/scrapers/citsmart_scraper.py) utiliza Playwright com navegador Chromium headless otimizado para extração das tabelas de chamados e históricos de atendimento.
-- Os dados brutos são salvos em `01 - Dados Brutos` antes de passarem pela higienização.
+- Os dados brutos são salvos em `data/01 - Dados Brutos` antes de passarem pela higienização.
 

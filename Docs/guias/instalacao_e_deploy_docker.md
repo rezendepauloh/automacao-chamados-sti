@@ -15,7 +15,11 @@
 ## 🚀 2. Inicialização Rápida
 
 ### No Linux ou WSL (Ubuntu):
-O projeto conta com um inicializador automatizado que valida as permissões, sobe os contêineres e exibe um QR Code no terminal para acesso via smartphone ou tablet na mesma rede:
+O projeto conta com um inicializador automatizado que, mesmo em um computador recém-clonado:
+1. Cria o `.env` automaticamente a partir do `.env.example`, caso ainda não exista.
+2. Cria toda a estrutura de diretórios locais (`data/`, `models/`, `debug_logs/`, `uploads/`, `src/js/`).
+3. Sobe os contêineres (`db` PostgreSQL, `evolution-api` e `web` Streamlit).
+4. Inicializa automaticamente todas as tabelas, configurações iniciais, rotinas de cron e índices no PostgreSQL (`init.py` -> `initialize_database()`) e exibe um QR Code no terminal para acesso via rede:
 
 ```bash
 chmod +x 00-iniciar.sh
@@ -23,7 +27,7 @@ chmod +x 00-iniciar.sh
 ```
 
 ### No Windows:
-Basta clicar duas vezes em:
+Basta clicar duas vezes em (também cria `.env` e pastas automaticamente):
 ```cmd
 00-iniciar.cmd
 ```

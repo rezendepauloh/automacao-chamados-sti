@@ -295,7 +295,7 @@ def main():
     
     arquivos = list(OUTPUT_DIR_PRONTO.glob("Chamados_Tagged_*.xlsx"))
     if not arquivos:
-        logger.error("⚠️ Nenhum arquivo Tagged encontrado em '03 - Dados prontos'.")
+        logger.error("⚠️ Nenhum arquivo Tagged encontrado em 'data/03 - Dados prontos'.")
         sys.exit(1)
         
     recente = max(arquivos, key=lambda p: p.stat().st_mtime)

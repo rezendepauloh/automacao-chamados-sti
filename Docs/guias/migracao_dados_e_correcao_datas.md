@@ -13,7 +13,7 @@ Este guia orienta a execução dos scripts de migração estrutural, normalizaç
 
 ## 🐘 2. Migração do SQLite para PostgreSQL (`migrar_sqlite_para_postgres.py`)
 
-Para transferir integralmente os dados do arquivo SQLite legado (`chamados.db`) para o PostgreSQL rodando no contêiner `bancada_postgres_db`:
+Para transferir integralmente os dados do arquivo SQLite legado (`data/chamados.db`) para o PostgreSQL rodando no contêiner `bancada_postgres_db`:
 
 ### Como Executar:
 ```bash

@@ -25,12 +25,9 @@ services:
       - TZ=America/Campo_Grande
       - HOST_IP=${HOST_IP:-localhost}
     volumes:
-      # Persistência do banco de dados SQLite local
-      - ./chamados.db:/app/chamados.db
-      # Pastas de dados e modelos
-      - ./01 - Dados Brutos:/app/01 - Dados Brutos
-      - ./02 - Dados tratados:/app/02 - Dados tratados
-      - ./03 - Dados prontos:/app/03 - Dados prontos
+      # Diretório centralizado de dados (SQLite fallback, dados brutos/tratados/prontos e calendário ICS)
+      - ./data:/app/data
+      # Pastas de modelos e logs
       - ./models:/app/models
       - ./debug_logs:/app/debug_logs
       # Mapeamento do cofre do keyring (Linux/WSL host -> Docker container)
@@ -55,7 +52,10 @@ services:
       start_period: 15s
     restart: unless-stopped
     depends_on:
-      - evolution-api
+      db:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
 
   db:
     image: postgres:15-alpine

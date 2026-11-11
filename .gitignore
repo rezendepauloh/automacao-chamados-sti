@@ -52,6 +52,9 @@ db/
 *.xlsx
 *.xls
 *.csv
+data/01 - Dados Brutos/
+data/02 - Dados tratados/
+data/03 - Dados prontos/
 01 - Dados Brutos/
 02 - Dados tratados/
 03 - Dados prontos/

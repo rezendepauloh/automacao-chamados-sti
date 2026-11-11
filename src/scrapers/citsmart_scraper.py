@@ -20,7 +20,7 @@ import html
 from ldap3 import SUBTREE
 from config import (
     CITSMART_URL, CITSMART_EMAIL, PASSWORD,
-    HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_CITSMART,
+    HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_CITSMART, INPUT_DIR_BRUTOS,
     setup_logging, save_df_to_excel_formatted,
     setup_ad_connection, fetch_ad_department, cleanup_old_files
 )
@@ -60,7 +60,7 @@ def fetch_setor_temp(conn, query_val, is_username=False):
     return fetch_ad_department(conn, query_val, is_username=is_username)
 
 def navigate_to_caixa_entrada(page):
-    logger.info("Acessando CitSmart e autenticando via Microsoft Entra ID...")
+    logger.info("Acessando portal inicial CitSmart e autenticando via Microsoft Entra ID...")
     page.goto(CITSMART_URL, wait_until="domcontentloaded", timeout=60000)
 
     try:
@@ -73,37 +73,47 @@ def navigate_to_caixa_entrada(page):
         
         pwd_input = page.locator("input[name='passwd'], input[type='password']").first
         pwd_input.wait_for(state="visible", timeout=30000)
-        time.sleep(0.5)
+        time.sleep(1)
         pwd_input.fill(PASSWORD or "")
+        time.sleep(1)
         
         btn_submit = page.locator("#idSIButton9, input[type='submit']").first
         btn_submit.click()
 
+        # Aguarda a tela KMSI ("Mantenha-se conectado" / "Stay signed in?") e clica
+        time.sleep(2)
         try:
             kmsi_btn = page.locator("#idSIButton9").first
-            kmsi_btn.wait_for(state="visible", timeout=6000)
-            logger.info("Pulando tela KMSI de manter conectado...")
-            kmsi_btn.click()
+            if kmsi_btn.is_visible():
+                logger.info("Pulando tela KMSI de manter conectado...")
+                kmsi_btn.click()
         except Exception:
             pass
 
-        logger.info("Aguardando carregamento do portal inicial...")
-        page.wait_for_load_state("domcontentloaded", timeout=30000)
-        time.sleep(3)
+        logger.info("Aguardando carregamento da sessão do portal inicial...")
+        for _ in range(15):
+            time.sleep(1)
+            if "suporte.mpms.mp.br" in page.url and any("experienceCenter" in f.url or "portalservicos" in f.url for f in page.frames):
+                logger.info("Sessão do portal CitSmart confirmada.")
+                break
 
     except Exception as login_err:
         logger.info(f"ℹ️ Fluxo de login concluído ou sessão ativa detectada: {login_err}")
 
+    # Navegação SPA usando window.location.href (compatibilidade total com o roteador AngularJS do CitSmart)
     nova_fila = "https://suporte.mpms.mp.br/inbox/lowcode/form/copilot_novo/default"
-    logger.info(f"Forçando navegação para: {nova_fila}")
-    page.goto(nova_fila, wait_until="domcontentloaded", timeout=60000)
-    time.sleep(3)
+    logger.info(f"Navegando via SPA para: {nova_fila}")
+    try:
+        page.evaluate(f"window.location.href = '{nova_fila}';")
+    except Exception:
+        page.goto(nova_fila, wait_until="domcontentloaded", timeout=60000)
+    time.sleep(4)
 
-def expand_all_records_lowcode(frame):
+def expand_all_records_lowcode(target):
     logger.info("Tentando expandir registros (LowCode)...")
     try:
         time.sleep(2)
-        dropdown = frame.locator("#pageSize").first
+        dropdown = target.locator("#pageSize").first
         dropdown.wait_for(state="visible", timeout=30000)
         
         try:
@@ -123,7 +133,7 @@ def expand_all_records_lowcode(frame):
             time.sleep(2)
 
         try:
-            pager_info = frame.locator("div[ng-if='totalTickets']").first
+            pager_info = target.locator("div[ng-if='totalTickets']").first
             if pager_info.count() > 0:
                 text = (pager_info.text_content() or "").strip()
                 logger.info(f"Paginação atualizada: {text}")
@@ -455,7 +465,7 @@ def scrape_citsmart():
     
     cache = {}
     try:
-        out_dir = Path("01 - Dados Brutos")
+        out_dir = INPUT_DIR_BRUTOS
         existing_files = sorted(out_dir.glob("Chamados_CitSmart_*.xlsx"))
         if existing_files:
             latest_file = existing_files[-1]
@@ -528,21 +538,47 @@ def scrape_citsmart():
             logger.info("🔑 Navegando até a caixa de entrada do CitSmart via Playwright...")
             navigate_to_caixa_entrada(page)
 
-            frame = page.frame_locator("iframe[title='App']").first
-            expand_all_records_lowcode(frame)
+            # O CitSmart monta o aplicativo Copilot LowCode dentro de iframe[title='App']
+            logger.info("Aguardando carregamento da fila de chamados no contexto do CitSmart...")
+            target_context = None
+            for _ in range(30):
+                # Verifica no iframe App
+                app_frame = page.frame_locator("iframe[title='App']").first
+                try:
+                    if app_frame.locator("#pageSize").count() > 0 or app_frame.locator("#table").count() > 0:
+                        target_context = app_frame
+                        logger.info("🎯 Contexto da fila CitSmart detectado: iframe[title='App'].")
+                        break
+                except Exception:
+                    pass
+
+                # Verifica na página principal como fallback
+                try:
+                    if page.locator("#pageSize").count() > 0 or page.locator("#table").count() > 0:
+                        target_context = page
+                        logger.info("🎯 Contexto da fila CitSmart detectado: Página Principal.")
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+
+            if target_context is None:
+                target_context = page.frame_locator("iframe[title='App']").first
+
+            expand_all_records_lowcode(target_context)
 
             pagina = 1
             while True:
                 logger.info(f"📄 --- Processando Página {pagina} do CitSmart ---")
                 
-                dados_pagina = process_page(frame, captured_network_tickets, ad_conn=ad_conn, cache=cache)
+                dados_pagina = process_page(target_context, captured_network_tickets, ad_conn=ad_conn, cache=cache)
                 if dados_pagina:
                     todos_os_dados.extend(dados_pagina)
                     logger.info(f"Coletados {len(dados_pagina)} registros nesta página.")
                 else:
                     logger.info("Aviso: Página retornou 0 registros.")
 
-                if not ir_para_proxima_pagina(frame):
+                if not ir_para_proxima_pagina(target_context):
                     break
                 
                 pagina += 1
@@ -551,8 +587,8 @@ def scrape_citsmart():
             logger.info("Navegador Playwright encerrado com sucesso.")
 
         if todos_os_dados:
-            out_dir = Path("01 - Dados Brutos")
-            out_dir.mkdir(exist_ok=True)
+            out_dir = INPUT_DIR_BRUTOS
+            out_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             file = out_dir / f"Chamados_CitSmart_{ts}.xlsx"
 

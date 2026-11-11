@@ -833,7 +833,7 @@ def render_faq_page():
     st.markdown("---")
 
     root_dir = Path(__file__).parent.parent.parent
-    db_path = root_dir / "chamados.db"
+    db_path = root_dir / "data" / "chamados.db"
     json_faq_path = root_dir / "temp" / "faqs_template.json"
     json_links_path = root_dir / "temp" / "links_uteis_template.json"
     json_videos_path = root_dir / "temp" / "videos_faq_template.json"
@@ -853,7 +853,7 @@ def render_faq_page():
                 tipo_faq TEXT NOT NULL,
                 url TEXT NOT NULL UNIQUE,
                 conteudo TEXT,
-                data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
+                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
@@ -886,7 +886,7 @@ def render_faq_page():
                 url TEXT NOT NULL UNIQUE,
                 caminho_relativo TEXT,
                 tamanho_bytes INTEGER DEFAULT 0,
-                data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
+                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -913,7 +913,7 @@ def render_faq_page():
                 url TEXT NOT NULL UNIQUE,
                 caminho_relativo TEXT,
                 tamanho_bytes INTEGER DEFAULT 0,
-                data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
+                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 

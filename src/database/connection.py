@@ -9,7 +9,9 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("chamados.db")
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DATA_DIR = BASE_DIR / "data"
+DB_PATH = DATA_DIR / "chamados.db"
 DB_TYPE = os.getenv("DB_TYPE", "sqlite").lower()
 
 # Pool global de conexões para PostgreSQL (Thread-safe)
@@ -49,6 +51,9 @@ class PostgreSQLCompatibleCursor(_pg_base_cursor):
     def _translate_sqlite_query(query: str, has_vars: bool = False) -> str:
         if 'INTEGER PRIMARY KEY AUTOINCREMENT' in query:
             query = query.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
+
+        if re.search(r'\bDATETIME\b', query, re.I) and re.search(r'\b(CREATE|ALTER)\s+TABLE\b', query, re.I):
+            query = re.sub(r'\bDATETIME\b', 'TIMESTAMP', query, flags=re.I)
 
         if 'ON CONFLICT' in query:
             # Em CREATE TABLE no PostgreSQL, UNIQUE(...) ON CONFLICT REPLACE / IGNORE não é sintaxe ANSI (apenas UNIQUE(...))
@@ -252,7 +257,7 @@ def save_dataframe_to_db(df, table_name: str, conn, if_exists: str = "replace"):
 def get_connection():
     """
     Retorna uma conexão com o banco de dados.
-    Suporta modo híbrido: 'sqlite' (padrão local chamados.db) ou 'postgres' (servidor PostgreSQL).
+    Suporta modo híbrido: 'sqlite' (padrão local data/chamados.db) ou 'postgres' (servidor PostgreSQL).
     Para PostgreSQL, utiliza o Connection Pool gerenciado com fallback direto se necessário.
     """
     db_mode = os.getenv("DB_TYPE", DB_TYPE).lower()
@@ -280,6 +285,7 @@ def get_connection():
             cursor_factory=PostgreSQLCompatibleCursor
         )
     else:
+        Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(DB_PATH, timeout=30.0)
         try:
             conn.execute("PRAGMA journal_mode = WAL;")

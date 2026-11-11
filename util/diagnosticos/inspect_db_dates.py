@@ -3,9 +3,9 @@ import pandas as pd
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = ROOT_DIR / "chamados.db"
+DB_PATH = ROOT_DIR / "data" / "chamados.db"
 if not DB_PATH.exists():
-    DB_PATH = Path("chamados.db")
+    DB_PATH = Path("data") / "chamados.db"
 
 def inspect_dates():
     if not DB_PATH.exists():

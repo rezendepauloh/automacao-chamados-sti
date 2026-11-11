@@ -531,8 +531,8 @@ def data_extract(driver, has_pagination, cache=None):
 
 def brute_data(data):
     df = pd.DataFrame(data, columns=HEADERS).dropna(subset=['Chamado#'], how='all')
-    out_dir = Path("01 - Dados Brutos")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = INPUT_DIR_BRUTOS
+    out_dir.mkdir(parents=True, exist_ok=True)
     ts = get_timestamp()
     file = out_dir / f"Chamados_OTRS_{ts}.xlsx"
 
@@ -563,7 +563,7 @@ def scrape_otrs():
     logger.info("🤖 Iniciando processo de raspagem do OTRS...")
     cache = {}
     try:
-        out_dir = Path("01 - Dados Brutos")
+        out_dir = INPUT_DIR_BRUTOS
         existing_files = sorted(out_dir.glob("Chamados_OTRS_*.xlsx"))
         if existing_files:
             latest_file = existing_files[-1]

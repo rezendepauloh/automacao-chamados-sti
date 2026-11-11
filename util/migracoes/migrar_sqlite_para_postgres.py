@@ -1,5 +1,5 @@
 """
-Script de Migração Completa: SQLite (chamados.db) -> PostgreSQL (Docker / RedHat MPMS).
+Script de Migração Completa: SQLite (data/chamados.db) -> PostgreSQL (Docker / RedHat MPMS).
 Copia com segurança todas as 42 tabelas do SQLite para o banco PostgreSQL de produção.
 Ajusta tipos, sequências de chaves primárias e cria índices de performance.
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-SQLITE_PATH = ROOT_DIR / "chamados.db"
+SQLITE_PATH = ROOT_DIR / "data" / "chamados.db"
 
 PG_HOST = os.getenv("POSTGRES_HOST", "db")
 PG_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
@@ -46,7 +46,7 @@ def map_sqlite_type_to_pg(sqlite_type: str, col_name: str = "") -> str:
 
 def migrate():
     print("=" * 70)
-    print("🚀 INICIANDO MIGRAÇÃO: SQLite (chamados.db) -> PostgreSQL")
+    print("🚀 INICIANDO MIGRAÇÃO: SQLite (data/chamados.db) -> PostgreSQL")
     print(f"   Origem: {SQLITE_PATH}")
     print(f"   Destino: postgresql://{PG_USER}@{PG_HOST}:{PG_PORT}/{PG_DB}")
     print("=" * 70)
