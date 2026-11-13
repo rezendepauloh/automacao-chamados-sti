@@ -9,7 +9,8 @@
 ![Playwright](https://img.shields.io/badge/Playwright-Chromium-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
 ![spaCy](https://img.shields.io/badge/spaCy-NLP-09A3D5?style=for-the-badge&logo=spacy&logoColor=white)
 ![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-LinearSVC-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)
-![Tests](https://img.shields.io/badge/Testes-100%25%20Passing%20(106%2F106)-brightgreen?style=for-the-badge)
+![Tests](https://img.shields.io/badge/Testes-100%25%20Passing%20(131%2F131)-brightgreen?style=for-the-badge)
+![Security](https://img.shields.io/badge/SecOps-Hardened%20%26%20Audited-blue?style=for-the-badge&logo=shield)
 
 **Plataforma Integrada de Gestão de Suporte Técnico, Esteira de Chamados de TI, Automação Corporativa e Inteligência Artificial.**
 
@@ -170,9 +171,12 @@ graph TD
 - **Thread Daemon Nativa (`BancadaCronDaemon`):** Opera em segundo plano no contêiner web independente de sessões abertas no navegador.
 - **14 Rotinas Desacopladas:** Sincronização periódica de chamados, planilhas do SharePoint, plantões SIMP/PGJ, WhatsApp, portarias e inventários com travas atômicas (`.lock`) e log de auditoria.
 
-### 3.14 Cofre de Credenciais Criptografado & Configurações
+### 3.14 Cofre de Credenciais Criptografado & Hardening SecOps
 - **Criptografia Simétrica Fernet (AES-128-CBC + HMAC-SHA256):** Senhas corporativas salvas no banco com derivação de chave de máquina via PBKDF2HMAC.
-- **Fallback Transparente e Seguro:** Na ausência de chave ou troca de ambiente, o sistema evita falhas fatais e recorre automaticamente ao Keyring do sistema ou variáveis `.env`.
+- **Arquitetura Fail-Closed & Isolamento 127.0.0.1:** Binds estritamente restritos a localhost para PostgreSQL e Evolution API; bloqueio mandatório caso credenciais essenciais estejam omitidas.
+- **Proteção Anti-Brute-Force & Rate Limiting:** Cooldown e bloqueio temporário (lockout de 5 min) automático após 5 tentativas incorretas consecutivas no login e no cofre.
+- **Mitigação Rigorosa de Injeções (Command/LDAP/WQL/Path Traversal):** Whitelist regex em hostnames e argumentos subprocess, sanitização RFC 4515 no LDAP e streaming seguro de arquivos com teto de 100 MB contra DoS/Zip-Bomb.
+- **Fallback Transparente e Seguro:** Na ausência de chave ou troca de ambiente, o sistema evita falhas fatais e recorre automaticamente ao Keyring do sistema ou variáveis `.env` com permissão estrita `0600`.
 
 ---
 

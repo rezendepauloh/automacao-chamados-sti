@@ -1,5 +1,7 @@
 import os
+import re
 import time
+import json
 from typing import Optional, Dict, Any, Tuple
 import itsdangerous
 import streamlit as st
@@ -13,6 +15,35 @@ COOKIE_NAME = "bancada_auth_token"
 AUTH_SALT = "bancada-auth-token-salt"
 SESSION_DURATION_DAYS = 30
 SESSION_DURATION_SECONDS = SESSION_DURATION_DAYS * 24 * 60 * 60
+
+# Proteção contra ataques de força bruta e Rate Limiting
+_FAILED_ATTEMPTS: Dict[str, list] = {}
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_DURATION_SECONDS = 300  # 5 minutos de bloqueio temporário após 5 falhas
+
+def check_login_rate_limit(username: str) -> Tuple[bool, int]:
+    """Verifica se o usuário excedeu o limite de tentativas de autenticação (Rate Limiting)."""
+    clean_user = (username or "").strip().lower()
+    now = time.time()
+    attempts = [t for t in _FAILED_ATTEMPTS.get(clean_user, []) if now - t < LOCKOUT_DURATION_SECONDS]
+    _FAILED_ATTEMPTS[clean_user] = attempts
+    if len(attempts) >= MAX_FAILED_ATTEMPTS:
+        remaining = int(LOCKOUT_DURATION_SECONDS - (now - attempts[0]))
+        return False, max(1, remaining)
+    return True, 0
+
+def record_failed_login(username: str):
+    """Registra uma tentativa de login falha."""
+    clean_user = (username or "").strip().lower()
+    now = time.time()
+    attempts = [t for t in _FAILED_ATTEMPTS.get(clean_user, []) if now - t < LOCKOUT_DURATION_SECONDS]
+    attempts.append(now)
+    _FAILED_ATTEMPTS[clean_user] = attempts
+
+def reset_login_attempts(username: str):
+    """Reseta o histórico de falhas após uma autenticação bem-sucedida."""
+    clean_user = (username or "").strip().lower()
+    _FAILED_ATTEMPTS.pop(clean_user, None)
 
 # Mapeamento oficial dos Técnicos da Bancada (Administradores com Acesso Total)
 # Conforme especificado na documentação técnica (Docs/arquitetura/dossie_arquitetura_sistema.md)
@@ -113,12 +144,14 @@ def can_edit() -> bool:
 
 def inject_cookie_setter(token: str):
     """Injeta JavaScript para gravar o cookie seguro com validade de 30 dias no navegador."""
+    safe_token = json.dumps(str(token))
     js_code = f"""
     <script>
         const cookieName = "{COOKIE_NAME}";
-        const cookieVal = "{token}";
+        const cookieVal = {safe_token};
         const maxAge = {SESSION_DURATION_SECONDS};
-        document.cookie = `${{cookieName}}=${{cookieVal}}; max-age=${{maxAge}}; path=/; SameSite=Lax`;
+        const isSecure = window.location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `${{cookieName}}=${{cookieVal}}; max-age=${{maxAge}}; path=/; SameSite=Lax${{isSecure}}`;
         try {{
             localStorage.setItem(cookieName, cookieVal);
         }} catch(e) {{}}
@@ -183,13 +216,26 @@ def restore_session_from_cookie() -> bool:
 def login_user(username: str, password: str) -> Tuple[bool, str]:
     """
     Valida as credenciais corporativas no AD/LDAP e autentica o usuário,
-    gerando o token assinado e registrando no session_state.
+    com proteções de rate limiting, validação de formato e geração de token assinado.
     """
-    sucesso, msg = authenticate_user_credentials(username, password)
+    clean_user = (username or "").strip().lower()
+    if not clean_user or not password:
+        return False, "Usuário e senha são obrigatórios."
+
+    # Validação de formato contra injeções de caracteres estranhos
+    if not re.match(r"^[a-zA-Z0-9._\-@\\]{1,64}$", clean_user):
+        return False, "Nome de usuário contém caracteres inválidos."
+
+    allowed, wait_sec = check_login_rate_limit(clean_user)
+    if not allowed:
+        return False, f"Muitas tentativas incorretas. Conta bloqueada temporariamente ({wait_sec}s restantes)."
+
+    sucesso, msg = authenticate_user_credentials(clean_user, password)
     if not sucesso:
+        record_failed_login(clean_user)
         return False, msg
 
-    clean_user = username.strip().lower()
+    reset_login_attempts(clean_user)
     token = create_auth_token(clean_user)
     payload = decode_auth_token(token)
 

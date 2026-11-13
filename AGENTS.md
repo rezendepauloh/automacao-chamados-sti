@@ -161,8 +161,13 @@ automacao-chamados-sti/
   3. **Prioridade 3:** Valor padrão (*default*) especificado no código.
 - **Tratamento Seguro de URLs vs Caminhos Locais:** NUNCA concatenar `USER_HOME / valor` diretamente caso o valor seja uma URL remota (`http://` ou `https://`). Utilize sempre `resolve_spreadsheet_path(key, default_cache_name)` para evitar caminhos corrompidos (`/root/https:/...`), direcionando URLs remotas para o cache local padronizado em `uploads/`.
 
-### 🔒 Segurança & Cofre de Credenciais (`src/crypto_utils.py`)
-- Senhas sensíveis armazenadas no banco ou arquivos de configuração são cifradas via Fernet.
+### 🔒 Segurança, Hardening & Cofre de Credenciais (`src/crypto_utils.py`, `src/auth.py`)
+- **Nenhum Segredo Rastreável:** Nenhum token, senha ou chave privada deve ser commitado no repositório. O `.gitignore` bloqueia `.env`, `.secret.key`, `*.key`, `*.pem`, `cred_admin*.xml` e `sccm_inventory.json`.
+- **Arquitetura Fail-Closed:** Serviços externos, conexões de banco e APIs (Evolution API, SCCM, PostgreSQL) NUNCA devem iniciar com senhas fracas padrão ou chaves vazias. Na ausência de variáveis obrigatórias, o sistema deve abortar ou recusar a operação imediatamente.
+- **Isolamento de Portas:** Portas internas e de banco no `docker-compose.yml` (PostgreSQL 5432, Evolution API 8080) devem ser mantidas restritas a `127.0.0.1`.
+- **Sanitização de Inputs & Whitelist Regex:** Hostnames, IPs e parâmetros passados a scripts remotos devem ser validados via regex (`^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$`). Credenciais nunca são passadas na linha de comando, e sim via `env`. Filtros LDAP devem utilizar `escape_filter_chars` e caminhos de arquivos devem barrar Path Traversal (`..`).
+- **Rate Limiting & Anti-Brute-Force:** O módulo de autenticação implementa bloqueio temporário (lockout) automático após 5 tentativas consecutivas incorretas (5 minutos de espera).
+- **Permissões 0600:** Arquivos sensíveis (`.env`, `.secret.key`, XMLs de credenciais) recebem permissão restrita `0600` (`-rw-------`).
 - Em caso de troca de ambiente ou chave mestra ausente, a função `decrypt_value()` nunca deve lançar exceção fatal nem retornar o token corrompido como senha válida: deve registrar aviso nos logs e retornar string vazia `""`, permitindo o fallback transparente para o keyring do SO ou variáveis de ambiente.
 
 ### 💻 Interface Streamlit
@@ -180,6 +185,7 @@ automacao-chamados-sti/
 | Objetivo | Comando |
 | :--- | :--- |
 | **Rodar Toda a Suíte de Testes** | `docker exec bancada_streamlit_app python tests/run_all.py` |
+| **Rodar Testes de Segurança & Hardening** | `docker exec bancada_streamlit_app python -m unittest tests/unit/test_security_hardening.py` |
 | **Rodar Testes da IA Campeã** | `docker exec bancada_streamlit_app python -m unittest tests/unit/test_ml_champion_pipeline.py` |
 | **Rodar o Orquestrador de Chamados** | `docker exec bancada_streamlit_app python orquestrador.py` |
 | **Recalibrar IA (GridSearchCV Completo)** | `docker exec bancada_streamlit_app python src/tag_classifier.py --tune` |

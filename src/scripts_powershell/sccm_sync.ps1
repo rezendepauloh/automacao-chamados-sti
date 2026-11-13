@@ -1,8 +1,8 @@
 ﻿param(
     [string]$SiteServer = "srv-1046.in.mpe.ms.gov.br",
     [string]$SiteCode = "PGJ",
-    [string]$Username = "MPE\paulo_admin",
-    [string]$Password = "Abcd4268#",
+    [string]$Username = $env:SCCM_ADMIN_USER,
+    [string]$Password = $env:SCCM_ADMIN_PASSWORD,
     [string]$OutputFile = ""
 )
 
@@ -10,8 +10,34 @@ Write-Host "============================================================" -Foreg
 Write-Host "   SISTEMA BANCADA — SINCRONIZADOR DE INVENTARIO SCCM" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
-$sec = ConvertTo-SecureString $Password -AsPlainText -Force
-$cred = New-Object System.Management.Automation.PSCredential($Username, $sec)
+# Validacao estrita de parametros contra injecao WMI/Command
+if ($SiteServer -notmatch '^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$') {
+    Write-Error "ERRO CRITICO (Fail-Closed): SiteServer invalido: $SiteServer"
+    exit 1
+}
+if ($SiteCode -notmatch '^[a-zA-Z0-9]{1,8}$') {
+    Write-Error "ERRO CRITICO (Fail-Closed): SiteCode invalido: $SiteCode"
+    exit 1
+}
+
+# Resolucao segura de credenciais (Fail-Closed: DPAPI cred_admin.xml ou Variaveis/Parametros explicitos)
+$cred = $null
+if (-not [string]::IsNullOrWhiteSpace($Username) -and -not [string]::IsNullOrWhiteSpace($Password)) {
+    $sec = ConvertTo-SecureString $Password -AsPlainText -Force
+    $cred = New-Object System.Management.Automation.PSCredential($Username, $sec)
+} else {
+    $credFile = Join-Path $PSScriptRoot "cred_admin.xml"
+    if (Test-Path $credFile) {
+        try {
+            $cred = Import-Clixml -Path $credFile
+        } catch {}
+    }
+}
+
+if (-not $cred) {
+    Write-Error "ERRO CRITICO (Fail-Closed): Credenciais do SCCM ausentes. Configure cred_admin.xml ou defina SCCM_ADMIN_USER e SCCM_ADMIN_PASSWORD."
+    exit 1
+}
 
 Write-Host " [1/4] Consultando Colecoes de Dispositivos e Usuarios..." -ForegroundColor Yellow
 $colQuery = "SELECT CollectionID, Name, CollectionType, MemberCount, Comment, LastRefreshTime FROM SMS_Collection"

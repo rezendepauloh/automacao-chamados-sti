@@ -145,8 +145,8 @@ def get_pg_pool():
             pg_host = os.getenv("POSTGRES_HOST", "localhost")
             pg_port = os.getenv("POSTGRES_PORT", "5432")
             pg_db = os.getenv("POSTGRES_DB", "chamados")
-            pg_user = os.getenv("POSTGRES_USER", "postgres")
-            pg_pass = os.getenv("POSTGRES_PASSWORD", "postgres")
+            pg_user = os.getenv("POSTGRES_USER", "bancada_user")
+            pg_pass = os.getenv("POSTGRES_PASSWORD", "")
             _pg_pool = ThreadedConnectionPool(
                 minconn=1,
                 maxconn=20,
@@ -274,8 +274,8 @@ def get_connection():
         pg_host = os.getenv("POSTGRES_HOST", "localhost")
         pg_port = os.getenv("POSTGRES_PORT", "5432")
         pg_db = os.getenv("POSTGRES_DB", "chamados")
-        pg_user = os.getenv("POSTGRES_USER", "postgres")
-        pg_pass = os.getenv("POSTGRES_PASSWORD", "postgres")
+        pg_user = os.getenv("POSTGRES_USER", "bancada_user")
+        pg_pass = os.getenv("POSTGRES_PASSWORD", "")
         return psycopg2.connect(
             host=pg_host,
             port=pg_port,

@@ -56,11 +56,15 @@ load_env_file() {
         echo -e "${C_YELLOW}[!] Arquivo .env não encontrado. Criado automaticamente a partir de .env.example.${C_RESET}"
     fi
     if [ -f .env ]; then
+        chmod 600 .env 2>/dev/null || true
         local env_port
         env_port=$(grep -E '^[[:space:]]*STREAMLIT_PORT[[:space:]]*=' .env | tail -n 1 | cut -d '=' -f 2 | tr -d ' "\r\n')
         if [ -n "$env_port" ]; then
             PORT="$env_port"
         fi
+    fi
+    if [ -f .secret.key ]; then
+        chmod 600 .secret.key 2>/dev/null || true
     fi
     PORT="${PORT:-8501}"
 }

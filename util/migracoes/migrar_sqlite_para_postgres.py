@@ -22,7 +22,7 @@ PG_HOST = os.getenv("POSTGRES_HOST", "db")
 PG_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 PG_DB = os.getenv("POSTGRES_DB", "chamados")
 PG_USER = os.getenv("POSTGRES_USER", "bancada_user")
-PG_PASS = os.getenv("POSTGRES_PASSWORD", "bancada_pass")
+PG_PASS = os.getenv("POSTGRES_PASSWORD", "")
 
 
 def map_sqlite_type_to_pg(sqlite_type: str, col_name: str = "") -> str:
@@ -53,6 +53,10 @@ def migrate():
 
     if not SQLITE_PATH.exists():
         print(f"❌ Arquivo {SQLITE_PATH} não encontrado!")
+        sys.exit(1)
+
+    if not PG_PASS:
+        print("❌ [ERRO CRÍTICO - Fail-Closed] Variável POSTGRES_PASSWORD não definida no ambiente (.env).")
         sys.exit(1)
 
     # Conectar ao SQLite

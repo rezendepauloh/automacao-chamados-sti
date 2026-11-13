@@ -29,15 +29,28 @@ def _get_pwsh_executable() -> Optional[str]:
 def execute_sccm_cim_query(query: str, class_target: str = "") -> List[Dict[str, Any]]:
     """
     Executa uma consulta CIM/WMI no namespace root\\sms\\site_<SITE_CODE> do servidor SCCM
-    via PowerShell 7 (pwsh) utilizando credenciais administrativas do cofre/banco.
+    via PowerShell 7 (pwsh) utilizando credenciais administrativas do cofre/banco passadas com segurança.
     """
-    site_server = _cfg("SCCM_SERVER", os.getenv("SCCM_SERVER", ""))
-    site_code = _cfg("SCCM_SITE_CODE", os.getenv("SCCM_SITE_CODE", "PGJ"))
-    admin_user = _cfg("SCCM_ADMIN_USER", os.getenv("SCCM_ADMIN_USER", "paulo_admin"))
-    admin_password = _cfg("SCCM_ADMIN_PASSWORD", "")
+    site_server = _cfg("SCCM_SERVER", os.getenv("SCCM_SERVER", "")).strip()
+    site_code = _cfg("SCCM_SITE_CODE", os.getenv("SCCM_SITE_CODE", "PGJ")).strip()
+    admin_user = _cfg("SCCM_ADMIN_USER", os.getenv("SCCM_ADMIN_USER", "paulo_admin")).strip()
+    admin_password = _cfg("SCCM_ADMIN_PASSWORD", "") or os.getenv("SCCM_ADMIN_PASSWORD", "")
 
     if not site_server or not site_code:
         logger.warning("⚠️ 'SCCM_SERVER' ou 'SCCM_SITE_CODE' não configurados.")
+        return []
+
+    # Validação estrita de segurança contra Command Injection no hostname e site code
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$", site_server):
+        logger.error(f"❌ Valor inválido para SCCM_SERVER: '{site_server}'")
+        return []
+    if not re.match(r"^[a-zA-Z0-9]{1,8}$", site_code):
+        logger.error(f"❌ Valor inválido para SCCM_SITE_CODE: '{site_code}'")
+        return []
+
+    # Fail-Closed: sem credencial administrativa não executa consulta DCOM remota
+    if not admin_password:
+        logger.warning("⚠️ Operação bloqueada (Fail-Closed): 'SCCM_ADMIN_PASSWORD' não configurado.")
         return []
 
     pwsh_exe = _get_pwsh_executable()
@@ -50,13 +63,17 @@ def execute_sccm_cim_query(query: str, class_target: str = "") -> List[Dict[str,
         short_domain = DOMINIO_CURTO or "MPE"
         domain_user = f"{short_domain}\\{admin_user}"
 
-    escaped_password = admin_password.replace('"', '`"').replace('$', '`$')
+    # Passa credenciais e parâmetros com segurança via variáveis de ambiente do subprocesso
+    subproc_env = os.environ.copy()
+    subproc_env["BANCADA_SCCM_USER"] = domain_user
+    subproc_env["BANCADA_SCCM_PASS"] = admin_password
+
     escaped_query = query.replace('"', '`"')
 
-    # Script PowerShell para execução via Get-CimInstance com conversão para JSON
+    # Script PowerShell com leitura das variáveis do processo atual (sem expor credenciais na linha de comando)
     ps_script = f"""
-    $secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force;
-    $mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd);
+    $secpasswd = ConvertTo-SecureString $env:BANCADA_SCCM_PASS -AsPlainText -Force;
+    $mycreds = New-Object System.Management.Automation.PSCredential ($env:BANCADA_SCCM_USER, $secpasswd);
     $opt = New-CimSessionOption -Protocol Dcom;
     $sess = New-CimSession -ComputerName "{site_server}" -Credential $mycreds -SessionOption $opt -ErrorAction SilentlyContinue;
     if (-not $sess) {{
@@ -74,7 +91,8 @@ def execute_sccm_cim_query(query: str, class_target: str = "") -> List[Dict[str,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=120
+            timeout=120,
+            env=subproc_env
         )
         dur = time.time() - t0
 

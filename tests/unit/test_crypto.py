@@ -73,10 +73,10 @@ class TestCryptoUtils(unittest.TestCase):
         self.assertEqual(mask_secret(""), "")
         self.assertEqual(mask_secret("1234"), "••••")
         
-        long_pass = "Abcd4268#MasterPassword"
+        long_pass = "DummyTest#MasterPassword99"
         masked = mask_secret(long_pass, visible_chars=4)
-        self.assertTrue(masked.startswith("Abcd"))
-        self.assertTrue(masked.endswith("word"))
+        self.assertTrue(masked.startswith("Dumm"))
+        self.assertTrue(masked.endswith("rd99"))
         self.assertIn("••••••••", masked)
 
 if __name__ == "__main__":

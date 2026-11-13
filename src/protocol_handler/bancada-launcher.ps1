@@ -62,6 +62,20 @@ try {
     $psEngine   = $params['ps_engine']
     $adUser     = if ($params['ad_user']) { $params['ad_user'].Trim() } else { "" }
 
+    # Validação estrita (Whitelist Regex) contra Command / Argument Injection via URI bancada://
+    if ($tool -and $tool -notmatch '^[a-z0-9_]{1,40}$') {
+        throw "Parâmetro 'tool' inválido ou contém caracteres proibidos: $tool"
+    }
+    if ($targetHost -and $targetHost -notmatch '^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$') {
+        throw "Parâmetro 'host' inválido ou potencialmente malicioso: $targetHost"
+    }
+    if ($adUser -and $adUser -notmatch '^[a-zA-Z0-9._\-\\@]{1,128}$') {
+        throw "Parâmetro 'ad_user' inválido: $adUser"
+    }
+    if ($usersPurge -and $usersPurge -notmatch '^[a-zA-Z0-9._\-,; ]{1,512}$') {
+        throw "Parâmetro 'users' contém caracteres não permitidos."
+    }
+
     $currentEngineName = if ($PSVersionTable.PSVersion.Major -ge 7) { "⚡ PowerShell 7+ ($($PSVersionTable.PSVersion))" } else { "💻 Windows PowerShell 5.1 ($($PSVersionTable.PSVersion))" }
     Write-Host " [INFO] Interpretador em uso  : $currentEngineName" -ForegroundColor Cyan
     Write-Host " [INFO] Ferramenta solicitada : $tool" -ForegroundColor Green
@@ -74,8 +88,36 @@ try {
         Write-Host " [INFO] Iniciando Sincronização do Inventário SCCM via WMI/CIM..." -ForegroundColor Cyan
         $outPath = Join-Path $env:USERPROFILE "sccm_inventory.json"
         $serverHost = if ($targetHost) { $targetHost } else { "srv-1046.in.mpe.ms.gov.br" }
-        $sec = ConvertTo-SecureString "Abcd4268#" -AsPlainText -Force
-        $cred = New-Object System.Management.Automation.PSCredential("MPE\paulo_admin", $sec)
+
+        # Resolução segura de credenciais (Fail-Closed: DPAPI cred_admin.xml -> Variáveis de Ambiente -> Prompt Interativo)
+        $cred = $null
+        $credCandidates = @(
+            (Join-Path $PSScriptRoot "cred_admin.xml"),
+            (Join-Path $PSScriptRoot "..\scripts_powershell\cred_admin.xml"),
+            "C:\BancadaTools\cred_admin.xml",
+            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\cred_admin.xml",
+            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\cred_admin.xml"
+        )
+        foreach ($cPath in $credCandidates) {
+            if ($cPath -and (Test-Path $cPath)) {
+                try {
+                    $cred = Import-Clixml -Path $cPath
+                    Write-Host " [SEGURANÇA] Credencial DPAPI carregada com sucesso de: $cPath" -ForegroundColor Green
+                    break
+                } catch {}
+            }
+        }
+        if (-not $cred -and -not [string]::IsNullOrWhiteSpace($env:SCCM_ADMIN_USER) -and -not [string]::IsNullOrWhiteSpace($env:SCCM_ADMIN_PASSWORD)) {
+            $sec = ConvertTo-SecureString $env:SCCM_ADMIN_PASSWORD -AsPlainText -Force
+            $cred = New-Object System.Management.Automation.PSCredential($env:SCCM_ADMIN_USER, $sec)
+        }
+        if (-not $cred) {
+            Write-Host " [SEGURANÇA] Solicitação de credencial administrativa do domínio para consulta SCCM..." -ForegroundColor Yellow
+            $cred = Get-Credential -Message "Informe a credencial administrativa (ex: MPE\seu_admin) para sincronizar o SCCM"
+        }
+        if (-not $cred) {
+            throw "Operação abortada (Fail-Closed): Nenhuma credencial administrativa válida foi fornecida para o SCCM."
+        }
 
         Write-Host " [1/4] Consultando Coleções de Dispositivos e Usuários..." -ForegroundColor Yellow
         $colQuery = "SELECT CollectionID, Name, CollectionType, MemberCount, Comment, LastRefreshTime FROM SMS_Collection"

@@ -8,8 +8,15 @@ __pycache__/
 .cache/
 **/.cache/
 
-# Ambientes virtuais e dependências
+# Ambientes virtuais, segredos e dependências
 .env
+.env.*
+!.env.example
+.secret.key
+*.key
+*.pem
+*.pfx
+*.p12
 .venv
 .venv/
 env/
@@ -92,11 +99,17 @@ temp/
 src/js
 src/js/server-info.js
 
-# Cred_admin Powershell
+# Cred_admin Powershell e Inventários Locais
+**/cred_admin*.xml
+cred_admin*.xml
 src/scripts_powershell/cred_admin.xml
+src/scripts_powershell/cred_admin_ad.xml
 src/scripts_powershell/analisador/cred_admin.xml
 src/scripts_powershell/perfis/cred_admin.xml
 src/scripts_powershell/manutencao/cred_admin.xml
+src/scripts_powershell/remover_ad_sccm/cred_admin.xml
+sccm_inventory.json
+data/sccm_inventory.json
 
 # Credential Docker RedHat
 Dockerfile-MP-RedHat

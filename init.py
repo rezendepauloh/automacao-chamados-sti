@@ -49,7 +49,16 @@ def get_local_ip() -> str:
     return "localhost"
 
 def setup_environment(local_ip: str) -> None:
-    """Configura arquivos, diretórios e schema de banco de dados pré-inicialização."""
+    """Configura arquivos, diretórios, permissões de segredos e schema de banco de dados pré-inicialização."""
+    # Garante permissões restritas (0600) em arquivos sensíveis no disco
+    for secret_name in (".env", ".secret.key"):
+        secret_file = ROOT_DIR / secret_name
+        if secret_file.exists():
+            try:
+                os.chmod(secret_file, 0o600)
+            except OSError:
+                pass
+
     # Garante criação de toda a árvore de pastas de dados, uploads, modelos e logs
     try:
         from src.config import ensure_project_directories
@@ -140,7 +149,7 @@ def main() -> None:
     except Exception as e_daemon:
         print(f" {YELLOW}[!] Aviso: Não foi possível iniciar o Cron Daemon: {e_daemon}{RESET}")
 
-    # Executa o Streamlit
+    # Executa o Streamlit com proteções WebUI ativas (XSRF, Upload Limit, Telemetria desativada)
     cmd = [
         sys.executable,
         "-m",
@@ -152,6 +161,9 @@ def main() -> None:
         "--server.address",
         "0.0.0.0",
         "--server.headless=true",
+        "--server.enableXsrfProtection=true",
+        "--server.maxUploadSize=50",
+        "--browser.gatherUsageStats=false",
         "--logger.level=error"
     ]
 

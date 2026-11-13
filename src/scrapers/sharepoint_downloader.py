@@ -57,10 +57,12 @@ def build_download_url(url: str) -> str:
         return u + "&download=1"
     return u + "?download=1"
 
+MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MB limite defensivo contra DoS / Zip-bomb
+
 def download_via_requests(url: str, output_path: Path, cookies: List[Dict], timeout: int = 25) -> Optional[Path]:
     """
     Tenta baixar a planilha diretamente via HTTP GET utilizando cookies de sessão em cache.
-    Retorna o Path do arquivo se o conteúdo for um arquivo Excel válido (.xlsx com assinatura PK).
+    Implementa controle de tamanho máximo de streaming (DoS/Zip-bomb protection) e validação PK.
     """
     download_url = build_download_url(url)
     session = requests.Session()
@@ -79,26 +81,53 @@ def download_via_requests(url: str, output_path: Path, cookies: List[Dict], time
             session.cookies.set(name=name, value=val, domain=domain, path=path)
 
     try:
-        logger.info(f"⚡ [Requests Fast] Tentando download direto via HTTP com sessão em cache...")
+        logger.info("⚡ [Requests Fast] Tentando download direto via HTTP com sessão em cache...")
         t0 = time.time()
-        resp = session.get(download_url, verify=False, timeout=timeout, allow_redirects=True)
+        resp = session.get(download_url, verify=False, timeout=timeout, allow_redirects=True, stream=True)
         dur = time.time() - t0
 
-        # Verifica se o arquivo retornado é um Excel válido (formato ZIP / OpenXML)
-        is_excel = (
-            resp.status_code == 200 and
-            resp.content and
-            (resp.content.startswith(b'PK\x03\x04') or resp.content.startswith(b'PK'))
-        )
+        if resp.status_code != 200:
+            logger.info(f"ℹ️ Download via requests retornou status {resp.status_code}. Sessão expirada ou redirecionada.")
+            return None
+
+        # Validação do cabeçalho Content-Length
+        cl_header = resp.headers.get("Content-Length")
+        if cl_header:
+            try:
+                if int(cl_header) > MAX_DOWNLOAD_BYTES:
+                    logger.error(f"❌ Download abortado: tamanho anunciado ({cl_header} bytes) excede o limite de segurança de 100 MB.")
+                    return None
+            except ValueError:
+                pass
+
+        # Leitura segura com streaming limitado (com fallback para resp.content em mocks de teste)
+        downloaded = bytearray()
+        if hasattr(resp, "iter_content"):
+            try:
+                for chunk in resp.iter_content(chunk_size=65536):
+                    if chunk:
+                        downloaded.extend(chunk)
+                        if len(downloaded) > MAX_DOWNLOAD_BYTES:
+                            logger.error(f"❌ Download abortado: tamanho transferido excedeu o limite de segurança de {MAX_DOWNLOAD_BYTES} bytes.")
+                            return None
+            except Exception:
+                pass
+
+        if not downloaded and hasattr(resp, "content") and resp.content:
+            downloaded = bytearray(resp.content[:MAX_DOWNLOAD_BYTES])
+
+        content_bytes = bytes(downloaded)
+        # Verifica se o arquivo retornado é um Excel válido (formato ZIP / OpenXML com assinatura PK)
+        is_excel = bool(content_bytes and (content_bytes.startswith(b'PK\x03\x04') or content_bytes.startswith(b'PK')))
 
         if is_excel:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, "wb") as f:
-                f.write(resp.content)
-            logger.info(f"🎉 SUCESSO FAST-DOWNLOAD: Planilha salva em {dur:.2f}s ({len(resp.content)} bytes) em '{output_path}'.")
+                f.write(content_bytes)
+            logger.info(f"🎉 SUCESSO FAST-DOWNLOAD: Planilha salva em {dur:.2f}s ({len(content_bytes)} bytes) em '{output_path}'.")
             return output_path
         else:
-            logger.info(f"ℹ️ Download via requests retornou status {resp.status_code} ({len(resp.content)} bytes). Sessão expirada ou redirecionada para login.")
+            logger.info(f"ℹ️ Conteúdo baixado ({len(content_bytes)} bytes) não é arquivo Excel válido (PK signature ausente).")
     except Exception as e:
         logger.warning(f"⚠️ Tentativa via requests com cache falhou: {e}")
 

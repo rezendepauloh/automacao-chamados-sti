@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-ca-certificates \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && mkdir -p /opt/microsoft/powershell/7 \
-    && curl -sSLk https://packages.microsoft.com/debian/12/prod/pool/main/p/powershell/powershell_7.4.6-1.deb_amd64.deb -o /tmp/ps.deb \
+    && curl -sSL https://packages.microsoft.com/debian/12/prod/pool/main/p/powershell/powershell_7.4.6-1.deb_amd64.deb -o /tmp/ps.deb \
     && dpkg-deb -x /tmp/ps.deb /tmp/ps_extracted \
     && cp -r /tmp/ps_extracted/opt/microsoft/powershell/7/* /opt/microsoft/powershell/7/ \
     && ln -sf /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh \
@@ -85,10 +85,13 @@ ENV STREAMLIT_PORT=${STREAMLIT_PORT}
 # Expõe a porta padrão do Streamlit
 EXPOSE ${STREAMLIT_PORT}
 
-# Variáveis padrão de execução do Streamlit
+# Variáveis padrão de execução do Streamlit (Hardened)
 ENV STREAMLIT_SERVER_PORT=${STREAMLIT_PORT} \
     STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
-    STREAMLIT_SERVER_HEADLESS=true
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=true \
+    STREAMLIT_SERVER_MAX_UPLOAD_SIZE=50 \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 # Checagem de integridade do serviço Streamlit
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \

@@ -83,22 +83,25 @@ def resolve_spreadsheet_path(key: str, default_local_cache_name: str = "") -> Pa
     Resolve com segurança o caminho de arquivo para uma planilha.
     Se a configuração for uma URL do SharePoint (ou vazia com cache local),
     retorna o caminho local em uploads/<default_local_cache_name>.
-    Se for caminho relativo válido em disco, resolve contra USER_HOME.
+    Se for caminho relativo válido em disco, resolve contra USER_HOME bloqueando Path Traversal ('..').
     """
+    safe_cache = Path(default_local_cache_name).name if default_local_cache_name else f"{key.lower()}.xlsx"
     val = get_spreadsheet_setting(key)
     if is_sharepoint_url(val):
-        if default_local_cache_name:
-            return BASE_DIR / "uploads" / default_local_cache_name
-        return BASE_DIR / "uploads" / f"{key.lower()}.xlsx"
+        return BASE_DIR / "uploads" / safe_cache
 
     if val:
-        p = Path(val)
+        raw_str = str(val).strip().replace("\\", "/")
+        p = Path(raw_str)
+        # Bloqueia vetores de Path Traversal ('..') em caminhos configurados
+        if ".." in p.parts:
+            raise ValueError(f"Caminho inválido (Path Traversal detectado) para '{key}': {val}")
         if p.is_absolute():
             return p
         return USER_HOME / p
 
     if default_local_cache_name:
-        return BASE_DIR / "uploads" / default_local_cache_name
+        return BASE_DIR / "uploads" / safe_cache
     return USER_HOME
 
 # -----------------------------------------------------------------------------
@@ -436,6 +439,14 @@ def ensure_project_directories(base_dir: Path = None) -> list[Path]:
 
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
+
+    # Garante permissões restritas (0600) em arquivos de segredos e chaves locais
+    for secret_file in (root / ".env", root / ".secret.key"):
+        if secret_file.exists():
+            try:
+                os.chmod(secret_file, 0o600)
+            except OSError:
+                pass
     return dirs
 
 
@@ -658,16 +669,23 @@ def fetch_ad_department(conn, query_val: str, is_username: bool = True) -> str:
         
     try:
         from ldap3 import SUBTREE
+        try:
+            from ldap3.utils.conv import escape_filter_chars
+        except Exception:
+            def escape_filter_chars(val: str) -> str:
+                return str(val).replace('\\', r'\5c').replace('*', r'\2a').replace('(', r'\28').replace(')', r'\29').replace('\x00', r'\00')
+
         target_attrs = ['department', 'physicalDeliveryOfficeName']
+        safe_query = escape_filter_chars(str(query_val).strip())
         
         if is_username:
-            search_filters = [f'(sAMAccountName={query_val})']
+            search_filters = [f'(sAMAccountName={safe_query})']
         else:
             search_filters = [
-                f'(displayName={query_val})',
-                f'(cn={query_val})',
-                f'(name={query_val})',
-                f'(displayName=*{query_val}*)'
+                f'(displayName={safe_query})',
+                f'(cn={safe_query})',
+                f'(name={safe_query})',
+                f'(displayName=*{safe_query}*)'
             ]
             
         entry = None
@@ -832,38 +850,49 @@ def fetch_sccm_data(username: str) -> dict:
         _sccm_cache[username_lower] = res_data
         return res_data
 
-    # 3. Monta a consulta WMI/CIM com correspondência EXATA no LastLogonUserName
-    query = f"SELECT * FROM SMS_R_System WHERE LastLogonUserName = '{username}'"
+    # 3. Valida estritamente identificadores (Whitelist Regex) contra Command / WQL Injection
+    if not re.match(r"^[a-zA-Z0-9_.\-@\\]{1,128}$", username.strip()):
+        logger.error(f"[SCCM] Nome de usuário rejeitado pela validação de segurança: '{username}'")
+        return res_data
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$", site_server.strip()) or not re.match(r"^[a-zA-Z0-9]{1,8}$", site_code.strip()):
+        logger.error("[SCCM] SCCM_SERVER ou SCCM_SITE_CODE contém caracteres inválidos.")
+        return res_data
+
+    # Monta a consulta WMI/CIM com correspondência EXATA no LastLogonUserName
+    safe_user = username.strip().replace("'", "")
+    query = f"SELECT * FROM SMS_R_System WHERE LastLogonUserName = '{safe_user}'"
     
-    # 4. Constrói o comando do PowerShell de acordo com a versão e credenciais
+    # 4. Constrói o comando do PowerShell de acordo com a versão e credenciais (via variáveis de ambiente seguras)
+    subproc_env = os.environ.copy()
     if admin_password:
-        logger.info(f"[SCCM] Consultando SCCM para '{username}' via {ps_flavor} (usando credenciais de '{admin_user}')")
+        logger.info(f"[SCCM] Consultando SCCM para '{safe_user}' via {ps_flavor} (usando credenciais de '{admin_user}')")
         domain_user = admin_user
         if "\\" not in domain_user and "@" not in domain_user:
             short_domain = DOMINIO_CURTO or "MPE"
             domain_user = f"{short_domain}\\{admin_user}"
             
-        escaped_password = admin_password.replace('"', '`"').replace('$', '`$')
+        subproc_env["BANCADA_PS_USER"] = domain_user
+        subproc_env["BANCADA_PS_PASS"] = admin_password
         
         if ps_flavor == "pwsh":
             # No PowerShell 7 (Linux/Windows), Get-WmiObject foi removido; utiliza-se Get-CimInstance
             ps_command = (
-                f'$secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force; '
-                f'$mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd); '
-                f'Get-CimInstance -ComputerName {site_server} -Namespace \'root\\sms\\site_{site_code}\' '
+                '$secpasswd = ConvertTo-SecureString $env:BANCADA_PS_PASS -AsPlainText -Force; '
+                '$mycreds = New-Object System.Management.Automation.PSCredential ($env:BANCADA_PS_USER, $secpasswd); '
+                f'Get-CimInstance -ComputerName {site_server.strip()} -Namespace \'root\\sms\\site_{site_code.strip()}\' '
                 f'-Query "{query}" -Credential $mycreds | Select-Object IPAddresses, Name | ConvertTo-Json'
             )
         else:
             # No Windows PowerShell 5.1, Get-WmiObject com PacketPrivacy garante compatibilidade DCOM completa
             ps_command = (
-                f'$secpasswd = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force; '
-                f'$mycreds = New-Object System.Management.Automation.PSCredential ("{domain_user}", $secpasswd); '
-                f'Get-WmiObject -ComputerName {site_server} -Namespace \'root\\sms\\site_{site_code}\' '
+                '$secpasswd = ConvertTo-SecureString $env:BANCADA_PS_PASS -AsPlainText -Force; '
+                '$mycreds = New-Object System.Management.Automation.PSCredential ($env:BANCADA_PS_USER, $secpasswd); '
+                f'Get-WmiObject -ComputerName {site_server.strip()} -Namespace \'root\\sms\\site_{site_code.strip()}\' '
                 f'-Query "{query}" -Credential $mycreds -Authentication PacketPrivacy | Select-Object IPAddresses, Name | ConvertTo-Json'
             )
     else:
-        logger.info(f"[SCCM] Consultando SCCM para '{username}' via {ps_flavor} (sem credenciais administrativas adicionais)")
-        ps_command = f"Get-CimInstance -ComputerName {site_server} -Namespace 'root\\sms\\site_{site_code}' -Query \"{query}\" | Select-Object IPAddresses, Name | ConvertTo-Json"
+        logger.info(f"[SCCM] Consultando SCCM para '{safe_user}' via {ps_flavor} (sem credenciais administrativas adicionais)")
+        ps_command = f"Get-CimInstance -ComputerName {site_server.strip()} -Namespace 'root\\sms\\site_{site_code.strip()}' -Query \"{query}\" | Select-Object IPAddresses, Name | ConvertTo-Json"
     
     t0 = time.time()
     try:
@@ -873,6 +902,7 @@ def fetch_sccm_data(username: str) -> dict:
             "timeout": 10,
             "encoding": "utf-8",
             "errors": "replace",
+            "env": subproc_env,
         }
         if sys.platform == "win32":
             run_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW

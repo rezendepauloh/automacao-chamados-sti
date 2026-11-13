@@ -435,6 +435,12 @@ _mock_module_if_missing("ldap3.core", {})
 _mock_module_if_missing("ldap3.core.exceptions", {
     "LDAPException": Exception,
 })
+def _mock_escape_filter_chars(val: str) -> str:
+    return str(val).replace('\\', r'\5c').replace('*', r'\2a').replace('(', r'\28').replace(')', r'\29').replace('\x00', r'\00')
+_mock_module_if_missing("ldap3.utils", {})
+_mock_module_if_missing("ldap3.utils.conv", {
+    "escape_filter_chars": _mock_escape_filter_chars,
+})
 
 # 6. Mock de icalendar
 _mock_module_if_missing("icalendar", {

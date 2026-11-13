@@ -113,12 +113,20 @@ def modal_autenticar_operador():
                 st.error("Informe a senha do operador.")
                 return
 
+            from src.auth import check_login_rate_limit, record_failed_login, reset_login_attempts
+            allowed, wait_sec = check_login_rate_limit(auth_user)
+            if not allowed:
+                st.error(f"⛔ Muitas tentativas incorretas. Cofre bloqueado temporariamente ({wait_sec}s restantes).")
+                return
+
             sucesso, msg = authenticate_user_credentials(auth_user, auth_pass)
             if sucesso:
+                reset_login_attempts(auth_user)
                 unlock_vault()
                 st.toast(f"✅ Cofre destravado por {VAULT_TIMEOUT_SECONDS // 60} minutos!", icon="🔓")
                 st.rerun()
             else:
+                record_failed_login(auth_user)
                 st.error(f"Falha na autenticação: {msg}")
     with c2:
         if st.button("Cancelar", use_container_width=True):

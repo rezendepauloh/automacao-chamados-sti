@@ -30,10 +30,10 @@ def get_printer_url(ip_raw: str) -> str:
 
 
 def ping_host(host: str, count: int = 4, timeout_ms: int = 1000) -> tuple[bool, str]:
-    """Executa um ping no host informado (IP ou Hostname) e retorna status (bool) e a saída do terminal (str)."""
+    """Executa um ping no host informado (IP ou Hostname) com validação estrita e retorna status (bool) e a saída do terminal (str)."""
     clean_host = str(host).replace("https://", "").replace("http://", "").strip().split("/")[0]
-    if not clean_host:
-        return False, "Host inválido."
+    if not clean_host or not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$", clean_host):
+        return False, "Host inválido ou potencialmente inseguro."
 
     param = "-n" if platform.system().lower() == "windows" else "-c"
     timeout_param = ["-w", str(timeout_ms)] if platform.system().lower() == "windows" else ["-W", "1"]

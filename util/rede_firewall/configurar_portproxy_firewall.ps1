@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Configura o PortProxy e Firewall do Windows para redirecionar as portas do WSL2 (Sistema Bancada).
 .DESCRIPTION

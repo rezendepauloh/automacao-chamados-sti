@@ -193,15 +193,18 @@ def _ensure_cred_admin_xml():
                     continue
 
                 domain_user = sccm_admin_user if ("\\" in sccm_admin_user or "@" in sccm_admin_user) else f"mpe\\{sccm_admin_user}"
-                escaped_pass = sccm_admin_pass.replace('"', '`"').replace('$', '`$')
+
+                subproc_env = os.environ.copy()
+                subproc_env["BANCADA_XML_USER"] = domain_user
+                subproc_env["BANCADA_XML_PASS"] = sccm_admin_pass
 
                 gen_ps = (
-                    f'$sec = ConvertTo-SecureString "{escaped_pass}" -AsPlainText -Force; '
-                    f'$cred = New-Object System.Management.Automation.PSCredential ("{domain_user}", $sec); '
+                    '$sec = ConvertTo-SecureString $env:BANCADA_XML_PASS -AsPlainText -Force; '
+                    '$cred = New-Object System.Management.Automation.PSCredential ($env:BANCADA_XML_USER, $sec); '
                     f'$cred | Export-Clixml -Path "{target_xml}" -Force'
                 )
 
-                gen_kwargs = {"capture_output": True, "text": True}
+                gen_kwargs = {"capture_output": True, "text": True, "env": subproc_env}
                 if sys.platform == "win32":
                     gen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
                 gen_res = subprocess.run(
@@ -210,6 +213,10 @@ def _ensure_cred_admin_xml():
                 )
 
                 if gen_res.returncode == 0:
+                    try:
+                        os.chmod(target_xml, 0o600)
+                    except OSError:
+                        pass
                     logger.info(f"✅ cred_admin.xml regenerado com sucesso em '{target_xml}'!")
                 else:
                     logger.error(f"❌ Falha ao gerar cred_admin.xml em '{target_xml}': {gen_res.stderr}")
@@ -266,15 +273,18 @@ def _ensure_cred_admin_xml():
                     continue
 
                 domain_user = ad_admin_user if ("\\" in ad_admin_user or "@" in ad_admin_user) else f"mpe\\{ad_admin_user}"
-                escaped_pass = ad_admin_pass.replace('"', '`"').replace('$', '`$')
+
+                subproc_env = os.environ.copy()
+                subproc_env["BANCADA_XML_USER"] = domain_user
+                subproc_env["BANCADA_XML_PASS"] = ad_admin_pass
 
                 gen_ps = (
-                    f'$sec = ConvertTo-SecureString "{escaped_pass}" -AsPlainText -Force; '
-                    f'$cred = New-Object System.Management.Automation.PSCredential ("{domain_user}", $sec); '
+                    '$sec = ConvertTo-SecureString $env:BANCADA_XML_PASS -AsPlainText -Force; '
+                    '$cred = New-Object System.Management.Automation.PSCredential ($env:BANCADA_XML_USER, $sec); '
                     f'$cred | Export-Clixml -Path "{target_xml}" -Force'
                 )
 
-                gen_kwargs = {"capture_output": True, "text": True}
+                gen_kwargs = {"capture_output": True, "text": True, "env": subproc_env}
                 if sys.platform == "win32":
                     gen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
                 gen_res = subprocess.run(
@@ -282,6 +292,10 @@ def _ensure_cred_admin_xml():
                     **gen_kwargs
                 )
                 if gen_res.returncode == 0:
+                    try:
+                        os.chmod(target_xml, 0o600)
+                    except OSError:
+                        pass
                     logger.info(f"✅ cred_admin_ad.xml regenerado com sucesso em '{target_xml}'!")
 
 
@@ -338,6 +352,12 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
         st.error(f"❌ Arquivo de script não encontrado no caminho: `{script_path}`")
         return None
 
+    # Validação estrita de segurança contra Command Injection no hostname/alvo
+    clean_host = str(host or "").strip()
+    if clean_host and not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$", clean_host):
+        st.error(f"❌ Hostname/IP contém caracteres inválidos ou suspeitos: `{clean_host}`")
+        return None
+
     _ensure_cred_admin_xml()
     ps_exe = _get_powershell_exe(ps_option)
 
@@ -358,8 +378,16 @@ def start_background_ps_job(job_id: str, script_name: str, host: str, script_pat
         temp_dir = script_source_dir
         target_script_path = script_path
 
-    formatted_args = [f'"{a}"' if " " in str(a) else str(a) for a in args]
-    args_str = " ".join(formatted_args)
+    # Sanitização defensiva contra injeção de comandos nos parâmetros
+    safe_args = []
+    for a in args:
+        val = str(a).strip()
+        if re.match(r"^-[a-zA-Z0-9_]+$", val):
+            safe_args.append(val)
+        else:
+            escaped = val.replace("`", "``").replace('"', '`"').replace("$", "`$")
+            safe_args.append(f'"{escaped}"')
+    args_str = " ".join(safe_args)
     ps_cmd_str = (
         f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
         f"$OutputEncoding = [System.Text.Encoding]::UTF8; "
