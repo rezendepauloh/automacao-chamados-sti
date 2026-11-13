@@ -248,11 +248,8 @@ def render_contracts_page():
     if not df_publicacoes.empty:
         df_publicacoes.columns = [str(col).strip() for col in df_publicacoes.columns]
 
-    fiscais_foco = [
-        "Paulo Henrique Gonçalves Rezende",
-        "Reginaldo da Silva Bandeira",
-        "Luiz Leonardo Villalba"
-    ]
+    from src.services.member_matcher import BANCADA_MEMBROS
+    fiscais_foco = [m["nome"] for m in BANCADA_MEMBROS if "nome" in m]
 
     st.subheader("📊 Resumo de Contratos por Fiscal")
     kpi_cols = st.columns(3)

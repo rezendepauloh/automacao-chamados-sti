@@ -24,7 +24,7 @@ import keyring
 from src.config import (
     setup_logging, DEBUG_DIR_PLANTOES,
     SHAREPOINT_MATUTINO_URL, CITSMART_EMAIL, PASSWORD,
-    HEADLESS, EXPLICIT_WAIT, USERNAME, cleanup_old_files
+    HEADLESS, EXPLICIT_WAIT, USERNAME, SIMP_URL, cleanup_old_files
 )
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
@@ -266,7 +266,8 @@ def scrape_simp_plantoes(ano: int = 2026):
             context = browser.new_context(ignore_https_errors=True)
             page = context.new_page()
 
-            login_url = "https://simp.mpms.mp.br/"
+            simp_base = (SIMP_URL or "").rstrip('/')
+            login_url = f"{simp_base}/"
             logger.info(f"🔗 Conectando à página de login: {login_url}")
             page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
             time.sleep(2)
@@ -290,7 +291,7 @@ def scrape_simp_plantoes(ano: int = 2026):
             except Exception as e_login:
                 logger.info(f"ℹ️ Etapa de login concluída ou pré-existente: {e_login}")
 
-            plantao_url = "https://simp.mpms.mp.br/sistemas/Plantao-STI"
+            plantao_url = f"{simp_base}/sistemas/Plantao-STI"
             logger.info(f"🔗 Navegando até o módulo Plantão STI: {plantao_url}")
             page.goto(plantao_url, wait_until="domcontentloaded", timeout=60000)
             time.sleep(4)
@@ -301,8 +302,9 @@ def scrape_simp_plantoes(ano: int = 2026):
                 logger.info("🖼️ IFRAME DETECTADO! Alternando contexto para o iframe...")
                 frame = page.frame_locator("iframe").first
             else:
-                logger.info("ℹ️ Nenhum iframe direto. Navegando para URL interna: https://simp.mpms.mp.br/sistemas/plantao")
-                page.goto("https://simp.mpms.mp.br/sistemas/plantao", wait_until="domcontentloaded", timeout=60000)
+                fallback_plantao = f"{simp_base}/sistemas/plantao"
+                logger.info(f"ℹ️ Nenhum iframe direto. Navegando para URL interna: {fallback_plantao}")
+                page.goto(fallback_plantao, wait_until="domcontentloaded", timeout=60000)
                 time.sleep(4)
 
             month_buttons = frame.locator("xpath=//div[contains(@class,'p-selectbutton')]//div[@role='button'] | //div[contains(@class,'p-selectbutton')]//div[contains(@class,'p-button')]")

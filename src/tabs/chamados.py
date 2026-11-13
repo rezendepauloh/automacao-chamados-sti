@@ -35,6 +35,7 @@ from src.components.pagination import (
 )
 from src.components.metric_cards import render_metric_cards
 
+from src.config import CITSMART_URL, OTRS_URL
 from src.database.connection import DB_PATH
 
 TAG_COLORS = {
@@ -229,6 +230,10 @@ def show_ticket_details(row_or_id):
             
             link_url = row.get('link')
             if link_url:
+                link_url = str(link_url).strip()
+                if not link_url.startswith("http://") and not link_url.startswith("https://"):
+                    otrs_base = (OTRS_URL).rstrip('/')
+                    link_url = f"{otrs_base}/{link_url.lstrip('/')}"
                 st.markdown("---")
                 st.link_button("🔗 Abrir Chamado Original", link_url, width="stretch")
     
@@ -746,11 +751,15 @@ def render_chamados_page():
         def format_id_link(row):
             cid = str(row['id']).strip()
             link = str(row.get('link', '')).strip() if 'link' in row else ''
+            citsmart_base = (CITSMART_URL).rstrip('/')
+            otrs_base = (OTRS_URL).rstrip('/')
             if not link or link.lower() in ["none", "nan", "null", ""]:
-                if row['base'] == 'CitSmart':
-                    link = f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}"
+                if row.get('base') == 'CitSmart':
+                    link = f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}"
                 else:
-                    link = "https://central.mpms.mp.br/otrs/index.pl"
+                    link = f"{otrs_base}/otrs/index.pl"
+            elif not link.startswith("http://") and not link.startswith("https://"):
+                link = f"{otrs_base}/{link.lstrip('/')}"
             return f"{link}#id:{cid}"
 
         df_display['id'] = df_display.apply(format_id_link, axis=1)

@@ -189,7 +189,7 @@ def render_calendario_geral_page():
     st.sidebar.markdown("## 🔍 Opções Adicionais")
 
     opcoes_servidores = [
-        "🟢 Apenas Bancada (Paulo, Reginaldo, Luiz, Murillo)",
+        "🟢 Apenas Integrantes da Bancada",
         "🌐 Todos os Servidores da STI"
     ]
     selected_servidor_mode = st.sidebar.radio("👥 Servidores Exibidos (Plantões):", opcoes_servidores)
@@ -524,12 +524,8 @@ def render_calendario_geral_page():
     if chk_escala_ferias:
         df_ferias_cal = get_ferias_df()
         if not df_ferias_cal.empty:
-            paleta_local = {
-                "Paulo Rezende": "#10b981",
-                "Reginaldo Bandeira": "#3b82f6",
-                "Luiz Villalba": "#f59e0b",
-                "Alex": "#8b5cf6"
-            }
+            from src.tabs.ferias import PALETA_MEMBROS
+            paleta_local = PALETA_MEMBROS
             for idx, r_fe in df_ferias_cal.iterrows():
                 dt_ini_fe = str(r_fe.get("data_inicio_iso", "")).strip()
                 dt_fim_fe = str(r_fe.get("data_fim_iso", "")).strip()

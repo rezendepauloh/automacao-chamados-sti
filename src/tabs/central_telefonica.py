@@ -108,7 +108,7 @@ def render_central_telefonica_page():
                     st.rerun()
 
             from src.config import OXE_URL
-            oxe_web_url = OXE_URL if OXE_URL else "https://10.12.32.30/"
+            oxe_web_url = OXE_URL if OXE_URL else ""
             st.link_button(
                 "🌐 Acessar Central OXE ↗",
                 url=oxe_web_url,

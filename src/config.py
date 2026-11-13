@@ -108,12 +108,14 @@ def resolve_spreadsheet_path(key: str, default_local_cache_name: str = "") -> Pa
 # Instalações antes de rodar
 # -----------------------------------------------------------------------------
 
-# Credenciais
+# Credenciais e Portais
 CITSMART_URL = _cfg("CITSMART_LINK", "")
 CITSMART_NOVA_FILA = _cfg("CITSMART_LINK_NOVO", "")
 OTRS_URL = _cfg("OTRS_LINK", "")
-PROMOTORIAS_URL = "https://www.mpms.mp.br/promotorias"
-PROCURADORIAS_URL = "https://www.mpms.mp.br/procuradorias"
+PROMOTORIAS_URL = _cfg("PROMOTORIAS_URL", "")
+PROCURADORIAS_URL = _cfg("PROCURADORIAS_URL", "")
+SIMP_URL = _cfg("SIMP_URL")
+INTRANET_URL = _cfg("INTRANET_URL", f"https://www.{_cfg('AD_EMAIL', os.getenv('AD_EMAIL'))}/intranet")
 
 PAPERCUT_URL = _cfg("PAPERCUT_URL", "")
 PAPERCUT_PRINTER_LIST_URL = _cfg("PAPERCUT_PRINTER_LIST_URL", "")
@@ -155,7 +157,7 @@ def _get_username() -> str:
     except Exception:
         pass
         
-    return "paulogoncalves"
+    return ""
 
 USERNAME = _get_username()
 CITSMART_EMAIL = f"{USERNAME}@{_cfg('AD_EMAIL', os.getenv('AD_EMAIL', ''))}"
@@ -240,8 +242,8 @@ IMAGE_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "imagens"
 # Fallback opcional: só pesquisa pasta sincronizada do OneDrive se a variável de ambiente USE_ONEDRIVE_FALLBACK for ativada
 if os.getenv("USE_ONEDRIVE_FALLBACK", "false").lower() == "true":
     _onedrive_base_candidates = [
-        Path("/mnt/c/Users/paulogoncalves/OneDrive - Ministerio Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs"),
-        Path("/mnt/c/Users/paulogoncalves/OneDrive - Ministério Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs")
+        Path("/mnt/c/Users/{USERNAME}/OneDrive - Ministerio Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs"),
+        Path("/mnt/c/Users/{USERNAME}/OneDrive - Ministério Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs")
     ]
     for _cand in _onedrive_base_candidates:
         if _cand.exists():
@@ -744,7 +746,7 @@ def _detect_powershell_executable() -> tuple:
             "/mnt/c/Program Files/PowerShell/7/pwsh.exe",
             "/mnt/c/Program Files (x86)/PowerShell/7/pwsh.exe",
             f"/mnt/c/Users/{USERNAME}/AppData/Local/Microsoft/WindowsApps/pwsh.exe" if 'USERNAME' in globals() and USERNAME else None,
-            "/mnt/c/Users/paulogoncalves/AppData/Local/Microsoft/WindowsApps/pwsh.exe",
+            "/mnt/c/Users/{USERNAME}/AppData/Local/Microsoft/WindowsApps/pwsh.exe",
         ]
         for candidate in ps7_wsl_candidates:
             if candidate and shutil.which(candidate):
@@ -1180,7 +1182,7 @@ def clean_otrs_comments(comments_val) -> list:
     """
     Filtra e limpa a lista de comentários do OTRS.
     Ignora completamente comentários gerados automaticamente pela central de atendimento do suporte técnico
-    (cujo autor contenha 'suporte@mpms.mp.br' ou 'Central de Atendimento').
+    (cujo autor contenha 'email@dominio' ou 'Central de Atendimento').
     Retorna uma lista limpa de dicionários de comentários.
     """
     import json
@@ -1220,7 +1222,7 @@ def clean_otrs_comments(comments_val) -> list:
         autor = str(c.get('autor', '')).strip()
         
         # Ignora comentários gerados pela Central de Atendimento ao Usuário de TI
-        if "suporte@mpms.mp.br" in autor or "Central de Atendimento ao Usuário" in autor:
+        if "suporte@" in autor.lower() or "central de atendimento ao usuário" in autor.lower():
             continue
             
         cleaned_comments.append(c)

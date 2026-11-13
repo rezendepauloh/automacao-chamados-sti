@@ -21,7 +21,7 @@ if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
 from src.database import save_ramais_to_db
-from src.config import USERNAME, PASSWORD, setup_logging, DEBUG_DIR_RAMAIS
+from src.config import USERNAME, PASSWORD, setup_logging, DEBUG_DIR_RAMAIS, INTRANET_URL
 from src.terminal import log, print_header, CYAN, GREEN, RED, YELLOW, WHITE
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -74,7 +74,7 @@ def is_header_or_footer(line_str: str) -> bool:
     ignore_patterns = [
         "ministério público", "mato grosso do sul", "procuradoria-geral de justiça",
         "assessoria de cerimonial", "ramais", "sumário", "obs: pedimos que qualquer",
-        "mudança de gabinete", "departamento de eventos", "cerimonial@mpms.mp.br",
+        "mudança de gabinete", "departamento de eventos", "cerimonial@",
         "última atualização em", "página", "prefixo 3318", "prefixo 3316", "prefixo 3357"
     ]
     for pat in ignore_patterns:
@@ -189,8 +189,10 @@ def run_ramais_scraper():
     })
 
     # Tenta autenticação se usuário e senha estiverem disponíveis (silencia 404 se a rota não existir)
+    intranet_url = INTRANET_URL or f"https://www.{os.getenv('AD_EMAIL')}/intranet"
+    base_portal = intranet_url.split('/intranet')[0] if '/intranet' in intranet_url else f"https://www.{os.getenv('AD_EMAIL')}"
     if USERNAME and PASSWORD:
-        login_url = "https://www.mpms.mp.br/intranet"
+        login_url = intranet_url
         login_data = {
             "usuario": USERNAME,
             "senha": PASSWORD
@@ -205,7 +207,6 @@ def run_ramais_scraper():
         except Exception as e:
             logger.warning(f"Não foi possível autenticar na intranet ({e}). Prosseguindo com download público...")
 
-    intranet_url = "https://www.mpms.mp.br/intranet"
     pdf_links = {}
 
     try:
@@ -243,7 +244,7 @@ def run_ramais_scraper():
     all_records = []
 
     for tipo, path_or_url in pdf_links.items():
-        full_url = path_or_url if path_or_url.startswith("http") else f"https://www.mpms.mp.br{path_or_url if path_or_url.startswith('/') else '/' + path_or_url}"
+        full_url = path_or_url if path_or_url.startswith("http") else f"{base_portal}{path_or_url if path_or_url.startswith('/') else '/' + path_or_url}"
         
         logger.info(f"📥 Baixando PDF de ramais ({tipo}): {full_url}")
 

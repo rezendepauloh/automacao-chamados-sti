@@ -677,7 +677,7 @@ def get_device_by_user(username: str) -> Optional[Dict[str, str]]:
     if not u_clean or u_clean.lower() in ["none", "nan", "null", ""]:
         return None
 
-    # Normaliza se vier com domínio (ex: MPE\usuario ou usuario@mpms.mp.br)
+    # Normaliza se vier com domínio (ex: MPE\usuario ou usuario@dominio)
     if "\\" in u_clean:
         u_clean = u_clean.split("\\")[-1].strip()
     elif "@" in u_clean:

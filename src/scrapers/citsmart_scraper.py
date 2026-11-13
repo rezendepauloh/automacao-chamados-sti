@@ -19,7 +19,7 @@ import json
 import html
 from ldap3 import SUBTREE
 from config import (
-    CITSMART_URL, CITSMART_EMAIL, PASSWORD,
+    CITSMART_URL, CITSMART_NOVA_FILA, CITSMART_EMAIL, PASSWORD,
     HEADLESS, EXPLICIT_WAIT, DEBUG_DIR_CITSMART, INPUT_DIR_BRUTOS,
     setup_logging, save_df_to_excel_formatted,
     setup_ad_connection, fetch_ad_department, cleanup_old_files
@@ -91,9 +91,10 @@ def navigate_to_caixa_entrada(page):
             pass
 
         logger.info("Aguardando carregamento da sessão do portal inicial...")
+        citsmart_domain = CITSMART_URL.split("://")[-1].split("/")[0] if "://" in CITSMART_URL else CITSMART_URL
         for _ in range(15):
             time.sleep(1)
-            if "suporte.mpms.mp.br" in page.url and any("experienceCenter" in f.url or "portalservicos" in f.url for f in page.frames):
+            if citsmart_domain and citsmart_domain in page.url and any("experienceCenter" in f.url or "portalservicos" in f.url for f in page.frames):
                 logger.info("Sessão do portal CitSmart confirmada.")
                 break
 
@@ -101,7 +102,7 @@ def navigate_to_caixa_entrada(page):
         logger.info(f"ℹ️ Fluxo de login concluído ou sessão ativa detectada: {login_err}")
 
     # Navegação SPA usando window.location.href (compatibilidade total com o roteador AngularJS do CitSmart)
-    nova_fila = "https://suporte.mpms.mp.br/inbox/lowcode/form/copilot_novo/default"
+    nova_fila = CITSMART_NOVA_FILA or f"{CITSMART_URL.rstrip('/')}/inbox/lowcode/form/copilot_novo/default"
     logger.info(f"Navegando via SPA para: {nova_fila}")
     try:
         page.evaluate(f"window.location.href = '{nova_fila}';")
@@ -257,6 +258,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                     cached_unidade = cache[cid].get('Unidade') or ""
                     cached_desc = cache[cid].get('Descrição') or ""
                     cached_hostname = cache[cid].get('Hostname') or ""
+                    citsmart_base = (CITSMART_URL).rstrip('/')
                     if cached_ip:
                         collected.append({
                             "Chamado#": cid,
@@ -267,7 +269,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                             "Data Criação": data_criacao,
                             "IP_Origem": cached_ip,
                             "Hostname": cached_hostname,
-                            "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
+                            "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                             "Comentários": comments_json
                         })
                         logger.info(f"[{idx+1}/{len(candidates)}] ⚡ [CACHE MATCH] Chamado {cid} recuperado do cache!")
@@ -279,6 +281,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                             from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
                             sccm_ip = fetch_ip_from_sccm(id_cliente)
                             sccm_hostname = fetch_hostname_from_sccm(id_cliente)
+                        citsmart_base = (CITSMART_URL).rstrip('/')
                         collected.append({
                             "Chamado#": cid,
                             "ID do Cliente": id_cliente,
@@ -288,7 +291,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                             "Data Criação": data_criacao,
                             "IP_Origem": sccm_ip,
                             "Hostname": sccm_hostname,
-                            "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
+                            "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                             "Comentários": comments_json
                         })
                         continue
@@ -309,6 +312,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                     sccm_ip = fetch_ip_from_sccm(id_cliente)
                     sccm_hostname = fetch_hostname_from_sccm(id_cliente)
 
+                citsmart_base = (CITSMART_URL).rstrip('/')
                 collected.append({
                     "Chamado#": cid,
                     "ID do Cliente": id_cliente,
@@ -318,7 +322,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                     "Data Criação": data_criacao,
                     "IP_Origem": sccm_ip,
                     "Hostname": sccm_hostname,
-                    "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
+                    "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                     "Comentários": comments_json
                 })
                 logger.info(f"[{idx+1}/{len(candidates)}] Processado JSON: {cid} (Login: {id_cliente})")
@@ -388,6 +392,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                 cached_unidade = cache[cid].get('Unidade') or ""
                 cached_desc = cache[cid].get('Descrição') or ""
                 cached_hostname = cache[cid].get('Hostname') or ""
+                citsmart_base = (CITSMART_URL).rstrip('/')
                 if cached_ip:
                     collected.append({
                         "Chamado#": cid,
@@ -398,7 +403,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                         "Data Criação": data_criacao,
                         "IP_Origem": cached_ip,
                         "Hostname": cached_hostname,
-                        "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
+                        "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                         "Comentários": comments_json
                     })
                     continue
@@ -419,6 +424,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                 sccm_ip = fetch_ip_from_sccm(id_cliente)
                 sccm_hostname = fetch_hostname_from_sccm(id_cliente)
 
+            citsmart_base = (CITSMART_URL).rstrip('/')
             collected.append({
                 "Chamado#": cid,
                 "ID do Cliente": id_cliente,
@@ -428,7 +434,7 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                 "Data Criação": data_criacao,
                 "IP_Origem": sccm_ip,
                 "Hostname": sccm_hostname,
-                "Link": f"https://suporte.mpms.mp.br/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
+                "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                 "Comentários": comments_json
             })
             logger.info(f"[{idx+1}/{row_count}] Lido DOM: {cid} (Login: {id_cliente})")

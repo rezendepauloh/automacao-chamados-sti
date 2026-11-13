@@ -33,7 +33,7 @@ def execute_sccm_cim_query(query: str, class_target: str = "") -> List[Dict[str,
     """
     site_server = _cfg("SCCM_SERVER", os.getenv("SCCM_SERVER", "")).strip()
     site_code = _cfg("SCCM_SITE_CODE", os.getenv("SCCM_SITE_CODE", "PGJ")).strip()
-    admin_user = _cfg("SCCM_ADMIN_USER", os.getenv("SCCM_ADMIN_USER", "paulo_admin")).strip()
+    admin_user = _cfg("SCCM_ADMIN_USER", os.getenv("SCCM_ADMIN_USER")).strip()
     admin_password = _cfg("SCCM_ADMIN_PASSWORD", "") or os.getenv("SCCM_ADMIN_PASSWORD", "")
 
     if not site_server or not site_code:
@@ -166,9 +166,6 @@ def import_sccm_inventory_json(file_path: Optional[str] = None) -> Dict[str, int
             root_brutos,
             cwd_brutos,
             "/app/data/01 - Dados Brutos/sccm_inventory.json",
-            "/home/paulo/PythonProjects/automacao-chamados-sti/data/01 - Dados Brutos/sccm_inventory.json",
-            os.path.expanduser("~/PythonProjects/automated-OTRS-and-CitSmart/data/01 - Dados Brutos/sccm_inventory.json"),
-            "/mnt/c/Users/paulogoncalves/sccm_inventory.json",
             os.path.expanduser("~/sccm_inventory.json")
         ]
 

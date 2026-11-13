@@ -66,12 +66,6 @@ def run_viagens_sync():
         if temp_up.is_file():
             target_file = temp_up
 
-    # Fallback para caminho do OneDrive do usuário no Windows se no WSL
-    if not target_file or not Path(target_file).is_file():
-        onedrive_win = Path("/mnt/c/Users/paulogoncalves/OneDrive - Ministerio Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Viagens/Planilha de Viagens.xlsx")
-        if onedrive_win.is_file():
-            target_file = onedrive_win
-
     if not target_file or not Path(target_file).is_file():
         logger.error(f"Planilha de Viagens não localizada nem baixada (Configuração: {excel_path_env})")
         return False

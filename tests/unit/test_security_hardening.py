@@ -209,11 +209,7 @@ class TestSecurityHardening(unittest.TestCase):
         """Valida que portas críticas de banco e API no docker-compose.yml estão restritas a 127.0.0.1."""
         compose_file = ROOT_DIR / "docker-compose.yml"
         if not compose_file.exists():
-            alt = Path("/home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/docker-compose.yml")
-            if alt.exists():
-                compose_file = alt
-            else:
-                self.skipTest("docker-compose.yml não está montado neste ambiente de execução")
+            self.skipTest("docker-compose.yml não está montado neste ambiente de execução")
 
         content = compose_file.read_text(encoding="utf-8")
 
@@ -232,11 +228,7 @@ class TestSecurityHardening(unittest.TestCase):
         """Valida que o .gitignore bloqueia arquivos de credenciais, chaves e ambientes."""
         gitignore_file = ROOT_DIR / ".gitignore"
         if not gitignore_file.exists():
-            alt = Path("/home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/.gitignore")
-            if alt.exists():
-                gitignore_file = alt
-            else:
-                self.skipTest(".gitignore não está montado neste ambiente de execução")
+            self.skipTest(".gitignore não está montado neste ambiente de execução")
 
         content = gitignore_file.read_text(encoding="utf-8")
 
@@ -303,10 +295,10 @@ class TestSecurityHardening(unittest.TestCase):
 
     def test_auth_token_signature_and_tampering(self):
         """Valida que tokens forjados ou corrompidos são rejeitados de imediato."""
-        valid_token = create_auth_token("paulogoncalves")
+        valid_token = create_auth_token("usuario_teste_seguranca")
         payload = decode_auth_token(valid_token)
         self.assertIsNotNone(payload)
-        self.assertEqual(payload["username"], "paulogoncalves")
+        self.assertEqual(payload["username"], "usuario_teste_seguranca")
 
         # Token adulterado
         tampered_token = valid_token[:-4] + "abcd"

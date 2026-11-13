@@ -33,7 +33,7 @@ class TestServices(unittest.TestCase):
                 {
                     "ResourceID": "1001",
                     "Name": "NOTEBOOK-STI01",
-                    "LastLogonUserName": "paulo_admin",
+                    "LastLogonUserName": "usuario_teste_admin",
                     "IPAddresses": "192.168.10.50",
                     "MACAddresses": "AA:BB:CC:DD:EE:FF",
                     "OperatingSystemNameandVersion": "Microsoft Windows 11",
@@ -47,10 +47,10 @@ class TestServices(unittest.TestCase):
             "users": [
                 {
                     "ResourceID": "2001",
-                    "UserName": "paulo_admin",
-                    "FullUserName": "Paulo Henrique Gonçalves Rezende",
+                    "UserName": "usuario_teste_admin",
+                    "FullUserName": "Analista Teste Autorizado",
                     "WindowsNTDomain": "MPE",
-                    "DistinguishedName": "CN=paulo_admin,OU=Users,DC=mpe,DC=local"
+                    "DistinguishedName": "CN=usuario_teste,OU=Users,DC=mpe,DC=local"
                 }
             ],
             "collections": [
@@ -87,15 +87,22 @@ class TestServices(unittest.TestCase):
 
     def test_member_matcher_names(self):
         """Valida o comparador/normalizador de nomes de técnicos e servidores da bancada."""
-        m1 = resolve_bancada_member("Paulo Henrique Gonçalves Rezende")
-        self.assertIsNotNone(m1)
-        self.assertEqual(m1["primeiro_nome"], "Paulo")
+        from src.services.member_matcher import BANCADA_MEMBROS
+        if BANCADA_MEMBROS:
+            m1_nome = BANCADA_MEMBROS[0]["nome"]
+            m1_esperado = BANCADA_MEMBROS[0]["primeiro_nome"]
+            m1 = resolve_bancada_member(m1_nome)
+            self.assertIsNotNone(m1)
+            self.assertEqual(m1["primeiro_nome"], m1_esperado)
 
-        m2 = resolve_bancada_member("reginaldo bandeira")
-        self.assertIsNotNone(m2)
-        self.assertEqual(m2["primeiro_nome"], "Reginaldo")
+            if len(BANCADA_MEMBROS) > 1:
+                m2_nome = BANCADA_MEMBROS[1]["aliases"][0]
+                m2_esperado = BANCADA_MEMBROS[1]["primeiro_nome"]
+                m2 = resolve_bancada_member(m2_nome)
+                self.assertIsNotNone(m2)
+                self.assertEqual(m2["primeiro_nome"], m2_esperado)
 
-        m3 = resolve_bancada_member("Carlos Eduardo Desconhecido")
+        m3 = resolve_bancada_member("Carlos Eduardo Desconhecido Totalmente")
         self.assertIsNone(m3)
 
     def test_cron_daemon_should_run_and_resilient_loop(self):

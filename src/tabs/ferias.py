@@ -32,17 +32,25 @@ from src.components.pagination import (
 from src.components.metric_cards import render_metric_card
 
 
-PALETA_MEMBROS = {
-    "Paulo Rezende": "#10b981",       # Esmeralda
-    "Reginaldo Bandeira": "#3b82f6",  # Azul
-    "Luiz Villalba": "#f59e0b",       # Âmbar
-    "Alex": "#8b5cf6",                # Roxo
-    "Marcos Larrea (Luppa)": "#ec4899",# Rosa
-    "Matheus (Luppa)": "#14b8a6",     # Ciano
-    "Rafael (Luppa)": "#f97316",      # Laranja
-    "Rian (Luppa)": "#6366f1",        # Índigo
-    "Estagiário": "#94a3b8"           # Cinza
-}
+def _load_paleta_membros() -> dict:
+    raw_json = os.getenv("PALETA_MEMBROS_JSON", "").strip()
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+            if isinstance(parsed, dict) and parsed:
+                return parsed
+        except Exception:
+            pass
+    return {
+        "Alex": "#8b5cf6",                # Roxo
+        "Marcos Larrea (Luppa)": "#ec4899",# Rosa
+        "Matheus (Luppa)": "#14b8a6",     # Ciano
+        "Rafael (Luppa)": "#f97316",      # Laranja
+        "Rian (Luppa)": "#6366f1",        # Índigo
+        "Estagiário": "#94a3b8"           # Cinza
+    }
+
+PALETA_MEMBROS = _load_paleta_membros()
 
 def get_cor_membro(membro: str) -> str:
     """Retorna cor de destaque para cada membro da equipe."""

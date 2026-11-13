@@ -159,7 +159,7 @@ class TestPostgresCompatibility(unittest.TestCase):
         wrapped_conn = _NonSqliteDBAPIWrapper(raw_sqlite)
 
         df_initial = pd.DataFrame([
-            {"contrato": "CT-001", "fiscal": "Paulo Henrique", "qtd": 3},
+            {"contrato": "CT-001", "fiscal": "Fiscal Teste", "qtd": 3},
             {"contrato": "CT-002", "fiscal": "Maria Souza", "qtd": 5},
         ])
         save_dataframe_to_db(df_initial, "fiscalizacao_teste", wrapped_conn, if_exists="replace")
@@ -167,7 +167,7 @@ class TestPostgresCompatibility(unittest.TestCase):
 
         df_loaded = pd.read_sql_query('SELECT * FROM "fiscalizacao_teste" ORDER BY contrato', raw_sqlite)
         self.assertEqual(len(df_loaded), 2)
-        self.assertEqual(df_loaded.iloc[0]["fiscal"], "Paulo Henrique")
+        self.assertEqual(df_loaded.iloc[0]["fiscal"], "Fiscal Teste")
         self.assertEqual(int(df_loaded.iloc[1]["qtd"]), 5)
 
         # Testa substituição (if_exists="replace") e append
@@ -183,13 +183,15 @@ class TestPostgresCompatibility(unittest.TestCase):
     def test_notifications_timestamp_and_deduplication(self):
         """Garante que add_notification preenche data_criacao (nunca None) e não duplica alertas idênticos."""
         setup_notifications_table()
+        portal_domain = os.getenv("AD_EMAIL").strip().lstrip("@")
+        link_portarias = f"https://www.{portal_domain}/portarias"
 
         first = add_notification(
             tipo="Portaria",
             titulo="Nova Portaria nº 1028/2013",
-            mensagem="Servidores: Paulo Henrique Gonçalves Rezende.",
+            mensagem="Servidores: Servidor Teste Autorizado.",
             data_evento="12/08/2013",
-            link_pagina="https://www.mpms.mp.br/portarias",
+            link_pagina=link_portarias,
         )
         self.assertTrue(first)
 
@@ -197,9 +199,9 @@ class TestPostgresCompatibility(unittest.TestCase):
         duplicate = add_notification(
             tipo="Portaria",
             titulo="Nova Portaria nº 1028/2013",
-            mensagem="Servidores: Paulo Henrique Gonçalves Rezende.",
+            mensagem="Servidores: Servidor Teste Autorizado.",
             data_evento="12/08/2013",
-            link_pagina="https://www.mpms.mp.br/portarias",
+            link_pagina=link_portarias,
         )
         self.assertFalse(duplicate)
 
@@ -218,7 +220,7 @@ class TestPostgresCompatibility(unittest.TestCase):
             "ano": 2026,
             "data_iso": "2026-05-10",
             "dia_semana": "Domingo",
-            "servidor": "Paulo Henrique",
+            "servidor": "Servidor Teste",
             "telefone": "67 98888-0000",
         }]
         save_plantoes_matutino(rec_mat)
@@ -237,7 +239,7 @@ class TestPostgresCompatibility(unittest.TestCase):
             "data_inicio": "2026-05-04 19:01:00",
             "data_fim": "2026-05-11 11:59:00",
             "service_desk": "Analista A",
-            "manutencao": "Paulo Henrique",
+            "manutencao": "Tecnico Teste",
             "infraestrutura": "Analista B",
             "desenvolvimento": "Analista C",
         }]
@@ -298,11 +300,17 @@ class TestPostgresCompatibility(unittest.TestCase):
         self.assertEqual(pins[0]["descricao"], "v2")
 
         setup_ramais_config_table()
-        save_ramais_config("https://mpms.mp.br/int_v1.pdf", "https://mpms.mp.br/cap_v1.pdf")
-        save_ramais_config("https://mpms.mp.br/int_v2.pdf", "https://mpms.mp.br/cap_v2.pdf")
+        portal_domain = os.getenv("AD_EMAIL").strip().lstrip("@")
+        url_int_v1 = f"https://{portal_domain}/int_v1.pdf"
+        url_cap_v1 = f"https://{portal_domain}/cap_v1.pdf"
+        url_int_v2 = f"https://{portal_domain}/int_v2.pdf"
+        url_cap_v2 = f"https://{portal_domain}/cap_v2.pdf"
+
+        save_ramais_config(url_int_v1, url_cap_v1)
+        save_ramais_config(url_int_v2, url_cap_v2)
         r_cfg = get_ramais_config()
-        self.assertEqual(r_cfg["Interior"], "https://mpms.mp.br/int_v2.pdf")
-        self.assertEqual(r_cfg["Capital / PGJ"], "https://mpms.mp.br/cap_v2.pdf")
+        self.assertEqual(r_cfg["Interior"], url_int_v2)
+        self.assertEqual(r_cfg["Capital / PGJ"], url_cap_v2)
 
 
 if __name__ == "__main__":

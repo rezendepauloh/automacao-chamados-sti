@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Any
@@ -189,8 +190,9 @@ def generate_ics_calendar(events: List[Dict[str, Any]], calendar_name: str = "Ba
         full_description = "\n".join(desc_parts)
 
         # Inicia o bloco do evento
+        domain_suffix = os.getenv("AD_EMAIL").strip().lstrip("@")
         lines.append("BEGIN:VEVENT")
-        lines.append(f"UID:{ev_id}@bancada-sti.mpms.mp.br")
+        lines.append(f"UID:{ev_id}@bancada-sti.{domain_suffix}")
         lines.append(f"DTSTAMP:{now_utc}")
 
         if is_all_day_start:

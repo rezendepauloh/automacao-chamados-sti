@@ -1,31 +1,23 @@
+import os
 import re
+import json
 import unicodedata
 from typing import Optional, Tuple, List
 
 # Cadastro canônico dos integrantes autorizados da Bancada STI
-BANCADA_MEMBROS = [
-    {
-        "nome": "Paulo Henrique Gonçalves Rezende",
-        "primeiro_nome": "Paulo",
-        "telefone": "5567992471379",
-        "telefone_formatado": "+55 67 99247-1379",
-        "aliases": ["paulo henrique", "paulo rezende", "paulo", "rezende"]
-    },
-    {
-        "nome": "Reginaldo da Silva Bandeira",
-        "primeiro_nome": "Reginaldo",
-        "telefone": "5567991455446",
-        "telefone_formatado": "+55 67 99145-5446",
-        "aliases": ["reginaldo da silva bandeira", "reginaldo bandeira", "reginaldo da silva", "reginaldo", "bandeira"]
-    },
-    {
-        "nome": "Luiz Leonardo Villalba",
-        "primeiro_nome": "Luiz",
-        "telefone": "5567996477799",
-        "telefone_formatado": "+55 67 99647-7799",
-        "aliases": ["luiz leonardo villalba", "luiz villalba", "luiz leonardo", "luiz", "villalba"]
-    }
-]
+# Carregado dinamicamente via .env (BANCADA_MEMBROS_JSON) com padrão fail-closed
+def _load_bancada_membros() -> List[dict]:
+    raw_json = os.getenv("BANCADA_MEMBROS_JSON", "").strip()
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+            if isinstance(parsed, list) and parsed:
+                return parsed
+        except Exception:
+            pass
+    return []
+
+BANCADA_MEMBROS = _load_bancada_membros()
 
 def _normalize(s: str) -> str:
     """Remove acentos, pontuação e converte para minúsculas para comparação flexível."""
@@ -39,8 +31,8 @@ def _normalize(s: str) -> str:
 
 def resolve_bancada_member(text: str) -> Optional[dict]:
     """
-    Identifica se uma string de texto/nome corresponde a um dos 3 membros autorizados da Bancada.
-    Suporta nomes parciais como 'Paulo Rezende', 'Reginaldo Bandeira', 'Luiz Villalba'.
+    Identifica se uma string de texto/nome corresponde a um dos membros autorizados da Bancada.
+    Suporta nomes completos, primeiros nomes e apelidos configurados em BANCADA_MEMBROS_JSON.
     Retorna o dicionário completo do membro (ou None se não for da bancada).
     """
     if not text:
@@ -69,8 +61,8 @@ def resolve_bancada_member(text: str) -> Optional[dict]:
 
 def extract_all_bancada_members(text: str) -> List[dict]:
     """
-    Dada uma lista de nomes ou string com separadores (ex: 'Paulo Rezende / Thyago',
-    'Reginaldo Bandeira e Luiz Villalba'), identifica todos os membros da bancada presentes.
+    Dada uma lista de nomes ou string com separadores (ex: 'Analista 1 / Analista 2'),
+    identifica todos os membros da bancada presentes.
     """
     if not text:
         return []

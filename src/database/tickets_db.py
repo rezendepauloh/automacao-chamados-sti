@@ -2,6 +2,7 @@ import logging
 from typing import Any
 import pandas as pd
 from datetime import datetime
+from src.config import OTRS_URL
 from .connection import DB_PATH, DB_TYPE, get_connection
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,9 @@ def save_tickets_to_db(df: pd.DataFrame):
         hostname_val = _clean_str(row.get('Hostname', ''))
         base_val = _clean_str(row.get('Base', ''))
         link_val = _clean_str(row.get('Link', ''))
+        if link_val and not link_val.startswith("http://") and not link_val.startswith("https://"):
+            otrs_base = (OTRS_URL).rstrip('/')
+            link_val = f"{otrs_base}/{link_val.lstrip('/')}"
         data_criacao_val = _clean_str(row.get('Data Criação', ''))
         tag_val = _clean_str(row.get('TAG', ''))
         cidade_predio_val = _clean_str(row.get('Cidade - Prédio', ''))

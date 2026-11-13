@@ -68,7 +68,7 @@ def read_unidades_last_log_lines(n: int = 15) -> str:
     except Exception as e:
         return f"Erro ao ler arquivo de log: {e}"
 
-BASE_DOMAIN = "https://www.mpms.mp.br"
+BASE_DOMAIN = f"https://www.{os.getenv('AD_EMAIL').strip().lstrip('@')}"
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'

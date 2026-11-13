@@ -80,9 +80,10 @@ def get_sharepoint_cookies() -> dict:
         except Exception as e:
             logger.warning(f"Erro ao ler cache de cookies: {e}")
 
-    # Tenta extrair diretamente do perfil do Firefox do usuário (Windows via WSL)
-    ff_profiles_dir = Path("/mnt/c/Users/paulogoncalves/AppData/Roaming/Mozilla/Firefox/Profiles")
-    if ff_profiles_dir.exists():
+    # Tenta extrair diretamente do perfil do Firefox do usuário se existir no host
+    appdata_dir = os.getenv("APPDATA")
+    ff_profiles_dir = Path(appdata_dir) / "Mozilla/Firefox/Profiles" if appdata_dir else None
+    if ff_profiles_dir and ff_profiles_dir.exists():
         for p in ff_profiles_dir.glob("*.default-release"):
             cookie_db = p / "cookies.sqlite"
             if cookie_db.exists():
@@ -450,7 +451,7 @@ def parse_sharepoint_content(html_str: str, faq_slug: str = "Geral") -> str:
         return ""
 
     # 1. Limpeza do Bloco de Autoria via Regex
-    html_str = re.sub(r'Paulo Henrique.*?Published \d{2}/\d{2}/\d{4}', '', html_str, flags=re.DOTALL | re.IGNORECASE)
+    html_str = re.sub(r'[\w\s]+Published \d{2}/\d{2}/\d{4}', '', html_str, flags=re.DOTALL | re.IGNORECASE)
 
     if BeautifulSoup is None:
         return html_str

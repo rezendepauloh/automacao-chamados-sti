@@ -16,11 +16,8 @@ from src.syncs.sync_portarias import check_portarias_sync_running, read_portaria
 
 logger = setup_logging(DEBUG_DIR_FAQ / "portarias.log", "portarias")
 
-MEMBROS_BANCADA = [
-    "Paulo Henrique Gonçalves Rezende",
-    "Reginaldo da Silva Bandeira",
-    "Luiz Leonardo Villalba"
-]
+from src.services.member_matcher import BANCADA_MEMBROS
+MEMBROS_BANCADA = [m["nome"] for m in BANCADA_MEMBROS if "nome" in m]
 
 
 def clean_text_content(text: str) -> str:
@@ -222,33 +219,26 @@ def render_portarias_page():
     filtered_portarias.sort(key=lambda x: x["id"], reverse=is_desc)
 
 
-    # Métrica de Resumo em Cards
-    count_paulo = sum(1 for p in all_portarias if "Paulo" in str(p['membros']))
-    count_reginaldo = sum(1 for p in all_portarias if "Reginaldo" in str(p['membros']))
-    count_luiz = sum(1 for p in all_portarias if "Luiz" in str(p['membros']))
-
-    render_metric_cards([
+    # Métrica de Resumo em Cards por Membro Dinâmico
+    cards = [
         {
             "title": "TOTAL EXIBIDO",
             "value": len(filtered_portarias),
             "border_color": "#3b82f6",
-        },
-        {
-            "title": "PAULO REZENDE",
-            "value": count_paulo,
-            "border_color": "#10b981",
-        },
-        {
-            "title": "REGINALDO BANDEIRA",
-            "value": count_reginaldo,
-            "border_color": "#f59e0b",
-        },
-        {
-            "title": "LUIZ VILLALBA",
-            "value": count_luiz,
-            "border_color": "#8b5cf6",
-        },
-    ])
+        }
+    ]
+    cores = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6"]
+    for i, m in enumerate(BANCADA_MEMBROS):
+        p_nome = m.get("primeiro_nome") or m.get("nome", "").split()[0]
+        full_nome = m.get("nome", "")
+        count_m = sum(1 for p in all_portarias if p_nome.lower() in str(p['membros']).lower() or full_nome.lower() in str(p['membros']).lower())
+        cards.append({
+            "title": full_nome.upper() if full_nome else p_nome.upper(),
+            "value": count_m,
+            "border_color": cores[i % len(cores)],
+        })
+
+    render_metric_cards(cards)
 
 
     st.markdown("<br>", unsafe_allow_html=True)

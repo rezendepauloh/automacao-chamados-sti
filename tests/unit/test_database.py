@@ -12,12 +12,14 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import tests.test_helpers
+from src.config import OTRS_URL
 from src.database.sccm_db import (
     setup_sccm_tables,
     save_sccm_devices,
@@ -94,7 +96,7 @@ class TestDatabaseModule(unittest.TestCase):
             {
                 "ResourceID": "16777220",
                 "Name": "DESKTOP-BANCADA01",
-                "LastLogonUserName": "paulo_admin",
+                "LastLogonUserName": "usuario_teste_admin",
                 "IPAddresses": ["192.168.1.100"],
                 "MACAddresses": ["00:11:22:33:44:55"],
                 "Manufacturer": "Dell Inc.",
@@ -176,10 +178,10 @@ class TestDatabaseModule(unittest.TestCase):
         mock_users = [
             {
                 "ResourceID": "20971521",
-                "UserName": "reginaldo_silva",
-                "FullUserName": "Reginaldo da Silva Bandeira",
+                "UserName": "teste_silva",
+                "FullUserName": "Servidor Teste Silva",
                 "WindowsNTDomain": "MPE",
-                "DistinguishedName": "CN=Reginaldo Bandeira,OU=STI,DC=mpe,DC=local"
+                "DistinguishedName": "CN=Servidor Teste,OU=STI,DC=mpe,DC=local"
             }
         ]
         user_saved = save_sccm_users(mock_users)
@@ -193,27 +195,27 @@ class TestDatabaseModule(unittest.TestCase):
             "ano": 2026,
             "data_iso": "2026-03-15",
             "dia_semana": "Domingo",
-            "servidor": "Paulo Henrique Gonçalves Rezende",
+            "servidor": "Tecnico Teste de Manutencao",
             "telefone": "+55 67 99999-9999"
         }]
         save_plantoes_matutino(rec_mat)
         df_mat = get_plantoes_matutino(2026)
         self.assertFalse(df_mat.empty)
-        self.assertIn("Paulo Henrique Gonçalves Rezende", df_mat['servidor'].values)
+        self.assertIn("Tecnico Teste de Manutencao", df_mat['servidor'].values)
 
         # Plantão Semanal
         rec_sem = [{
             "ano": 2026, "mes": "Julho", "periodo_str": "06/07/2026 19:01 a 13/07/2026 11:59",
             "data_inicio": "2026-07-06 19:01:00", "data_fim": "2026-07-13 11:59:00",
-            "service_desk": "Anderson Miranda",
-            "manutencao": "Paulo Henrique Gonçalves Rezende",
-            "infraestrutura": "Joabe Guimarães",
-            "desenvolvimento": "Albert Einstein"
+            "service_desk": "Atendente Teste",
+            "manutencao": "Tecnico Teste de Manutencao",
+            "infraestrutura": "Analista Infra",
+            "desenvolvimento": "Dev Teste"
         }]
         save_plantoes_semanal(rec_sem)
         df_sem = get_plantoes_semanal(2026)
         self.assertFalse(df_sem.empty)
-        self.assertIn("Paulo Henrique Gonçalves Rezende", df_sem['manutencao'].values)
+        self.assertIn("Tecnico Teste de Manutencao", df_sem['manutencao'].values)
 
     def test_parse_data_matutino_string(self):
         """Testa a conversão de datas textuais da planilha de plantão matutino."""
@@ -383,7 +385,7 @@ class TestDatabaseModule(unittest.TestCase):
         c.execute("""
             INSERT INTO viagens (quem_foi, chamado, chamado_diaria, saida_iso, retorno_iso, saida_br, retorno_br, localidade)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("Paulo Henrique", "84990", "123456", "2026-10-01", "2026-10-02", "01/10/2026", "02/10/2026", "Dourados"))
+        """, ("Tecnico Teste", "84990", "123456", "2026-10-01", "2026-10-02", "01/10/2026", "02/10/2026", "Dourados"))
         conn.commit()
         conn.close()
 
@@ -509,11 +511,12 @@ class TestDatabaseModule(unittest.TestCase):
         from src.database.ad_db import get_ad_offices, get_ad_orgchart_data, save_ad_cache, setup_ad_tables
 
         setup_ad_tables()
+        domain = os.getenv("AD_EMAIL").strip().lstrip("@")
         mock_users = [
             {
                 "sam_account_name": "gestor1",
                 "display_name": "Gestor Superior",
-                "mail": "gestor@mpms.mp.br",
+                "mail": f"gestor@{domain}",
                 "department": "1ª Procuradoria",
                 "office": "PGJ - Sede",
                 "title": "Chefe de Departamento",
@@ -524,7 +527,7 @@ class TestDatabaseModule(unittest.TestCase):
             {
                 "sam_account_name": "subordinado1",
                 "display_name": "Subordinado Direto",
-                "mail": "sub@mpms.mp.br",
+                "mail": f"sub@{domain}",
                 "department": "1ª Procuradoria",
                 "office": "PGJ - Sede",
                 "title": "Analista de Sistemas",
@@ -572,7 +575,7 @@ class TestDatabaseModule(unittest.TestCase):
             'TAG': 'SUPORTE',
             'IP_Origem': '10.0.0.1',
             'Base': 'OTRS',
-            'Link': 'https://central.mpms.mp.br/otrs'
+            'Link': f"{OTRS_URL.rstrip('/')}/otrs"
         }])
         save_tickets_to_db(test_df)
 
@@ -602,6 +605,29 @@ class TestDatabaseModule(unittest.TestCase):
         update_ticket_andamento('99988877', 'Aguardando peça da garantia pela Dell')
         ticket = get_ticket_by_id('99988877')
         self.assertEqual(ticket.get('andamento'), 'Aguardando peça da garantia pela Dell')
+
+    def test_save_tickets_to_db_normalizes_relative_otrs_links(self):
+        """Valida se links relativos extraídos do OTRS são normalizados com a URL canônica."""
+        from src.database.tickets_db import get_ticket_by_id
+        test_df = pd.DataFrame([{
+            'Chamado#': '11122233',
+            'Data Criação': '13/11/2026 10:00:00',
+            'Título': 'Teste Link Relativo',
+            'Cidade - Prédio': 'Campo Grande - PGJ',
+            'Unidade': 'STI',
+            'Localidade física': 'Campo Grande',
+            'Usuário': 'usuario.teste',
+            'ID do Cliente': 'usuario.teste',
+            'Descrição': 'Descrição',
+            'TAG': 'SUPORTE',
+            'IP_Origem': '10.0.0.1',
+            'Base': 'OTRS',
+            'Link': '/otrs/index.pl?Action=AgentTicketZoom;TicketID=99999'
+        }])
+        save_tickets_to_db(test_df)
+        ticket = get_ticket_by_id('11122233')
+        expected_prefix = f"{OTRS_URL.rstrip('/')}/otrs/index.pl"
+        self.assertTrue(ticket['link'].startswith(expected_prefix))
 
 
 if __name__ == "__main__":

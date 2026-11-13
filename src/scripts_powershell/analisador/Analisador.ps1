@@ -203,7 +203,7 @@ $isMPMSDomain = $domain -match "(?i)mpe"
 if (-not (Test-Path $CredXmlPath)) {
     if ($isMPMSDomain) {
         Write-Warning "Arquivo de credencial nao encontrado em '$CredXmlPath'. Solicitando novas credenciais..."
-        $newCred = Get-Credential -Message "Digite seu login administrativo (ex: paulo_admin) e senha para acesso remoto"
+        $newCred = Get-Credential -Message "Digite seu login administrativo (ex: usuario_admin) e senha para acesso remoto"
         $username = $newCred.UserName
         
         if ($username -match "\\") {
@@ -227,7 +227,7 @@ if (-not (Test-Path $CredXmlPath)) {
         Write-Warning "Falha ao descriptografar '$CredXmlPath' (gerado por outro usuario/DPAPI). Solicitando credenciais..."
         
         if ($isMPMSDomain) {
-            $newCred = Get-Credential -Message "Digite seu login administrativo (ex: paulo_admin) e senha para acesso remoto"
+            $newCred = Get-Credential -Message "Digite seu login administrativo (ex: seu_admin) e senha para acesso remoto"
             $username = $newCred.UserName
             
             if ($username -match "\\") {

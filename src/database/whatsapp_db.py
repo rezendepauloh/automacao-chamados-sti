@@ -1,13 +1,28 @@
 import os
+import json
 import pandas as pd
 from datetime import datetime
 from src.database.connection import get_connection, DB_TYPE
 
-DEFAULT_BANCADA_RECIPIENTS = [
-    {"nome": "Reginaldo da Silva Bandeira", "telefone": "5567991455446", "ativo": 1},
-    {"nome": "Luiz Leonardo Villalba", "telefone": "5567996477799", "ativo": 1},
-    {"nome": "Paulo Henrique Gonçalves Rezende", "telefone": "5567992471379", "ativo": 1},
-]
+def _get_default_recipients():
+    """Carrega destinatários a partir de BANCADA_MEMBROS_JSON ou lista vazia."""
+    raw = os.getenv("BANCADA_MEMBROS_JSON", "").strip()
+    if raw:
+        try:
+            membros = json.loads(raw)
+            recipients = []
+            for m in membros:
+                recipients.append({
+                    "nome": m.get("nome", ""),
+                    "telefone": m.get("telefone", ""),
+                    "ativo": 1
+                })
+            return recipients
+        except Exception:
+            pass
+    return []
+
+DEFAULT_BANCADA_RECIPIENTS = _get_default_recipients()
 
 def setup_whatsapp_tables():
     """Cria tabelas de destinatários e histórico de disparos do WhatsApp."""

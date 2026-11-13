@@ -201,7 +201,8 @@ class OTRSClient:
                 a_tag = row.find("a", href=lambda h: h and "Action=AgentTicketZoom" in h)
                 if a_tag:
                     item['Chamado#'] = a_tag.get_text(strip=True)
-                    item['Link'] = a_tag["href"]
+                    raw_href = a_tag["href"].strip()
+                    item['Link'] = raw_href if raw_href.startswith("http") else f"{self.base_url.rstrip('/')}/{raw_href.lstrip('/')}"
                 else:
                     continue
 

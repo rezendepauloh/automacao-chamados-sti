@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+﻿﻿# ==============================================================================
 # Script: bancada-launcher.ps1
 # Função: Executor local do Protocol Handler 'bancada://' para estações Windows.
 # ==============================================================================
@@ -10,6 +10,38 @@ param(
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Função para resolução dinâmica de caminhos do projeto dentro de distribuições WSL sem hardcoding de usuários
+function Get-WSLProjectCandidates([string]$relPath) {
+    $cands = @()
+    try {
+        $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+        if ($repoRoot -and (Test-Path $repoRoot)) {
+            $cands += (Join-Path $repoRoot $relPath)
+        }
+    } catch {}
+
+    foreach ($share in @('\\wsl.localhost', '\\wsl$')) {
+        foreach ($distro in @('Ubuntu-26.04', 'Ubuntu-24.04', 'Ubuntu', 'Debian')) {
+            $distroPath = Join-Path $share $distro
+            if (Test-Path $distroPath) {
+                try {
+                    $homeDir = Join-Path $distroPath 'home'
+                    if (Test-Path $homeDir) {
+                        $users = Get-ChildItem $homeDir -Directory -ErrorAction SilentlyContinue
+                        foreach ($u in $users) {
+                            foreach ($proj in @('PythonProjects\automated-OTRS-and-CitSmart', 'PythonProjects\automacao-chamados-sti')) {
+                                $target = Join-Path $u.FullName (Join-Path $proj $relPath)
+                                $cands += $target
+                            }
+                        }
+                    }
+                } catch {}
+            }
+        }
+    }
+    return $cands
+}
 
 # Garante que NENHUMA falha ou encerramento feche o PowerShell sem o usuário ver
 try {
@@ -94,10 +126,8 @@ try {
         $credCandidates = @(
             (Join-Path $PSScriptRoot "cred_admin.xml"),
             (Join-Path $PSScriptRoot "..\scripts_powershell\cred_admin.xml"),
-            "C:\BancadaTools\cred_admin.xml",
-            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\cred_admin.xml",
-            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\cred_admin.xml"
-        )
+            "C:\BancadaTools\cred_admin.xml"
+        ) + (Get-WSLProjectCandidates "src\scripts_powershell\cred_admin.xml")
         foreach ($cPath in $credCandidates) {
             if ($cPath -and (Test-Path $cPath)) {
                 try {
@@ -216,14 +246,7 @@ try {
         Write-Host "      $outPath" -ForegroundColor Gray
 
         # Se existir caminho de projeto acessível no WSL, copia diretamente
-        $wslCandidates = @(
-            "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\data\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\data\01 - Dados Brutos\sccm_inventory.json",
-            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\data\01 - Dados Brutos\sccm_inventory.json"
-        )
+        $wslCandidates = Get-WSLProjectCandidates "data\01 - Dados Brutos\sccm_inventory.json"
         foreach ($targetWsl in $wslCandidates) {
             try {
                 $dir = Split-Path $targetWsl -Parent
@@ -265,16 +288,7 @@ try {
         $targetVideo = $rawTarget
         if ($targetVideo.StartsWith("/app/")) {
             $relPath = $targetVideo.Substring(5).Replace('/', '\')
-            $wslCandidates = @(
-                "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
-                "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
-                "\\wsl.localhost\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
-                "\\wsl$\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
-                "\\wsl.localhost\Ubuntu-24.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
-                "\\wsl$\Ubuntu-24.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\$relPath",
-                "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\$relPath",
-                "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\$relPath"
-            )
+            $wslCandidates = Get-WSLProjectCandidates $relPath
             $resolved = $false
             foreach ($cand in $wslCandidates) {
                 if (Test-Path $cand) {
@@ -433,14 +447,7 @@ try {
         } else { 
             "remover_ad_sccm" 
         }
-        $localScriptDirs = @(
-            "\\wsl.localhost\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
-            "\\wsl$\Ubuntu-26.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
-            "\\wsl.localhost\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
-            "\\wsl$\Ubuntu-24.04\home\paulo\PythonProjects\automacao-chamados-sti\src\scripts_powershell\$subfolder",
-            "\\wsl.localhost\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$subfolder",
-            "\\wsl$\Ubuntu-26.04\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\src\scripts_powershell\$subfolder"
-        )
+        $localScriptDirs = Get-WSLProjectCandidates "src\scripts_powershell\$subfolder"
 
         $copiedFromLocal = $false
         foreach ($sDir in $localScriptDirs) {

@@ -152,13 +152,13 @@ def seed_settings_from_env_if_empty(force: bool = False):
 
     # Mapeamento com categorias e flags de segredo
     # Obtém senhas atuais do keyring se existirem
-    ad_user = os.getenv("AD_USER", "paulogoncalves")
+    ad_user = os.getenv("AD_USER", "")
     try:
-        ad_pass = os.getenv("AD_PASSWORD") or keyring.get_password("otrs", ad_user) or ""
+        ad_pass = os.getenv("AD_PASSWORD") or (keyring.get_password("otrs", ad_user) if ad_user else "") or ""
     except Exception:
         ad_pass = os.getenv("AD_PASSWORD", "")
 
-    sccm_user = os.getenv("SCCM_ADMIN_USER", "paulo_admin")
+    sccm_user = os.getenv("SCCM_ADMIN_USER", "")
     try:
         sccm_pass = os.getenv("SCCM_ADMIN_PASSWORD") or keyring.get_password("sccm_admin", sccm_user) or keyring.get_password("sccm", sccm_user) or ""
     except Exception:
@@ -180,53 +180,56 @@ def seed_settings_from_env_if_empty(force: bool = False):
         # Active Directory & Rede
         ("AD_USER", ad_user, False, "rede", "Usuário de Rede / Active Directory"),
         ("AD_PASSWORD", ad_pass, True, "rede", "Senha de Rede / Active Directory (OTRS & CitSmart)"),
-        ("AD_DOMAIN", os.getenv("AD_DOMAIN", "in.mpe.ms.gov.br"), False, "rede", "Domínio FQDN do Active Directory"),
-        ("AD_MMC", os.getenv("AD_MMC", "DC=in,DC=mpe,DC=ms,DC=gov,DC=br"), False, "rede", "Base DN / MMC do Active Directory"),
-        ("AD_SHORT", os.getenv("AD_SHORT", "MPE"), False, "rede", "Nome NetBIOS curto do Domínio"),
-        ("AD_EMAIL", os.getenv("AD_EMAIL", "mpms.mp.br"), False, "rede", "Sufixo de e-mail institucional"),
+        ("AD_DOMAIN", os.getenv("AD_DOMAIN", ""), False, "rede", "Domínio FQDN do Active Directory"),
+        ("AD_MMC", os.getenv("AD_MMC", ""), False, "rede", "Base DN / MMC do Active Directory"),
+        ("AD_SHORT", os.getenv("AD_SHORT", ""), False, "rede", "Nome NetBIOS curto do Domínio"),
+        ("AD_EMAIL", os.getenv("AD_EMAIL", ""), False, "rede", "Sufixo de e-mail institucional"),
 
         # SCCM
         ("SCCM_ADMIN_USER", sccm_user, False, "sccm", "Conta de Administrador para consultas SCCM"),
         ("SCCM_ADMIN_PASSWORD", sccm_pass, True, "sccm", "Senha da conta Administradora do SCCM"),
-        ("SCCM_SERVER", os.getenv("SCCM_SERVER", "srv-1046.in.mpe.ms.gov.br"), False, "sccm", "Servidor FQDN do SCCM"),
-        ("SCCM_SITE_CODE", os.getenv("SCCM_SITE_CODE", "PGJ"), False, "sccm", "Código do Site do SCCM"),
+        ("SCCM_SERVER", os.getenv("SCCM_SERVER", ""), False, "sccm", "Servidor FQDN do SCCM"),
+        ("SCCM_SITE_CODE", os.getenv("SCCM_SITE_CODE", ""), False, "sccm", "Código do Site do SCCM"),
 
         # PaperCut
         ("PAPERCUT_USER", pc_user, False, "papercut", "Usuário Administrador do PaperCut"),
         ("PAPERCUT_PASS", pc_pass, True, "papercut", "Senha do Administrador do PaperCut"),
-        ("PAPERCUT_URL", os.getenv("PAPERCUT_URL", "http://impressora.mpms.mp.br:9191/admin"), False, "papercut", "URL do painel administrativo do PaperCut"),
-        ("PAPERCUT_PRINTER_LIST_URL", os.getenv("PAPERCUT_PRINTER_LIST_URL", "http://impressora.mpms.mp.br:9191/app?service=page/PrinterList"), False, "papercut", "URL da listagem de impressoras"),
-        ("PAPERCUT_DEVICE_LIST_URL", os.getenv("PAPERCUT_DEVICE_LIST_URL", "http://impressora.mpms.mp.br:9191/app?service=page/DeviceList"), False, "papercut", "URL da listagem de dispositivos multifuncionais"),
+        ("PAPERCUT_URL", os.getenv("PAPERCUT_URL", ""), False, "papercut", "URL do painel administrativo do PaperCut"),
+        ("PAPERCUT_PRINTER_LIST_URL", os.getenv("PAPERCUT_PRINTER_LIST_URL", ""), False, "papercut", "URL da listagem de impressoras"),
+        ("PAPERCUT_DEVICE_LIST_URL", os.getenv("PAPERCUT_DEVICE_LIST_URL", ""), False, "papercut", "URL da listagem de dispositivos multifuncionais"),
 
         # Telefonia (OXE)
         ("OXE_USER", oxe_user, False, "oxe", "Usuário de acesso à Central Telefônica OXE"),
         ("OXE_PASS", oxe_pass, True, "oxe", "Senha de acesso à Central Telefônica OXE"),
-        ("OXE_URL", os.getenv("OXE_URL", "https://10.12.32.30"), False, "oxe", "URL da Central Telefônica OXE"),
+        ("OXE_URL", os.getenv("OXE_URL", ""), False, "oxe", "URL da Central Telefônica OXE"),
 
         # Inteligência Artificial & Machine Learning
         ("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""), True, "ia", "Chave da API do Google Gemini"),
         ("ML_N_JOBS", os.getenv("ML_N_JOBS", "auto"), False, "ia", "Número de workers paralelos para treinamento de ML (auto, -1 ou número de CPUs)"),
 
         # Portais e URLs
-        ("CITSMART_LINK", os.getenv("CITSMART_LINK", "https://suporte.mpms.mp.br"), False, "urls", "URL principal do CitSmart"),
-        ("CITSMART_LINK_NOVO", os.getenv("CITSMART_LINK_NOVO", "https://suporte.mpms.mp.br/inbox/lowcode/form/copilot_novo/default"), False, "urls", "URL do formulário de abertura de chamados do CitSmart"),
-        ("OTRS_LINK", os.getenv("OTRS_LINK", "https://central.mpms.mp.br"), False, "urls", "URL do OTRS"),
-        ("ATOS_NORMAS_API_URL", os.getenv("ATOS_NORMAS_API_URL", "https://www.mpms.mp.br/atos-e-normas/listAll"), False, "urls", "Endpoint da API de Atos e Normas MPMS"),
-        ("ATOS_NORMAS_DOWNLOAD_URL", os.getenv("ATOS_NORMAS_DOWNLOAD_URL", "https://www.mpms.mp.br/atos-e-normas/download/"), False, "urls", "URL base para download de Atos e Normas"),
+        ("CITSMART_LINK", os.getenv("CITSMART_LINK", ""), False, "urls", "URL principal do CitSmart"),
+        ("CITSMART_LINK_NOVO", os.getenv("CITSMART_LINK_NOVO", ""), False, "urls", "URL do formulário de abertura de chamados do CitSmart"),
+        ("OTRS_LINK", os.getenv("OTRS_LINK", ""), False, "urls", "URL do OTRS"),
+        ("PROMOTORIAS_URL", os.getenv("PROMOTORIAS_URL", ""), False, "urls", "URL da lista de Promotorias"),
+        ("PROCURADORIAS_URL", os.getenv("PROCURADORIAS_URL", ""), False, "urls", "URL da lista de Procuradorias"),
+        ("SIMP_URL", os.getenv("SIMP_URL", ""), False, "urls", "URL do portal SIMP"),
+        ("ATOS_NORMAS_API_URL", os.getenv("ATOS_NORMAS_API_URL", ""), False, "urls", "Endpoint da API de Atos e Normas MPMS"),
+        ("ATOS_NORMAS_DOWNLOAD_URL", os.getenv("ATOS_NORMAS_DOWNLOAD_URL", ""), False, "urls", "URL base para download de Atos e Normas"),
 
         # WhatsApp & Evolution API (Fail-Closed: chave obrigatória via .env)
-        ("EVOLUTION_API_URL", os.getenv("EVOLUTION_API_URL", "http://evolution-api:8080"), False, "whatsapp", "URL do serviço Evolution API"),
-        ("EVOLUTION_INSTANCE_NAME", os.getenv("EVOLUTION_INSTANCE_NAME", "bancada_sti"), False, "whatsapp", "Nome da Instância do WhatsApp na Evolution"),
+        ("EVOLUTION_API_URL", os.getenv("EVOLUTION_API_URL", ""), False, "whatsapp", "URL do serviço Evolution API"),
+        ("EVOLUTION_INSTANCE_NAME", os.getenv("EVOLUTION_INSTANCE_NAME", ""), False, "whatsapp", "Nome da Instância do WhatsApp na Evolution"),
         ("EVOLUTION_API_KEY", os.getenv("EVOLUTION_API_KEY", ""), True, "whatsapp", "Token de autenticação da Evolution API"),
-        ("WHATSAPP_INSTITUCIONAL_NUMERO", os.getenv("WHATSAPP_INSTITUCIONAL_NUMERO", "+55 67 98478-2034"), False, "whatsapp", "Número de telefone institucional da bancada"),
+        ("WHATSAPP_INSTITUCIONAL_NUMERO", os.getenv("WHATSAPP_INSTITUCIONAL_NUMERO", ""), False, "whatsapp", "Número de telefone institucional da bancada"),
 
         # Planilhas e Nuvem
-        ("SHAREPOINT_RELATIVE_PATH", os.getenv("SHAREPOINT_RELATIVE_PATH", r"OneDrive - Ministerio Público do Estado de Mato Grosso do Sul\Documentos SharePoint DIT-Manutenção\Chamados\Chamados_Unificados_Final.xlsx"), False, "sharepoint", "Caminho relativo da Planilha de Chamados no OneDrive/SharePoint"),
+        ("SHAREPOINT_RELATIVE_PATH", os.getenv("SHAREPOINT_RELATIVE_PATH", ""), False, "sharepoint", "Caminho relativo da Planilha de Chamados no OneDrive/SharePoint"),
         ("DONATIONS_EXCEL_RELATIVE_PATH", os.getenv("DONATIONS_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Doações e Baixas"),
         ("FISCAL_EXCEL_RELATIVE_PATH", os.getenv("FISCAL_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Fiscalização de Contratos"),
         ("WARRANTY_EXCEL_RELATIVE_PATH", os.getenv("WARRANTY_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Garantia"),
-        ("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/s/dit-manutencao/IQBQonhEup-USL9RTQTk8W6vAS9SWFl5jhGXAOR_bezve5E?e=PYfupT"), False, "sharepoint", "URL/Caminho da Planilha de Viagens da Bancada"),
-        ("FERIAS_EXCEL_RELATIVE_PATH", os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t"), False, "sharepoint", "URL/Caminho da Planilha de Férias e Licenças da Bancada"),
+        ("VIAGENS_EXCEL_RELATIVE_PATH", os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Viagens da Bancada"),
+        ("FERIAS_EXCEL_RELATIVE_PATH", os.getenv("FERIAS_EXCEL_RELATIVE_PATH", ""), False, "sharepoint", "URL/Caminho da Planilha de Férias e Licenças da Bancada"),
         ("SHAREPOINT_MATUTINO_URL", os.getenv("SHAREPOINT_MATUTINO_URL", ""), False, "sharepoint", "URL da Planilha de Escala Matutina"),
         ("VIDEO_FAQ_PATH", os.getenv("VIDEO_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Vídeos FAQ no SharePoint"),
         ("IMAGE_FAQ_PATH", os.getenv("IMAGE_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Imagens FAQ no SharePoint"),

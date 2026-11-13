@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 from datetime import datetime
 from .connection import get_connection, save_dataframe_to_db
@@ -160,9 +161,10 @@ def get_ramais_config() -> dict:
     rows = cursor.fetchall()
     conn.close()
     config = {k: v for k, v in rows}
+    portal_base = f"https://www.{os.getenv('AD_EMAIL').strip().lstrip('@')}"
     return {
-        "Interior": config.get("url_interior", "https://www.mpms.mp.br/anexo/MTMzMDYxNDI3NTAwODYzMjkwNDNmYmI5MGYwYjU2ZGE5ZWI5M2ZmN2EwMTQxLTA0MQ"),
-        "Capital / PGJ": config.get("url_capital", "https://www.mpms.mp.br/anexo/MTMzMDYxNDE2ODMwOGI3MjcxZWQ2YzhkYjYyODkwOGFlMDRjNTUzYWFmY2ZhLTA0MQ")
+        "Interior": config.get("url_interior", f"{portal_base}/anexo/MTMzMDYxNDI3NTAwODYzMjkwNDNmYmI5MGYwYjU2ZGE5ZWI5M2ZmN2EwMTQxLTA0MQ"),
+        "Capital / PGJ": config.get("url_capital", f"{portal_base}/anexo/MTMzMDYxNDE2ODMwOGI3MjcxZWQ2YzhkYjYyODkwOGFlMDRjNTUzYWFmY2ZhLTA0MQ")
     }
 
 

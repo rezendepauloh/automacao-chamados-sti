@@ -99,7 +99,7 @@ def render_configuracoes_page():
         c1, c2 = st.columns(2)
         with c1:
             form_values["AD_USER"] = (
-                st.text_input("Usuário da Rede / AD", value=settings.get("AD_USER", {}).get("value", "paulogoncalves"), key="cfg_ad_user"),
+                st.text_input("Usuário da Rede / AD", value=settings.get("AD_USER", {}).get("value"), key="cfg_ad_user"),
                 False, "rede", "Usuário de Rede / Active Directory"
             )
         with c2:
@@ -111,20 +111,20 @@ def render_configuracoes_page():
         c3, c4 = st.columns(2)
         with c3:
             form_values["AD_DOMAIN"] = (
-                st.text_input("Domínio FQDN", value=settings.get("AD_DOMAIN", {}).get("value", "in.mpe.ms.gov.br"), key="cfg_ad_domain"),
+                st.text_input("Domínio FQDN", value=settings.get("AD_DOMAIN", {}).get("value"), key="cfg_ad_domain"),
                 False, "rede", "Domínio FQDN do Active Directory"
             )
             form_values["AD_SHORT"] = (
-                st.text_input("Nome NetBIOS Curto", value=settings.get("AD_SHORT", {}).get("value", "MPE"), key="cfg_ad_short"),
+                st.text_input("Nome NetBIOS Curto", value=settings.get("AD_SHORT", {}).get("value"), key="cfg_ad_short"),
                 False, "rede", "Nome NetBIOS curto do Domínio"
             )
         with c4:
             form_values["AD_MMC"] = (
-                st.text_input("Base DN / MMC", value=settings.get("AD_MMC", {}).get("value", "DC=in,DC=mpe,DC=ms,DC=gov,DC=br"), key="cfg_ad_mmc"),
+                st.text_input("Base DN / MMC", value=settings.get("AD_MMC", {}).get("value"), key="cfg_ad_mmc"),
                 False, "rede", "Base DN / MMC do Active Directory"
             )
             form_values["AD_EMAIL"] = (
-                st.text_input("Sufixo de E-mail Institucional", value=settings.get("AD_EMAIL", {}).get("value", "mpms.mp.br"), key="cfg_ad_email"),
+                st.text_input("Sufixo de E-mail Institucional", value=settings.get("AD_EMAIL", {}).get("value"), key="cfg_ad_email"),
                 False, "rede", "Sufixo de e-mail institucional"
             )
 
@@ -138,7 +138,7 @@ def render_configuracoes_page():
         c1, c2 = st.columns(2)
         with c1:
             form_values["SCCM_ADMIN_USER"] = (
-                st.text_input("Usuário Administrador (ex: paulo_admin)", value=settings.get("SCCM_ADMIN_USER", {}).get("value", "paulo_admin"), key="cfg_sccm_user"),
+                st.text_input("Usuário Administrador (ex: usuario_admin)", value=settings.get("SCCM_ADMIN_USER", {}).get("value"), key="cfg_sccm_user"),
                 False, "sccm", "Conta de Administrador para consultas SCCM"
             )
         with c2:
@@ -150,12 +150,12 @@ def render_configuracoes_page():
         c3, c4 = st.columns(2)
         with c3:
             form_values["SCCM_SERVER"] = (
-                st.text_input("Servidor do SCCM (FQDN)", value=settings.get("SCCM_SERVER", {}).get("value", "srv-1046.in.mpe.ms.gov.br"), key="cfg_sccm_server"),
+                st.text_input("Servidor do SCCM (FQDN)", value=settings.get("SCCM_SERVER", {}).get("value"), key="cfg_sccm_server"),
                 False, "sccm", "Servidor FQDN do SCCM"
             )
         with c4:
             form_values["SCCM_SITE_CODE"] = (
-                st.text_input("Código do Site", value=settings.get("SCCM_SITE_CODE", {}).get("value", "PGJ"), key="cfg_sccm_site"),
+                st.text_input("Código do Site", value=settings.get("SCCM_SITE_CODE", {}).get("value"), key="cfg_sccm_site"),
                 False, "sccm", "Código do Site do SCCM"
             )
 
@@ -179,18 +179,18 @@ def render_configuracoes_page():
             )
 
         form_values["PAPERCUT_URL"] = (
-            st.text_input("URL Principal do PaperCut", value=settings.get("PAPERCUT_URL", {}).get("value", "http://impressora.mpms.mp.br:9191/admin"), key="cfg_pc_url"),
+            st.text_input("URL Principal do PaperCut", value=settings.get("PAPERCUT_URL", {}).get("value"), key="cfg_pc_url"),
             False, "papercut", "URL do painel administrativo do PaperCut"
         )
         c3, c4 = st.columns(2)
         with c3:
             form_values["PAPERCUT_PRINTER_LIST_URL"] = (
-                st.text_input("URL da Lista de Impressoras", value=settings.get("PAPERCUT_PRINTER_LIST_URL", {}).get("value", "http://impressora.mpms.mp.br:9191/app?service=page/PrinterList"), key="cfg_pc_print_url"),
+                st.text_input("URL da Lista de Impressoras", value=settings.get("PAPERCUT_PRINTER_LIST_URL", {}).get("value"), key="cfg_pc_print_url"),
                 False, "papercut", "URL da listagem de impressoras"
             )
         with c4:
             form_values["PAPERCUT_DEVICE_LIST_URL"] = (
-                st.text_input("URL da Lista de Dispositivos", value=settings.get("PAPERCUT_DEVICE_LIST_URL", {}).get("value", "http://impressora.mpms.mp.br:9191/app?service=page/DeviceList"), key="cfg_pc_dev_url"),
+                st.text_input("URL da Lista de Dispositivos", value=settings.get("PAPERCUT_DEVICE_LIST_URL", {}).get("value"), key="cfg_pc_dev_url"),
                 False, "papercut", "URL da listagem de dispositivos multifuncionais"
             )
 
@@ -213,7 +213,7 @@ def render_configuracoes_page():
                 oxe_pass_val, True, "oxe", "Senha de acesso à Central Telefônica OXE", oxe_pass_raw
             )
         form_values["OXE_URL"] = (
-            st.text_input("URL da Central Telefônica", value=settings.get("OXE_URL", {}).get("value", "https://10.12.32.30"), key="cfg_oxe_url"),
+            st.text_input("URL da Central Telefônica", value=settings.get("OXE_URL", {}).get("value"), key="cfg_oxe_url"),
             False, "oxe", "URL da Central Telefônica OXE"
         )
 
@@ -225,26 +225,26 @@ def render_configuracoes_page():
         st.info("Links dos sistemas corporativos para integração e atalhos rápidos.")
 
         form_values["CITSMART_LINK"] = (
-            st.text_input("URL do CitSmart", value=settings.get("CITSMART_LINK", {}).get("value", "https://suporte.mpms.mp.br"), key="cfg_citsmart_link"),
+            st.text_input("URL do CitSmart", value=settings.get("CITSMART_LINK", {}).get("value"), key="cfg_citsmart_link"),
             False, "urls", "URL principal do CitSmart"
         )
         form_values["CITSMART_LINK_NOVO"] = (
-            st.text_input("URL Formulário Novo CitSmart", value=settings.get("CITSMART_LINK_NOVO", {}).get("value", "https://suporte.mpms.mp.br/inbox/lowcode/form/copilot_novo/default"), key="cfg_citsmart_novo"),
+            st.text_input("URL Formulário Novo CitSmart", value=settings.get("CITSMART_LINK_NOVO", {}).get("value"), key="cfg_citsmart_novo"),
             False, "urls", "URL do formulário de abertura de chamados do CitSmart"
         )
         form_values["OTRS_LINK"] = (
-            st.text_input("URL do OTRS", value=settings.get("OTRS_LINK", {}).get("value", "https://central.mpms.mp.br"), key="cfg_otrs_link"),
+            st.text_input("URL do OTRS", value=settings.get("OTRS_LINK", {}).get("value"), key="cfg_otrs_link"),
             False, "urls", "URL do OTRS"
         )
         c1, c2 = st.columns(2)
         with c1:
             form_values["ATOS_NORMAS_API_URL"] = (
-                st.text_input("API de Atos e Normas", value=settings.get("ATOS_NORMAS_API_URL", {}).get("value", "https://www.mpms.mp.br/atos-e-normas/listAll"), key="cfg_atos_api"),
+                st.text_input("API de Atos e Normas", value=settings.get("ATOS_NORMAS_API_URL", {}).get("value"), key="cfg_atos_api"),
                 False, "urls", "Endpoint da API de Atos e Normas MPMS"
             )
         with c2:
             form_values["ATOS_NORMAS_DOWNLOAD_URL"] = (
-                st.text_input("URL Download de Atos e Normas", value=settings.get("ATOS_NORMAS_DOWNLOAD_URL", {}).get("value", "https://www.mpms.mp.br/atos-e-normas/download/"), key="cfg_atos_dl"),
+                st.text_input("URL Download de Atos e Normas", value=settings.get("ATOS_NORMAS_DOWNLOAD_URL", {}).get("value"), key="cfg_atos_dl"),
                 False, "urls", "URL base para download de Atos e Normas"
             )
 
@@ -272,7 +272,7 @@ def render_configuracoes_page():
                 st.text_input("URL Planilha Fiscalização de Contratos", value=val_fiscal, key="cfg_sp_fiscal", help="Link do SharePoint ou caminho local da planilha de Fiscalização."),
                 False, "sharepoint", "URL/Caminho da Planilha de Fiscalização de Contratos"
             )
-            val_ferias = settings.get("FERIAS_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/r/sites/dit-manutencao/_layouts/15/Doc.aspx?sourcedoc=%7BE197F2AD-7143-4E92-A56B-B049D930E4C5%7D&file=Previs%C3%A3o%20de%20F%C3%A9rias-Manutencao.xlsx&action=default&mobileredirect=true&wdwpf=doclib-t")
+            val_ferias = settings.get("FERIAS_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("FERIAS_EXCEL_RELATIVE_PATH", "")
             form_values["FERIAS_EXCEL_RELATIVE_PATH"] = (
                 st.text_input("URL Planilha Previsão de Férias e Licenças", value=val_ferias, key="cfg_sp_ferias", help="Link do SharePoint da planilha de Férias e Licenças da Bancada."),
                 False, "sharepoint", "URL/Caminho da Planilha de Férias e Licenças da Bancada"
@@ -283,7 +283,7 @@ def render_configuracoes_page():
                 st.text_input("URL Planilha Controle de Garantia", value=val_garantia, key="cfg_sp_garantia", help="Link do SharePoint ou caminho local da planilha de Controle de Garantia."),
                 False, "sharepoint", "URL/Caminho da Planilha de Garantia"
             )
-            val_viagens = settings.get("VIAGENS_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", "https://ministeriopublicoms.sharepoint.com/:x:/s/dit-manutencao/IQBQonhEup-USL9RTQTk8W6vAS9SWFl5jhGXAOR_bezve5E?e=PYfupT")
+            val_viagens = settings.get("VIAGENS_EXCEL_RELATIVE_PATH", {}).get("value") or os.getenv("VIAGENS_EXCEL_RELATIVE_PATH", "")
             form_values["VIAGENS_EXCEL_RELATIVE_PATH"] = (
                 st.text_input("URL Planilha de Viagens da Bancada", value=val_viagens, key="cfg_sp_viagens", help="Link do SharePoint ou caminho local da planilha de Viagens da Bancada."),
                 False, "sharepoint", "URL/Caminho da Planilha de Viagens da Bancada"

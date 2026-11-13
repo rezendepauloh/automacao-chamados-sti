@@ -23,7 +23,7 @@ Criamos o script [`configurar_portproxy_firewall.ps1`](util/rede_firewall/config
 ### Opção 1: Executar Manualmente quando reiniciar (PowerShell Admin)
 Abra o **PowerShell como Administrador** no Windows e execute:
 ```powershell
-powershell -ExecutionPolicy Bypass -File "\\wsl$\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\util\rede_firewall\configurar_portproxy_firewall.ps1"
+powershell -ExecutionPolicy Bypass -File "\\wsl$\Ubuntu\home\<seu_usuario>\PythonProjects\automated-OTRS-and-CitSmart\util\rede_firewall\configurar_portproxy_firewall.ps1"
 ```
 *(ou navegue até a pasta pelo Windows Explorer e execute com o botão direito `Executar com o PowerShell` em modo Admin).*
 
@@ -37,7 +37,7 @@ Para que essa regra nunca mais quebre mesmo que a máquina reinicie ou o IP do W
 2. Execute o comando abaixo uma única vez para registrar a tarefa agendada:
 
 ```powershell
-$ScriptPath = "\\wsl$\Ubuntu\home\paulogoncalves\PythonProjects\automated-OTRS-and-CitSmart\util\rede_firewall\configurar_portproxy_firewall.ps1"
+$ScriptPath = "\\wsl$\Ubuntu\home\<seu_usuario>\PythonProjects\automated-OTRS-and-CitSmart\util\rede_firewall\configurar_portproxy_firewall.ps1"
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptPath`""
 $Trigger = New-ScheduledTaskTrigger -AtLogOn
 $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest

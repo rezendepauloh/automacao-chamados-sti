@@ -49,11 +49,11 @@ def format_phone_number(phone_raw: str) -> str:
 
 
 def is_bancada_member(nome_str: str) -> bool:
-    """Verifica se o nome contém algum dos integrantes da bancada (Paulo, Reginaldo, Luiz, Murillo)."""
+    """Verifica se o nome contém algum dos integrantes da bancada cadastrados."""
     if not nome_str:
         return False
-    n = str(nome_str).lower()
-    return "paulo henrique" in n or "reginaldo" in n or "luiz leonardo" in n or "villalba" in n or "murillo" in n or "yazbek" in n
+    from src.services.member_matcher import resolve_bancada_member
+    return resolve_bancada_member(str(nome_str)) is not None
 
 
 
@@ -155,7 +155,7 @@ def render_plantoes_page():
     st.sidebar.markdown("## 🔍 Filtros de Plantão")
     
     opcoes_servidores = [
-        "🟢 Apenas Bancada (Paulo, Reginaldo, Luiz, Murillo)",
+        "🟢 Apenas Integrantes da Bancada",
         "🌐 Todos os Servidores da STI"
     ]
     selected_servidor_mode = st.sidebar.radio("👥 Servidores Exibidos:", opcoes_servidores)

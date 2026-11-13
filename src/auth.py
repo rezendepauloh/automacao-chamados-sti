@@ -46,30 +46,23 @@ def reset_login_attempts(username: str):
     _FAILED_ATTEMPTS.pop(clean_user, None)
 
 # Mapeamento oficial dos Técnicos da Bancada (Administradores com Acesso Total)
-# Conforme especificado na documentação técnica (Docs/arquitetura/dossie_arquitetura_sistema.md)
-ADMIN_USERS: Dict[str, Dict[str, Any]] = {
-    "paulogoncalves": {
-        "display_name": "Paulo Henrique Gonçalves Rezende",
-        "role": "admin",
-        "admin_sys": "paulo_admin",
-        "admin_ad": "paulo_admin_ad",
-        "email": "paulogoncalves@mpms.mp.br",
-    },
-    "reginaldosb": {
-        "display_name": "Reginaldo da Silva Bandeira",
-        "role": "admin",
-        "admin_sys": "reginaldo_admin",
-        "admin_ad": "reginaldo_admin_ad",
-        "email": "reginaldosb@mpms.mp.br",
-    },
-    "luizvillalba": {
-        "display_name": "Luiz Leonardo Villalba",
-        "role": "admin",
-        "admin_sys": "villalba_admin",
-        "admin_ad": "villalba_admin_ad",
-        "email": "luizvillalba@mpms.mp.br",
-    },
-}
+# Conforme especificado na documentação técnica, este mapeamento é estritamente Fail-Closed:
+# Nomes, e-mails e credenciais administrativas NUNCA devem estar hardcoded no código-fonte.
+# A configuração DEVE vir exclusivamente do cofre / arquivo canônico .env via ADMIN_USERS_JSON.
+
+def load_admin_users() -> Dict[str, Dict[str, Any]]:
+    """Carrega o mapeamento de administradores da variável ADMIN_USERS_JSON no .env (Fail-Closed)."""
+    raw_json = os.getenv("ADMIN_USERS_JSON", "").strip()
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+            if isinstance(parsed, dict) and parsed:
+                return {k.strip().lower(): v for k, v in parsed.items()}
+        except Exception:
+            pass
+    return {}
+
+ADMIN_USERS: Dict[str, Dict[str, Any]] = load_admin_users()
 
 def get_auth_secret() -> str:
     """Retorna a chave secreta HMAC para assinatura e validação do token."""
@@ -88,12 +81,14 @@ def _get_serializer() -> itsdangerous.URLSafeTimedSerializer:
 def create_auth_token(username: str) -> str:
     """Gera um token seguro assinado digitalmente com dados de perfil do usuário e validade longa."""
     clean_user = username.strip().lower()
+    email_domain = (os.getenv("AD_EMAIL") or "").strip().lstrip("@")
+    email_val = f"{clean_user}@{email_domain}" if email_domain else f"{clean_user}@localhost"
     user_info = ADMIN_USERS.get(clean_user, {
         "display_name": clean_user,
         "role": "viewer",
         "admin_sys": None,
         "admin_ad": None,
-        "email": f"{clean_user}@mpms.mp.br",
+        "email": email_val,
     })
 
     now = int(time.time())
@@ -317,7 +312,7 @@ def render_login_page():
             st.markdown("##### 🔑 Entrar com sua conta de rede")
             user_input = st.text_input(
                 "Usuário do Domínio (sAmAccountName)",
-                placeholder="Ex: paulogoncalves ou reginaldosb",
+                placeholder="Ex: seu.usuario",
                 key="login_user_field"
             )
             pass_input = st.text_input(

@@ -51,30 +51,30 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
 ### ✅ Concluído: Resolução Definitiva do Bug de IP de Origem e Hostname nos Modais
 - **Status:** **Resolvido e Validado (100% dos testes aprovados)**.
 - **Entregas Realizadas:**
-  1. **Sanitização de Valores Nulos na UI ([`src/tabs/chamados.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tabs/chamados.py)):**
+  1. **Sanitização de Valores Nulos na UI ([`src/tabs/chamados.py`](automacao-chamados-sti/src/tabs/chamados.py)):**
      - Criado helper local `_sanitize_val()` que intercepta `float('nan')`, `"nan"`, `None`, `null` ou strings vazias, exibindo `N/A` de forma limpa.
      - Adicionado enriquecimento dinâmico em tempo real caso `ip_origem` ou `hostname` estejam ausentes no chamado aberto no modal.
      - Inclusão dos botões de ação remota instantânea (`bancada://run?tool=cmrc` e `bancada://run?tool=rdp`) quando a máquina ou IP são identificados.
-  2. **Lookup e Fallback no Cache Relacional do SCCM ([`src/database/sccm_db.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/database/sccm_db.py) e [`src/config.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/config.py)):**
-     - Criada a função [`get_device_by_user()`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/database/sccm_db.py) buscando por `last_logon_user` em `sccm_cache_devices`, priorizando máquinas ativas e IPs de rede interna `10.x`.
-     - Integrado lookup transparente no início de [`fetch_sccm_data()`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/config.py), permitindo obter os dados instantaneamente mesmo sem conexão direta via WMI/CIM ou em ambientes de contêiner.
-     - Criada a rotina [`update_ticket_device_info()`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/database/tickets_db.py) para persistir o IP/Hostname enriquecido no SQLite.
-  3. **Rotina de Salvamento no Banco e Scrapers ([`src/database/tickets_db.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/database/tickets_db.py), [`src/preprocess_chamados.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/preprocess_chamados.py), [`citsmart_scraper.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/scrapers/citsmart_scraper.py) e [`otrs_scraper.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/scrapers/otrs_scraper.py)):**
-     - [`save_tickets_to_db()`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/database/tickets_db.py) higieniza todas as entradas antes de gravar, enriquecendo chamados novos ou atualizados via cache do SCCM e preservando dados já existentes.
+  2. **Lookup e Fallback no Cache Relacional do SCCM ([`src/database/sccm_db.py`](automacao-chamados-sti/src/database/sccm_db.py) e [`src/config.py`](automacao-chamados-sti/src/config.py)):**
+     - Criada a função [`get_device_by_user()`](automacao-chamados-sti/src/database/sccm_db.py) buscando por `last_logon_user` em `sccm_cache_devices`, priorizando máquinas ativas e IPs de rede interna `10.x`.
+     - Integrado lookup transparente no início de [`fetch_sccm_data()`](automacao-chamados-sti/src/config.py), permitindo obter os dados instantaneamente mesmo sem conexão direta via WMI/CIM ou em ambientes de contêiner.
+     - Criada a rotina [`update_ticket_device_info()`](automacao-chamados-sti/src/database/tickets_db.py) para persistir o IP/Hostname enriquecido no SQLite.
+  3. **Rotina de Salvamento no Banco e Scrapers ([`src/database/tickets_db.py`](automacao-chamados-sti/src/database/tickets_db.py), [`src/preprocess_chamados.py`](automacao-chamados-sti/src/preprocess_chamados.py), [`citsmart_scraper.py`](automacao-chamados-sti/src/scrapers/citsmart_scraper.py) e [`otrs_scraper.py`](automacao-chamados-sti/src/scrapers/otrs_scraper.py)):**
+     - [`save_tickets_to_db()`](automacao-chamados-sti/src/database/tickets_db.py) higieniza todas as entradas antes de gravar, enriquecendo chamados novos ou atualizados via cache do SCCM e preservando dados já existentes.
      - Scrapers e scripts de pré-processamento agora contam com `.fillna("")` e higienização de cache para que nenhum valor `NaN` seja gerado ou gravado nos arquivos intermediários ou no banco de dados.
-  4. **Testes Automatizados ([`tests/unit/test_database.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/tests/unit/test_database.py)):**
+  4. **Testes Automatizados ([`tests/unit/test_database.py`](automacao-chamados-sti/tests/unit/test_database.py)):**
      - Novos testes unitários adicionados (`test_sccm_get_device_by_user` e `test_tickets_save_nan_sanitization_and_enrichment`), elevando a suíte para 29 testes executados com 100% de sucesso.
 
 ### ✅ Concluído: Resolução Definitiva do Bug de Localidades com 'nan' e 'Não encontrado no AD'
 - **Status:** **Resolvido e Validado (100% dos 30 testes aprovados)**.
 - **Entregas Realizadas:**
-  1. **Classificação e Composição de Localidade ([`src/tag_classifier.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tag_classifier.py)):**
+  1. **Classificação e Composição de Localidade ([`src/tag_classifier.py`](automacao-chamados-sti/src/tag_classifier.py)):**
      - Função `_clean_loc()` criada no fallback de localidade física para interceptar `nan`, `none`, `null`, `n/d` e variações de gênero como `"Não encontrado no AD"` e `"Não encontrada no AD"`.
      - Impede a concatenação incorreta `"nan - Não encontrado no AD"`, definindo como `"Não identificada"` ou aproveitando a parte válida existente.
-  2. **Sanitização no Carregamento e Persistência do Banco ([`src/database/tickets_db.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/database/tickets_db.py)):**
+  2. **Sanitização no Carregamento e Persistência do Banco ([`src/database/tickets_db.py`](automacao-chamados-sti/src/database/tickets_db.py)):**
      - Em `save_tickets_to_db()`, valores nulos ou erros de busca do AD são tratados antes do INSERT/UPDATE.
      - Em `load_data()`, filtros tratam `cidade_predio`, `unidade` e `localidade_fisica`, garantindo que strings residuais nunca alcancem os DataFrames e a interface gráfica.
-  3. **Interface dos Modais e Edição Manual ([`src/tabs/chamados.py`](file:///home/paulo/PythonProjects/automacao-chamados-sti/src/tabs/chamados.py)):**
+  3. **Interface dos Modais e Edição Manual ([`src/tabs/chamados.py`](automacao-chamados-sti/src/tabs/chamados.py)):**
      - Sanitização em `show_ticket_details()` para exibição limpa de `Localidade: Não identificada` quando ausente.
      - Os inputs do expander "Editar Localização Manual" agora usam `_sanitize_val()`, impedindo que os campos de texto abram preenchidos com o texto literal `"nan"`.
   4. **Scripts de Limpeza e Migração para Produção ([`util/limpeza_banco/limpar_localidades_nan.sql`](automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_localidades_nan.sql) e [`util/limpeza_banco/limpar_localidades_nan.py`](automated-OTRS-and-CitSmart/util/limpeza_banco/limpar_localidades_nan.py)):**
@@ -192,7 +192,7 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
    9. **Estabilização do Leitor de FAQs, Mídia Autenticada e Suíte de Testes ([`src/tabs/links_faqs.py`](automated-OTRS-and-CitSmart/src/tabs/links_faqs.py)):**
       - **Diagnóstico da Quebra de Imagens (HTTP 401 Unauthorized):** As capturas de tela dos tutoriais do SharePoint Online exigem cookies de sessão corporativa (`rtFa`, `FedAuth`, etc.). Ao carregar a página no Streamlit em `localhost:8501`, o navegador aplica restrições estritas de SameSite/CORS para requisições cross-origin `<img>`, bloqueando o envio dos cookies e gerando erro 401.
       - **Extração Automática de Cookies & Organização em Pastas por Tutorial:**
-        * Criado mecanismo que extrai diretamente do perfil de usuário do Firefox (`/mnt/c/Users/paulogoncalves/.../cookies.sqlite`) os cookies autenticados de `ministeriopublicoms.sharepoint.com` e os armazena com segurança em `uploads/faq/sharepoint_cookies.json`.
+        * Criado mecanismo que extrai diretamente do perfil de usuário do Firefox (`/mnt/c/Users/<usuario_windows>/.../cookies.sqlite`) os cookies autenticados do SharePoint corporativo e os armazena com segurança em `uploads/faq/sharepoint_cookies.json`.
         * **Estrutura de Pastas Padronizada por Tutorial:** Em vez de salvar arquivos soltos na raiz, tanto imagens quanto vídeos possuem suas subpastas dedicadas (`uploads/faq/imagens/<slug_tutorial>/` e `uploads/faq/videos/<slug_tutorial>/`), garantindo uma organização uniforme e espelhada.
         * Implementada migração automática e defensiva: arquivos previamente baixados na raiz foram realocados para as respectivas pastas de tutoriais.
         * A **Galeria de Imagens** e a **Aba de Vídeos** agrupam e exibem mídias por pasta de tutorial com contadores dinâmicos, carrossel integrado e atalhos para abertura na intranet.
@@ -330,10 +330,7 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
           * Leitura e restauração automática e silenciosa de sessão em novas abas ou recarregamentos de página (F5) via `st.context.cookies` e `restore_session_from_cookie()`.
           * Botão de "🚪 Sair / Logout" no cabeçalho do sistema que limpa instantaneamente a sessão e os cookies no navegador.
         - **Controle de Acesso por Funções (RBAC) & Contas Administrativas Individuais:**
-          * Mapeamento dos 3 analistas da Bancada como Administradores com privilégios totais e contas de auditoria:
-            - **Paulo Henrique Gonçalves Rezende (`paulogoncalves`):** Admin Sistema: `paulo_admin` | Admin AD: `paulo_admin_ad`
-            - **Reginaldo da Silva Bandeira (`reginaldosb`):** Admin Sistema: `reginaldo_admin` | Admin AD: `reginaldo_admin_ad`
-            - **Luiz Leonardo Villalba (`luizvillalba`):** Admin Sistema: `villalba_admin` | Admin AD: `villalba_admin_ad`
+          * Mapeamento dinâmico configurável dos analistas da Bancada como Administradores via variável de ambiente `ADMIN_USERS_JSON` com privilégios totais e contas de auditoria (`admin_sys` e `admin_ad`).
           * Usuários colaboradores e terceirizados recebem perfil `viewer` (somente leitura), com ocultação automática do **Cofre de Senhas** e restrição em rotas confidenciais.
         - **Proteção do Dashboard & Navegação ([`dashboard.py`](automated-OTRS-and-CitSmart/dashboard.py) e [`src/components/header.py`](automated-OTRS-and-CitSmart/src/components/header.py)):**
           * Interceptação de autenticação pré-renderização com tela de login institucional moderna.
@@ -361,8 +358,8 @@ O **Sistema Bancada STI** é uma plataforma corporativa desenvolvida para a equi
 ### 🎯 5.1 Migração Definitiva de SQLite para PostgreSQL no Docker (Prontidão para Deploy MPMS) [CONCLUÍDA ✅]
 1. **Transição de Banco de Dados para Produção Concluída:**
    - O projeto agora roda por padrão com `DB_TYPE="postgres"` gerenciado via `docker-compose.yml`.
-   - Criado e executado o script de migração unificada [`util/migracoes/migrar_sqlite_para_postgres.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/util/migracoes/migrar_sqlite_para_postgres.py), transferindo com integridade **75.779 registros de 42 tabelas** do SQLite para o PostgreSQL.
-   - Implementado `PostgreSQLCompatibleCursor` e `PooledPostgresConnection` em [`src/database/connection.py`](file:///home/paulogoncalves/PythonProjects/automated-OTRS-and-CitSmart/src/database/connection.py) com pool `ThreadedConnectionPool` (1 a 20 conexões concorrentes) e tradução transparente de placeholders (`?` -> `%s`), auto-increments (`SERIAL`), `ON CONFLICT` e introspecção de schema.
+   - Criado e executado o script de migração unificada [`util/migracoes/migrar_sqlite_para_postgres.py`](automated-OTRS-and-CitSmart/util/migracoes/migrar_sqlite_para_postgres.py), transferindo com integridade **75.779 registros de 42 tabelas** do SQLite para o PostgreSQL.
+   - Implementado `PostgreSQLCompatibleCursor` e `PooledPostgresConnection` em [`src/database/connection.py`](automated-OTRS-and-CitSmart/src/database/connection.py) com pool `ThreadedConnectionPool` (1 a 20 conexões concorrentes) e tradução transparente de placeholders (`?` -> `%s`), auto-increments (`SERIAL`), `ON CONFLICT` e introspecção de schema.
    - Todos os módulos (Chamados, Active Directory, SCCM, Plantões, Garantia, Doações, Cofre de Senhas, Impressoras, Notificações, Telefonia e Cron) foram testados e validados com 100% de sucesso no PostgreSQL.
 
 ### 🎯 5.2 Estabilidade de Paginação e Modais no Streamlit (Issue Registrada)

@@ -620,7 +620,7 @@ def render_sccm_page():
         dev_search = st.sidebar.text_input(
             "🔎 Buscar Estação, Usuário, IP ou Modelo:",
             value=default_sccm_search,
-            placeholder="Ex: PGJ-NT-0123, paulo, ThinkCentre...",
+            placeholder="Ex: PGJ-NT-0123, usuario, ThinkCentre...",
             key="sccm_dev_search"
         ).strip().lower()
 
@@ -665,7 +665,7 @@ def render_sccm_page():
     elif selected_title == "👤 Usuários":
         usr_search = st.sidebar.text_input(
             "🔎 Buscar Login, Nome ou DN:",
-            placeholder="Ex: paulo, silva, pgj...",
+            placeholder="Ex: usuario, silva, pgj...",
             key="sccm_user_search"
         ).strip().lower()
 

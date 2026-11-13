@@ -252,21 +252,11 @@ if ($adComputer) {
         $targetAdPass = $AdAdminPassword
         if (-not $targetAdPass) { $targetAdPass = $env:AD_ADMIN_PASSWORD }
 
-        # Se nenhum usuário foi configurado mas o usuário logado for detectado, tenta sugerir ou usar <login>_admin_ad
+        # Se nenhum usuário foi configurado mas o usuário logado for detectado, usa <login>_admin_ad
         if (-not $targetAdUser) {
             $currentUserShort = $env:USERNAME
             if ($currentUserShort) {
-                # Mapeamento conhecido para os técnicos da Bancada STI
-                $techMap = @{
-                    "paulogoncalves" = "paulo_admin_ad"
-                    "reginaldosb"    = "reginaldo_admin_ad"
-                    "luizvillalba"   = "villalba_admin_ad"
-                }
-                if ($techMap.ContainsKey($currentUserShort.ToLower())) {
-                    $targetAdUser = $techMap[$currentUserShort.ToLower()]
-                } else {
-                    $targetAdUser = "${currentUserShort}_admin_ad"
-                }
+                $targetAdUser = "${currentUserShort}_admin_ad"
             }
         }
 

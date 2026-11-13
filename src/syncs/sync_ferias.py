@@ -75,11 +75,6 @@ def run_ferias_sync() -> bool:
             target_file = default_up
 
     if not target_file or not Path(target_file).is_file():
-        onedrive_win = Path("/mnt/c/Users/paulogoncalves/OneDrive - Ministerio Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Previsão de Férias-Manutencao.xlsx")
-        if onedrive_win.is_file():
-            target_file = onedrive_win
-
-    if not target_file or not Path(target_file).is_file():
         logger.error(f"Planilha de Férias não localizada nem baixada (Configuração: {excel_path_env})")
         return False
 

@@ -21,8 +21,8 @@ def _get_username() -> str:
     except Exception:
         pass
         
-    # Padrão fallback para paulogoncalves
-    return "paulogoncalves"
+    # Fallback vazio
+    return ""
 
 def prompt_senha(service_name, username_label, default_user=None):
     """
@@ -102,10 +102,17 @@ def main():
     print("🔑 CONFIGURAÇÃO OPCIONAL: USUÁRIO ADMINISTRADOR DO SCCM")
     print("="*60)
     print("Se você deseja rodar a consulta de IPs no SCCM com privilégios de Administrador,")
-    print("podemos salvar a senha da conta administradora (ex: paulo_admin) no seu cofre.")
+    print("podemos salvar a senha da conta administradora (ex: usuario_admin) no seu cofre.")
 
-    admin_user = "paulo_admin"
-    deve_pedir_sccm, target_admin, _ = prompt_senha("sccm_admin", admin_user, default_user=admin_user)
+    admin_user = os.getenv("SCCM_ADMIN_USER", "").strip()
+    if not admin_user:
+        admin_user = input("Digite o usuário administrador do SCCM (ex: usuario_admin): ").strip()
+
+    if not admin_user:
+        print("ℹ️ Nenhum usuário administrador especificado. Configuração do SCCM ignorada.\n")
+        deve_pedir_sccm = False
+    else:
+        deve_pedir_sccm, target_admin, _ = prompt_senha("sccm_admin", admin_user, default_user=admin_user)
 
     if deve_pedir_sccm:
         quer_salvar = input("Deseja salvar/atualizar a senha da conta de Admin para SCCM? (S/N): ").strip().upper()

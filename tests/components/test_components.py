@@ -62,9 +62,9 @@ class TestComponentsAndTabs(unittest.TestCase):
 
     def test_formatar_texto_portaria(self):
         """Valida realce de servidores designados em texto de portarias."""
-        texto = "Designar o servidor Paulo Henrique Gonçalves Rezende para comissão técnica."
-        destacado = _formatar_texto_portaria(texto, nomes_destacar=["Paulo Henrique Gonçalves Rezende"])
-        self.assertIn("🟢 Paulo Henrique Gonçalves Rezende", destacado)
+        texto = "Designar o servidor Servidor Modelo da Silva para comissão técnica."
+        destacado = _formatar_texto_portaria(texto, nomes_destacar=["Servidor Modelo da Silva"])
+        self.assertIn("🟢 Servidor Modelo da Silva", destacado)
 
     def test_calculate_dijkstra_route_empty(self):
         """Valida que grafo vazio não falha no cálculo de rotas do mapa."""
@@ -80,11 +80,12 @@ class TestComponentsAndTabs(unittest.TestCase):
         self.assertEqual(b64, "")
 
     def test_is_bancada_member(self):
-        """Valida membros oficiais da bancada técnica."""
-        self.assertTrue(is_bancada_member("Paulo Henrique Gonçalves Rezende"))
-        self.assertTrue(is_bancada_member("Reginaldo da Silva Bandeira"))
-        self.assertTrue(is_bancada_member("Luiz Leonardo Villalba"))
-        self.assertFalse(is_bancada_member("Usuário Qualquer"))
+        """Valida identificação de membros cadastrados da bancada técnica."""
+        from src.services.member_matcher import BANCADA_MEMBROS
+        if BANCADA_MEMBROS:
+            primeiro = BANCADA_MEMBROS[0]["nome"]
+            self.assertTrue(is_bancada_member(primeiro))
+        self.assertFalse(is_bancada_member("Usuário Inexistente Qualquer"))
 
     def test_faq_format_file_size(self):
         """Valida a conversão correta de bytes para KB, MB e GB."""
@@ -110,11 +111,11 @@ class TestComponentsAndTabs(unittest.TestCase):
     def test_faq_parse_sharepoint_content_clean_author_and_icons(self):
         """Valida remoção do cabeçalho de autoria e tags de ícones quebrados <i>."""
         raw_html = '''
-        <div>Paulo Henrique Gonçalves Rezende Published 10/05/2024</div>
+        <div>Autor Exemplo Published 10/05/2024</div>
         <p>Passo 1: Conecte o cabo <i class="ms-Icon ms-Icon--Plug"></i></p>
         '''
         parsed = parse_sharepoint_content(raw_html)
-        self.assertNotIn("Paulo Henrique", parsed)
+        self.assertNotIn("Autor Exemplo", parsed)
         self.assertNotIn("<i", parsed)
         self.assertIn("Passo 1: Conecte o cabo", parsed)
 
