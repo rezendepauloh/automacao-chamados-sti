@@ -4,6 +4,7 @@ warnings.filterwarnings("ignore", message=".*use_container_width.*")
 warnings.filterwarnings("ignore", message=".*st.components.v1.html.*")
 
 import sys
+import logging
 import asyncio
 import locale
 import importlib
@@ -21,6 +22,10 @@ load_dotenv()
 
 # Inicialização de cores ANSI e UTF-8 no terminal
 from src.terminal import log, print_header, CYAN, GREEN, YELLOW
+
+# Inicializa logging centralizado em sys.stdout e listener em tempo real de cliques em botões Streamlit
+from src.config import setup_streamlit_button_logging
+logger = setup_streamlit_button_logging()
 
 # Silencia o aviso WinError 10054 (Connection Reset) comum no Windows asyncio
 if sys.platform == 'win32':

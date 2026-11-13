@@ -40,14 +40,14 @@ DARK_GRAY = "\033[90m"
 def log(msg: str, symbol: str = "ℹ️", color: str = WHITE):
     """
     Exibe mensagem formatada no terminal com símbolo e cor ANSI,
-    protegida contra erros de codificação Unicode.
+    protegida contra erros de codificação Unicode e com flush em tempo real.
     """
     try:
-        print(f"[{symbol}] {color}{msg}{RESET}")
+        print(f"[{symbol}] {color}{msg}{RESET}", flush=True)
     except UnicodeEncodeError:
         safe_msg = str(msg).encode('ascii', errors='replace').decode('ascii')
         safe_sym = str(symbol).encode('ascii', errors='replace').decode('ascii')
-        print(f"[{safe_sym}] {color}{safe_msg}{RESET}")
+        print(f"[{safe_sym}] {color}{safe_msg}{RESET}", flush=True)
 
 # 4. Utilitários Visuais de Cabeçalhos e Caixas
 def print_header(title: str, color: str = CYAN, width: int = 65):
@@ -55,15 +55,15 @@ def print_header(title: str, color: str = CYAN, width: int = 65):
     border = "═" * (width - 2)
     padding = width - 4
     centered_title = title.center(padding)
-    print(f"\n{color}╔{border}╗{RESET}")
-    print(f"{color}║ {BOLD}{centered_title}{RESET}{color} ║{RESET}")
-    print(f"{color}╚{border}╝{RESET}\n")
+    print(f"\n{color}╔{border}╗{RESET}", flush=True)
+    print(f"{color}║ {BOLD}{centered_title}{RESET}{color} ║{RESET}", flush=True)
+    print(f"{color}╚{border}╝{RESET}\n", flush=True)
 
 def print_section(title: str, color: str = YELLOW):
     """Exibe um divisor de seção simples no terminal."""
-    print(f"\n{color}──── {BOLD}{title}{RESET} {color}{'─' * (50 - len(title))}{RESET}")
+    print(f"\n{color}──── {BOLD}{title}{RESET} {color}{'─' * (50 - len(title))}{RESET}", flush=True)
 
 def print_box_row(content: str, color: str = WHITE, width: int = 65):
     """Exibe uma linha dentro de moldura visual."""
     padding = width - 4
-    print(f"{color}║{RESET} {content:<{padding}} {color}║{RESET}")
+    print(f"{color}║{RESET} {content:<{padding}} {color}║{RESET}", flush=True)

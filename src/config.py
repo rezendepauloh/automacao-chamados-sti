@@ -544,6 +544,45 @@ def setup_logging(log_file: Path, name: str = __name__) -> logging.Logger:
     return logger
 
 
+def setup_streamlit_button_logging() -> logging.Logger:
+    """
+    Configura a interceptação de cliques e submissões do Streamlit (st.button e st.form_submit_button)
+    para emissão imediata em tempo real no console/terminal (stdout) via logging e print(flush=True).
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    ui_logger = logging.getLogger("bancada.ui")
+
+    try:
+        import streamlit as st
+        from streamlit.delta_generator import DeltaGenerator
+
+        if not getattr(st, "_bancada_logging_patched", False):
+            orig_btn = DeltaGenerator._button
+
+            def _logging_button_wrapper(self, label, *args, **kwargs):
+                res = orig_btn(self, label, *args, **kwargs)
+                if res:
+                    key = args[0] if len(args) > 0 else kwargs.get("key")
+                    is_form = kwargs.get("is_form_submitter", False)
+                    tipo = "Form submit" if is_form else "Botão"
+                    key_info = f" (key='{key}')" if key else ""
+                    log_msg = f"{tipo} acionado: {label}{key_info}"
+                    ui_logger.info(log_msg)
+                    print(f"[{tipo} acionado] {label}{key_info}", flush=True)
+                return res
+
+            DeltaGenerator._button = _logging_button_wrapper
+            st._bancada_logging_patched = True
+    except Exception as _patch_err:
+        ui_logger.debug(f"Aviso ao inicializar listener de botões do Streamlit: {_patch_err}")
+
+    return ui_logger
+
+
 def purge_old_temporary_files(max_age_days: int = 7) -> dict:
     """
     Remove arquivos temporários, logs antigos e uploads obsoletos com mais de `max_age_days` dias.

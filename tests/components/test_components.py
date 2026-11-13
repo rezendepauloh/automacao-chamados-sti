@@ -229,5 +229,44 @@ class TestComponentsAndTabs(unittest.TestCase):
         self.assertFalse(has_obs_perif)
         self.assertNotIn("Nota de Conferência e Entrega", html_perif)
 
+    def test_streamlit_button_logging_and_flush(self):
+        """Valida que cliques de botões acionam logging para sys.stdout e usam flush."""
+        import io
+        import logging
+        import streamlit as st
+        from src.config import setup_streamlit_button_logging
+
+        # Salva referência original
+        prev_btn = st.delta_generator.DeltaGenerator._button
+        had_patched = getattr(st, "_bancada_logging_patched", False)
+
+        try:
+            # Simula botão original retornando True (clicado)
+            if hasattr(st, "_bancada_logging_patched"):
+                delattr(st, "_bancada_logging_patched")
+            st.delta_generator.DeltaGenerator._button = lambda self, label, *args, **kwargs: True
+
+            ui_logger = setup_streamlit_button_logging()
+            self.assertTrue(getattr(st, "_bancada_logging_patched", False))
+
+            captured_stdout = io.StringIO()
+            test_handler = logging.StreamHandler(captured_stdout)
+            ui_logger.addHandler(test_handler)
+
+            with patch("sys.stdout", captured_stdout):
+                st.delta_generator.DeltaGenerator._button(
+                    st.sidebar, "Test Button Click", key="btn_test_unit"
+                )
+
+            output = captured_stdout.getvalue()
+            self.assertIn("Botão acionado: Test Button Click (key='btn_test_unit')", output)
+            self.assertIn("[Botão acionado] Test Button Click (key='btn_test_unit')", output)
+        finally:
+            st.delta_generator.DeltaGenerator._button = prev_btn
+            if had_patched:
+                st._bancada_logging_patched = True
+            elif hasattr(st, "_bancada_logging_patched"):
+                delattr(st, "_bancada_logging_patched")
+
 if __name__ == "__main__":
     unittest.main()

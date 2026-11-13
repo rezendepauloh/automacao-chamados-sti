@@ -174,6 +174,7 @@ automacao-chamados-sti/
 ### 💻 Interface Streamlit
 - Para elementos de layout que ocupam a largura completa da tela, utilize o parâmetro moderno `width='stretch'` (evitando o parâmetro obsoleto `use_container_width=True` em componentes mais novos).
 - Renderização de componentes HTML personalizados deve ser feita através de `st.components.v1.html(...)`.
+- **Logs e Cliques em Tempo Real (Bufferless Output):** Tanto o Dockerfile quanto o docker-compose.yml operam com `PYTHONUNBUFFERED=1`. Cliques e submissões do Streamlit são interceptados automaticamente em `setup_streamlit_button_logging()` emitindo mensagens imediatas via `logging` configurado para `sys.stdout` e `print(..., flush=True)` para visibilidade instantânea no terminal. Funções visuais em `src/terminal.py` também forçam `flush=True`.
 
 ### 🪟 Scripts PowerShell (`src/scripts_powershell/`)
 - Todos os arquivos `.ps1` DEVEM ser salvos com **UTF-8 com BOM** (`utf-8-sig`). A ausência de BOM pode causar falhas de interpretação de acentos pelo console do Windows PowerShell legados (versões 5.1).
