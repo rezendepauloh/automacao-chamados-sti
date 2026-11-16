@@ -219,7 +219,7 @@ def save_tickets_to_db(df: pd.DataFrame):
             
         comments_val = row.get('Comentários', '[]')
         if pd.notna(comments_val) and str(comments_val).strip() and str(comments_val).strip() != '[]':
-            from config import clean_otrs_comments
+            from src.config import clean_otrs_comments
             try:
                 comments_list = clean_otrs_comments(comments_val)
                 cursor.execute("DELETE FROM comentarios WHERE chamado_id = ?", (cid,))
@@ -434,7 +434,7 @@ def get_comments_by_ticket(chamado_id: str) -> list:
     conn.close()
     
     raw_comments = [{'data': r[0], 'autor': r[1], 'texto': r[2]} for r in rows]
-    from config import clean_otrs_comments
+    from src.config import clean_otrs_comments
     return clean_otrs_comments(raw_comments)
 
 def sync_closed_tickets_to_train_dataset():
@@ -442,7 +442,7 @@ def sync_closed_tickets_to_train_dataset():
     Coleta todos os chamados com status 'Fechado' do banco SQLite e os envia/sincroniza 
     com o arquivo de dataset de treino (Chamados_Treino.xlsx).
     """
-    from config import TREINO_PATH
+    from src.config import TREINO_PATH
     
     conn = get_connection()
     cursor = conn.cursor()

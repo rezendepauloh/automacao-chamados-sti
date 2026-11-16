@@ -237,6 +237,21 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                     except Exception:
                         pass
 
+                # Captura ocorrências/comentários do CitSmart
+                ticket_ocorrencia = ticket.get("ticket_ocorrencia")
+                if ticket_ocorrencia and ticket_ocorrencia.strip():
+                    texto_limpo = clean_html_comment(ticket_ocorrencia)
+                    if texto_limpo:
+                        data_reg = ticket.get("ticket_ocorrencia_dataregistro_br") or ticket.get("ticket_ocorrencia_dataregistro")
+                        autor = ticket.get("responsible_ocorrencia") or "Sistema"
+                        new_comment = {
+                            "data": str(data_reg).strip() if data_reg else datetime.now().strftime("%d/%m/%Y %H:%M"),
+                            "autor": str(autor).strip(),
+                            "texto": texto_limpo
+                        }
+                        if not any(e.get("data") == new_comment["data"] and e.get("texto") == new_comment["texto"] for e in comments_list):
+                            comments_list.append(new_comment)
+
                 raw_comments = ticket.get("comentarios") or ticket.get("comments") or []
                 if isinstance(raw_comments, list):
                     for comm in raw_comments:
