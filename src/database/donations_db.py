@@ -36,6 +36,36 @@ def setup_donations_table():
             pass
 
     conn.close()
+    setup_entregas_dmp_table()
+
+
+def setup_entregas_dmp_table():
+    """Cria a tabela de entregas do DMP para a Bancada STI se não existir."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS entregas_dmp (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        patrimonio TEXT NOT NULL,
+        modelo TEXT,
+        serial_number TEXT,
+        equipamento TEXT,
+        tipo_movimentacao TEXT,
+        data_entrega TEXT,
+        chamado TEXT,
+        ssd TEXT,
+        memoria_ram TEXT,
+        origem_unidade TEXT,
+        usuario_anterior TEXT,
+        hostname TEXT,
+        responsavel_entrega TEXT,
+        recebido_por TEXT,
+        observacoes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.commit()
+    conn.close()
 
 def sync_donations_from_excel(file_path_or_buffer):
     """Lê os dados da planilha de equipamentos doados e salva no SQLite.
@@ -155,3 +185,159 @@ def get_donations_data() -> pd.DataFrame:
     else:
         df['memoria_ram'] = df['memoria_ram'].fillna("").astype(str).replace({"nan": "", "None": "", "null": ""})
     return df
+
+
+def save_entregas_dmp(records: list) -> int:
+    """
+    Persiste uma lista de registros de equipamentos entregues pelo DMP à Bancada STI.
+    Ignora registros sem patrimônio e retorna a quantidade gravada.
+    """
+    setup_entregas_dmp_table()
+    if not records:
+        return 0
+
+    def _clean(val) -> str:
+        if val is None:
+            return ""
+        s = str(val).strip()
+        if s.lower() in ("nan", "none", "null", "<na>"):
+            return ""
+        return s
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    inserted = 0
+    try:
+        for rec in records:
+            pat = _clean(rec.get("patrimonio", "")).replace(".0", "")
+            if not pat:
+                continue
+
+            data_ent = _clean(rec.get("data_entrega", "")) or datetime.now().strftime("%Y-%m-%d")
+            if len(data_ent) > 10:
+                data_ent = data_ent[:10]
+            if "/" in data_ent:
+                try:
+                    data_ent = datetime.strptime(data_ent, "%d/%m/%Y").strftime("%Y-%m-%d")
+                except ValueError:
+                    pass
+
+            cursor.execute(
+                """
+                INSERT INTO entregas_dmp (
+                    patrimonio, modelo, serial_number, equipamento, tipo_movimentacao,
+                    data_entrega, chamado, ssd, memoria_ram, origem_unidade,
+                    usuario_anterior, hostname, responsavel_entrega, recebido_por, observacoes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    pat,
+                    _clean(rec.get("modelo", "")),
+                    _clean(rec.get("serial_number", "")),
+                    _clean(rec.get("equipamento", "")) or "Computador",
+                    _clean(rec.get("tipo_movimentacao", "")) or "Recebimento DMP",
+                    data_ent,
+                    _clean(rec.get("chamado", "")).replace(".0", ""),
+                    _clean(rec.get("ssd", "")),
+                    _clean(rec.get("memoria_ram", "")),
+                    _clean(rec.get("origem_unidade", "")),
+                    _clean(rec.get("usuario_anterior", "")),
+                    _clean(rec.get("hostname", "")),
+                    _clean(rec.get("responsavel_entrega", "")),
+                    _clean(rec.get("recebido_por", "")),
+                    _clean(rec.get("observacoes", "")),
+                ),
+            )
+            inserted += 1
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    return inserted
+
+
+def get_entregas_dmp_data() -> pd.DataFrame:
+    """Retorna todos os equipamentos entregues pelo DMP ordenados por data mais recente."""
+    setup_entregas_dmp_table()
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query(
+            "SELECT * FROM entregas_dmp ORDER BY COALESCE(data_entrega, '') DESC, id DESC",
+            conn,
+        )
+    finally:
+        conn.close()
+
+    expected_cols = [
+        "id", "patrimonio", "modelo", "serial_number", "equipamento",
+        "tipo_movimentacao", "data_entrega", "chamado", "ssd", "memoria_ram",
+        "origem_unidade", "usuario_anterior", "hostname",
+        "responsavel_entrega", "recebido_por", "observacoes", "created_at",
+    ]
+    for col in expected_cols:
+        if col not in df.columns:
+            df[col] = ""
+        elif col != "id":
+            df[col] = df[col].fillna("").astype(str).replace({"nan": "", "None": "", "null": ""})
+    return df
+
+
+def delete_entrega_dmp(record_id: int) -> bool:
+    """Remove um registro específico de entrega do DMP pelo ID."""
+    setup_entregas_dmp_table()
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM entregas_dmp WHERE id = ?", (int(record_id),))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_entrega_dmp(record_id: int, updates: dict) -> bool:
+    """Atualiza os campos editáveis de um registro de entrega do DMP pelo ID."""
+    setup_entregas_dmp_table()
+    if not updates:
+        return False
+
+    allowed_cols = (
+        "patrimonio", "modelo", "serial_number", "equipamento", "tipo_movimentacao",
+        "data_entrega", "chamado", "ssd", "memoria_ram", "origem_unidade",
+        "responsavel_entrega", "observacoes",
+    )
+    set_clauses = []
+    params = []
+    for col in allowed_cols:
+        if col in updates:
+            val = "" if updates[col] is None else str(updates[col]).strip()
+            if val.lower() in ("nan", "none", "null", "<na>"):
+                val = ""
+            if col == "data_entrega" and "/" in val:
+                try:
+                    val = datetime.strptime(val[:10], "%d/%m/%Y").strftime("%Y-%m-%d")
+                except ValueError:
+                    pass
+            set_clauses.append(f"{col} = ?")
+            params.append(val)
+
+    if not set_clauses:
+        return False
+
+    params.append(int(record_id))
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"UPDATE entregas_dmp SET {', '.join(set_clauses)} WHERE id = ?",
+            tuple(params),
+        )
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    finally:
+        cursor.close()
+        conn.close()

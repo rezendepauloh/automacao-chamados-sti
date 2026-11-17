@@ -268,5 +268,88 @@ class TestComponentsAndTabs(unittest.TestCase):
             elif hasattr(st, "_bancada_logging_patched"):
                 delattr(st, "_bancada_logging_patched")
 
+    def test_build_chamados_html_report_includes_comments_and_notes(self):
+        """Valida que a exportação HTML de chamados filtrados inclui metadados, andamento e comentários."""
+        import pandas as pd
+        from src.tabs.chamados import build_chamados_html_report
+
+        df = pd.DataFrame([{
+            "id": "46467326",
+            "base": "OTRS",
+            "status": "Aberto",
+            "tag": "MUDANÇA",
+            "titulo": "Alteração de Leiaute <Teste>",
+            "cidade_predio": "Campo Grande - Rua da Paz",
+            "unidade": "66ª PJCGR",
+            "localidade_fisica": "Rua da Paz",
+            "usuario": "Usuario Teste",
+            "data_criacao": "2026-11-17 09:00:00",
+            "data_atualizacao": "2026-11-17 10:00:00",
+            "hostname": "PGJ-56798",
+            "ip_origem": "172.20.5.151",
+            "link": "https://central.mpms.mp.br/otrs/index.pl?TicketID=1",
+            "descricao": "Descrição detalhada do chamado",
+            "andamento": "Anotação técnica de andamento",
+        }])
+        comments = {
+            "46467326": [
+                {"data": "17/11/2026 10:15", "autor": "Analista STI", "texto": "Elétrica e lógica ok"}
+            ]
+        }
+        html_out = build_chamados_html_report(df, comments)
+        self.assertIn("Relatório de Chamados (<span id='visibleCount'>1</span> de 1)", html_out)
+        self.assertIn("#46467326", html_out)
+        self.assertIn("Alteração de Leiaute &lt;Teste&gt;", html_out)
+        self.assertIn("Descrição detalhada do chamado", html_out)
+        self.assertIn("Anotação técnica de andamento", html_out)
+        self.assertIn("Analista STI", html_out)
+        self.assertIn("Elétrica e lógica ok", html_out)
+        self.assertIn("17/11/2026 09:00:00", html_out)
+        self.assertIn("17/11/2026 10:00:00", html_out)
+
+    def test_build_entrega_dmp_report_html_and_barcode_callback(self):
+        """Valida o relatório HTML de recebimento do DMP e o callback de bipagem por código de barras."""
+        import pandas as pd
+        import streamlit as st
+        from src.tabs.redistribuicao import (
+            build_entrega_dmp_report_html,
+            _on_entrega_dmp_barcode_scanned,
+        )
+
+        df_ent = pd.DataFrame([
+            {
+                "patrimonio": "55477",
+                "modelo": "Lenovo M70q Gen 2",
+                "serial_number": "SN55477",
+                "equipamento": "Computador",
+                "tipo_movimentacao": "Baixa",
+                "data_entrega": "2026-11-17",
+                "memoria_ram": "8 GB",
+                "ssd": "Sem SSD",
+                "origem_unidade": "17a PJCGR",
+                "observacoes": "Entregue sem disco conforme chamado",
+            }
+        ])
+        subject, html_out, has_machines = build_entrega_dmp_report_html("2026-11-17", df_ent)
+        self.assertTrue(has_machines)
+        self.assertIn("[DMP -> BANCADA]", subject)
+        self.assertIn("17/11/2026", subject)
+        self.assertIn("55477", html_out)
+        self.assertIn("17a PJCGR", html_out)
+        self.assertIn("Entregue sem disco conforme chamado", html_out)
+        self.assertIn("Nota de Recebimento", html_out)
+
+        # Valida callback do leitor de código de barras (HID) sem duplicação
+        st.session_state["entrega_dmp_patrimonios_text"] = "43188"
+        st.session_state["entrega_dmp_barcode_input"] = "55477"
+        _on_entrega_dmp_barcode_scanned()
+        self.assertEqual(st.session_state["entrega_dmp_patrimonios_text"], "43188\n55477")
+        self.assertEqual(st.session_state["entrega_dmp_barcode_input"], "")
+
+        # Repetir o mesmo código não duplica
+        st.session_state["entrega_dmp_barcode_input"] = "55477"
+        _on_entrega_dmp_barcode_scanned()
+        self.assertEqual(st.session_state["entrega_dmp_patrimonios_text"], "43188\n55477")
+
 if __name__ == "__main__":
     unittest.main()

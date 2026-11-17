@@ -16,7 +16,8 @@ Docs/
 │   ├── modelagem_banco_de_dados_hibrido.md           # Camada DAO híbrida (PostgreSQL e SQLite), schemas e pools
 │   ├── pipeline_ia_classificacao_tags.md             # spaCy batch, modelo campeão LinearSVC e rotina GridSearchCV
 │   ├── seguranca_criptografia_e_cofre.md             # Criptografia simétrica Fernet, cofre e fallback gracioso
-│   └── automacao_remota_powershell_e_wmi.md          # Protocolo bancada://, scripts UTF-8 BOM e SCCM/WMI
+│   ├── automacao_remota_powershell_e_wmi.md          # Protocolo bancada://, scripts UTF-8 BOM e SCCM/WMI
+│   └── api_rest_integracao.md                        # API REST ASGI isolada (AmbientesHub / RedHat / OpenAPI)
 │
 ├── 📖 guias/                                         # Manuais práticos de operação, instalação e utilitários
 │   ├── instalacao_e_deploy_docker.md                 # Deploy oficial via Docker Compose (Streamlit + Postgres)
@@ -51,6 +52,7 @@ Docs/
 - **Como a IA pré-processa e classifica os chamados:** [Pipeline de Inteligência Artificial & TAGs](arquitetura/pipeline_ia_classificacao_tags.md)
 - **Políticas de criptografia e fallback seguro de senhas:** [Segurança & Cofre de Credenciais](arquitetura/seguranca_criptografia_e_cofre.md)
 - **Integração do protocolo remoto e scripts PowerShell:** [Automação Remota PowerShell & WMI](arquitetura/automacao_remota_powershell_e_wmi.md)
+- **API REST de integração (AmbientesHub / RedHat):** [API REST de Integração](arquitetura/api_rest_integracao.md)
 
 ### 3. Instalação, Infraestrutura & Qualidade
 - **Como rodar a suíte de testes (90 testes com 100% de sucesso):** [Manual de Testes Automatizados](testes/suite_de_testes_automatizados.md)

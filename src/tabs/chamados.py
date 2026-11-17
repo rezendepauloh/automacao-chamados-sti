@@ -771,12 +771,22 @@ def render_chamados_page():
             
         df_final_display = df_display[cols_for_dataframe]
         
-        col_tbl_head, col_tbl_cap = st.columns([3, 2])
-
+        col_tbl_head, col_tbl_html, col_tbl_cap = st.columns([2.6, 1.2, 1.5])
 
         with col_tbl_head:
             st.subheader(f"📋 Lista de Chamados ({len(filtered_df)} registros)")
             st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha para abrir os Detalhes no Modal.")
+        with col_tbl_html:
+            st.write("")
+            html_report = build_chamados_html_report(filtered_df, _load_comments_batch_for_export(filtered_df))
+            st.download_button(
+                label="📄 Exportar Filtrados (HTML)",
+                data=html_report.encode("utf-8"),
+                file_name=f"chamados_relatorio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                mime="text/html",
+                key="btn_export_chamados_html",
+                width="stretch",
+            )
         with col_tbl_cap:
             st.components.v1.html("""
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -969,5 +979,244 @@ def render_chamados_page():
             total_items=total_items,
             items_per_page=items_per_page
         )
+
+
+def _load_comments_batch_for_export(df: pd.DataFrame) -> dict:
+    """Carrega comentários em lote para todos os chamados presentes no DataFrame filtrado."""
+    result: dict = {}
+    if df is None or df.empty or "id" not in df.columns:
+        return result
+
+    raw_ids = [
+        str(cid).strip()[:-2] if str(cid).strip().endswith(".0") else str(cid).strip()
+        for cid in df["id"].tolist()
+        if cid is not None and str(cid).strip()
+    ]
+    unique_ids = list(dict.fromkeys(raw_ids))
+    if not unique_ids:
+        return result
+
+    try:
+        from src.database.connection import get_connection
+        from src.config import clean_otrs_comments
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            for start in range(0, len(unique_ids), 250):
+                chunk = unique_ids[start:start + 250]
+                placeholders = ", ".join(["?"] * len(chunk))
+                cursor.execute(
+                    f"""
+                    SELECT COALESCE(chamado_id, ''), COALESCE(data, ''), COALESCE(autor, ''), COALESCE(texto, '')
+                    FROM comentarios
+                    WHERE chamado_id IN ({placeholders})
+                    ORDER BY id ASC
+                    """,
+                    tuple(chunk),
+                )
+                for row in cursor.fetchall():
+                    cid = str(row[0] or "").strip()
+                    result.setdefault(cid, []).append(
+                        {"data": str(row[1] or ""), "autor": str(row[2] or ""), "texto": str(row[3] or "")}
+                    )
+        finally:
+            cursor.close()
+            conn.close()
+
+        for cid, raw_list in list(result.items()):
+            result[cid] = clean_otrs_comments(raw_list)
+    except Exception:
+        pass
+    return result
+
+
+def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None = None) -> str:
+    """Gera relatório HTML interativo dos chamados filtrados (com descrição, andamento e comentários)."""
+    import html as html_lib
+
+    comments_map = comments_by_ticket or {}
+    total = len(df) if df is not None else 0
+    now_br = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    def _safe(val) -> str:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return ""
+        s = str(val).strip()
+        return "" if s.lower() in ("nan", "none", "null", "<na>") else s
+
+    def _fmt_br_dt(val) -> str:
+        s = _safe(val)
+        if not s:
+            return "-"
+        dt = pd.to_datetime(s, errors="coerce")
+        if pd.notna(dt):
+            return dt.strftime("%d/%m/%Y %H:%M:%S")
+        return s
+
+    cards_html: list[str] = []
+    if df is not None and not df.empty:
+        for _, row in df.iterrows():
+            cid = _safe(row.get("id", ""))
+            if cid.endswith(".0"):
+                cid = cid[:-2]
+            base = _safe(row.get("base", "")) or "N/D"
+            status = _safe(row.get("status", "")) or "Aberto"
+            tag = _safe(row.get("tag", "")) or "SEM TAG"
+            titulo = _safe(row.get("titulo", "")) or f"Chamado #{cid}"
+            cidade_predio = _safe(row.get("cidade_predio", ""))
+            unidade = _safe(row.get("unidade", ""))
+            localidade = _safe(row.get("localidade_fisica", ""))
+            loc_parts = list(dict.fromkeys([p for p in (cidade_predio, unidade, localidade) if p]))
+            loc_display = " • ".join(loc_parts) if loc_parts else "Localidade não informada"
+
+            usuario = _safe(row.get("usuario", "")) or _safe(row.get("id_cliente", "")) or "Não informado"
+            criado = _fmt_br_dt(row.get("data_criacao", ""))
+            atualizado = _fmt_br_dt(row.get("data_atualizacao", ""))
+            hostname = _safe(row.get("hostname", "")) or "-"
+            ip_origem = _safe(row.get("ip_origem", "")) or "-"
+            link = _safe(row.get("link", ""))
+            descricao = _safe(row.get("descricao", ""))
+            andamento = _safe(row.get("andamento", ""))
+
+            base_cls = "badge-otrs" if "otrs" in base.lower() else ("badge-cit" if "citsmart" in base.lower() else "")
+            status_cls = "badge-open" if status.lower() == "aberto" else ""
+            search_blob = html_lib.escape(
+                f"{cid} {titulo} {loc_display} {usuario} {tag} {hostname}".lower(),
+                quote=True,
+            )
+
+            link_html = ""
+            if link.lower().startswith(("http://", "https://")):
+                safe_link = html_lib.escape(link, quote=True)
+                link_html = f"<div class='info-item no-print'><b>🔗 Link:</b> <a href='{safe_link}' target='_blank' rel='noopener'>Abrir no sistema</a></div>"
+
+            desc_html = f"<div class='sec'><div class='sec-title'>Descrição</div>{html_lib.escape(descricao)}</div>" if descricao else ""
+            and_html = f"<div class='sec'><div class='sec-title'>Andamento / Anotações</div>{html_lib.escape(andamento)}</div>" if andamento else ""
+
+            ticket_comments = comments_map.get(cid, [])
+            comments_html = ""
+            if ticket_comments:
+                c_blocks = []
+                for c in ticket_comments:
+                    c_data = html_lib.escape(_safe(c.get("data", "")))
+                    c_autor = html_lib.escape(_safe(c.get("autor", "")) or "Sistema")
+                    c_texto = html_lib.escape(_safe(c.get("texto", "")))
+                    c_blocks.append(
+                        f"<div class='comment'><div class='comment-meta'>{c_autor} • {c_data}</div>{c_texto}</div>"
+                    )
+                comments_html = f"<div class='sec'><div class='sec-title'>Comentários ({len(ticket_comments)})</div>{''.join(c_blocks)}</div>"
+
+            cards_html.append(
+                f"""<details class='card' open data-id='{html_lib.escape(cid, quote=True)}' data-search='{search_blob}'>
+<summary class='card-head'>
+<div class='head-top'>
+<div class='badges'><span class='badge {base_cls}'>{html_lib.escape(base.upper())}</span><span class='badge {status_cls}'>{html_lib.escape(status)}</span><span class='badge'>{html_lib.escape(tag.upper())}</span><span class='id-tag'>#{html_lib.escape(cid)}</span></div>
+<label class='done-wrap no-print' onclick='event.stopPropagation()'><input type='checkbox' onchange='toggleDone("{html_lib.escape(cid, quote=True)}", this)' /> Concluído</label>
+</div>
+<div class='title'>{html_lib.escape(titulo)}</div>
+<div class='loc-banner'>📍 Localidade: {html_lib.escape(loc_display)}</div>
+</summary>
+<div class='card-body'>
+<div class='info-grid'>
+<div class='info-item'><b>👤 Solicitante:</b> {html_lib.escape(usuario)}</div>
+<div class='info-item'><b>🕒 Criado:</b> {html_lib.escape(criado)}</div>
+<div class='info-item'><b>🔄 Atualizado:</b> {html_lib.escape(atualizado)}</div>
+<div class='info-item'><b>💻 Hostname:</b> {html_lib.escape(hostname)}</div>
+<div class='info-item'><b>🌐 IP:</b> {html_lib.escape(ip_origem)}</div>
+{link_html}
+</div>
+{desc_html}
+{and_html}
+{comments_html}
+</div></details>"""
+            )
+
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relatório de Chamados - Bancada STI</title>
+<style>
+  :root {{ --bg: #f1f5f9; --card: #ffffff; --border: #cbd5e1; --text: #0f172a; --muted: #475569; --accent: #0284c7; --loc-bg: #fef3c7; --loc-border: #f59e0b; --loc-text: #92400e; }}
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 14px; line-height: 1.45; }}
+  .container {{ max-width: 1020px; margin: 0 auto; }}
+  .header {{ background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+  h1 {{ font-size: 1.25rem; margin: 0 0 4px 0; }}
+  .meta {{ color: var(--muted); font-size: 0.85rem; }}
+  .toolbar {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }}
+  .toolbar input {{ flex: 1 1 220px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; }}
+  .btn {{ border: 1px solid var(--border); background: #fff; color: var(--text); padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }}
+  .btn-primary {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
+  details.card {{ background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: opacity 0.2s ease; }}
+  details.card.done {{ opacity: 0.58; border-left: 5px solid #10b981; }}
+  summary.card-head {{ list-style: none; padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; user-select: none; }}
+  summary.card-head::-webkit-details-marker {{ display: none; }}
+  .head-top {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }}
+  .badges {{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }}
+  .badge {{ font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; background: #e2e8f0; color: #1e293b; text-transform: uppercase; }}
+  .badge-otrs {{ background: #dbeafe; color: #1e40af; }}
+  .badge-cit {{ background: #ccfbf1; color: #0f766e; }}
+  .badge-open {{ background: #dcfce7; color: #166534; }}
+  .id-tag {{ font-weight: 800; color: var(--accent); font-size: 0.95rem; }}
+  .done-wrap {{ display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; font-weight: 600; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 8px; border-radius: 8px; white-space: nowrap; }}
+  .title {{ font-size: 1.05rem; font-weight: 700; color: var(--text); word-break: break-word; }}
+  .loc-banner {{ background: var(--loc-bg); border: 1px solid var(--loc-border); color: var(--loc-text); padding: 7px 11px; border-radius: 8px; font-size: 0.88rem; font-weight: 700; display: flex; align-items: center; gap: 6px; word-break: break-word; }}
+  .card-body {{ padding: 0 16px 16px 16px; border-top: 1px solid #e2e8f0; }}
+  .info-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 14px; margin: 12px 0; font-size: 0.84rem; color: #334155; }}
+  .info-item b {{ color: #0f172a; }}
+  .sec {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-top: 10px; font-size: 0.86rem; white-space: pre-wrap; word-break: break-word; }}
+  .sec-title {{ font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; letter-spacing: 0.03em; }}
+  .comment {{ background: #ffffff; border: 1px solid #cbd5e1; border-left: 4px solid #10b981; border-radius: 8px; padding: 9px 12px; margin-top: 8px; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; }}
+  .comment-meta {{ font-size: 0.76rem; font-weight: 700; color: #047857; margin-bottom: 4px; }}
+  @media print {{
+    @page {{ margin: 10mm; }}
+    body {{ background: #fff; padding: 0; font-size: 11px; }}
+    .container {{ max-width: 100%; }}
+    .no-print {{ display: none !important; }}
+    details.card {{ box-shadow: none; break-inside: avoid; page-break-inside: avoid; border: 1px solid #94a3b8; margin-bottom: 8px; }}
+    details.card.done {{ display: none; }}
+  }}
+</style>
+</head>
+<body>
+<div class="container">
+<div class='header'>
+<h1>Relatório de Chamados (<span id='visibleCount'>{total}</span> de {total})</h1>
+<div class='meta'>Gerado em {now_br} • Toque em qualquer chamado para expandir/recolher</div>
+  <div class="toolbar no-print">
+    <input id="quickSearch" type="search" placeholder="Filtrar rápido por localidade, nome, ID ou título..." oninput="filterCards()" />
+    <button class="btn" onclick="toggleAll(true)">Expandir Todos</button>
+    <button class="btn" onclick="toggleAll(false)">Recolher Todos</button>
+    <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir / PDF</button>
+  </div>
+</div>
+{''.join(cards_html)}
+</div>
+<script>
+function filterCards() {{
+  const q = (document.getElementById('quickSearch').value || '').toLowerCase().trim();
+  const cards = document.querySelectorAll('details.card');
+  let vis = 0;
+  cards.forEach(c => {{
+    const hay = c.getAttribute('data-search') || '';
+    const show = !q || hay.includes(q);
+    c.style.display = show ? '' : 'none';
+    if (show) vis++;
+  }});
+  document.getElementById('visibleCount').innerText = vis;
+}}
+function toggleAll(open) {{
+  document.querySelectorAll('details.card').forEach(c => c.open = open);
+}}
+function toggleDone(id, cb) {{
+  const card = cb.closest('details.card');
+  if (card) card.classList.toggle('done', cb.checked);
+}}
+</script>
+</body>
+</html>"""
 
 

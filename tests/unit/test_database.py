@@ -73,6 +73,7 @@ class TestDatabaseModule(unittest.TestCase):
             patch("src.database.plantoes_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.viagens_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.garantia_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
+            patch("src.database.donations_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.ad_db.get_connection", side_effect=lambda: sqlite3.connect(self.db_path)),
             patch("src.database.connection.DB_TYPE", "sqlite"),
             patch("src.database.sccm_db.DB_TYPE", "sqlite"),
@@ -628,6 +629,47 @@ class TestDatabaseModule(unittest.TestCase):
         ticket = get_ticket_by_id('11122233')
         expected_prefix = f"{OTRS_URL.rstrip('/')}/otrs/index.pl"
         self.assertTrue(ticket['link'].startswith(expected_prefix))
+
+    def test_entregas_dmp_crud(self):
+        """Valida criação, inserção, consulta e exclusão na tabela entregas_dmp."""
+        from src.database.donations_db import (
+            setup_entregas_dmp_table,
+            save_entregas_dmp,
+            get_entregas_dmp_data,
+            delete_entrega_dmp,
+        )
+
+        setup_entregas_dmp_table()
+        count = save_entregas_dmp([
+            {
+                "patrimonio": "43188",
+                "modelo": "Lenovo ThinkCentre M70q",
+                "serial_number": "SN-43188",
+                "equipamento": "Computador",
+                "tipo_movimentacao": "Redistribuição",
+                "data_entrega": "2026-11-17",
+                "chamado": "2026001",
+                "memoria_ram": "16 GB",
+                "ssd": "256GB NVMe",
+                "origem_unidade": "66a PJ",
+                "usuario_anterior": "usuario.teste",
+                "hostname": "PGJ-43188",
+                "responsavel_entrega": "DMP Teste",
+                "recebido_por": "Bancada STI",
+                "observacoes": "Recebido completo",
+            },
+            {"patrimonio": ""},  # Deve ser ignorado
+        ])
+        self.assertEqual(count, 1)
+
+        df = get_entregas_dmp_data()
+        self.assertEqual(len(df), 1)
+        self.assertEqual(df.iloc[0]["patrimonio"], "43188")
+        self.assertEqual(df.iloc[0]["origem_unidade"], "66a PJ")
+
+        rec_id = int(df.iloc[0]["id"])
+        self.assertTrue(delete_entrega_dmp(rec_id))
+        self.assertEqual(len(get_entregas_dmp_data()), 0)
 
 
 if __name__ == "__main__":

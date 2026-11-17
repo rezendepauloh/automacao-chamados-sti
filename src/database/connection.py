@@ -109,7 +109,7 @@ class PostgreSQLCompatibleCursor(_pg_base_cursor):
             'notificacoes', 'plantoes_matutino', 'plantoes_semanal', 'ramais_mpms',
             'senhas_cofre', 'unidades', 'cron_logs', 'faq_imagens', 'garantia_chamados',
             'garantia_agendamentos', 'impressoras', 'viagens', 'unidades_manuais',
-            'whatsapp_destinatarios', 'whatsapp_disparos_log'
+            'whatsapp_destinatarios', 'whatsapp_disparos_log', 'entregas_dmp'
         }
         if target_table and target_table in SERIAL_TABLES:
             try:
@@ -332,7 +332,9 @@ def ensure_database_indexes():
         ("idx_central_ramal", "central_telefonica", "(ramal)"),
         ("idx_unidades_cidade", "unidades", "(cidade)"),
         ("idx_unidades_tipo", "unidades", "(tipo)"),
-        ("idx_ramais_num", "ramais_telefonicos", "(ramal)")
+        ("idx_ramais_num", "ramais_telefonicos", "(ramal)"),
+        ("idx_entregas_dmp_patrimonio", "entregas_dmp", "(patrimonio)"),
+        ("idx_entregas_dmp_data", "entregas_dmp", "(data_entrega)"),
     ]
 
     for idx_name, table, cols in indexes:

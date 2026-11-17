@@ -264,7 +264,9 @@ automacao-chamados-sti/
 
 ## 📦 5. Como Executar (Docker Compose)
 
-O sistema foi desenhado para operação **100% conteinerizada**, garantindo paridade total entre ambientes de desenvolvimento e produção.
+O sistema foi desenhado para operação **100% conteinerizada**, com containers isolados para a interface (`bancada_streamlit_app`), API REST de integração (`bancada_api_server` na porta `8510`, com `/docs` OpenAPI e autenticação *fail-closed* via `X-API-Key`), banco (`bancada_postgres_db`) e mensageria (`bancada_evolution_api`).
+
+> Consulte [Docs/arquitetura/api_rest_integracao.md](Docs/arquitetura/api_rest_integracao.md) para detalhes da API REST e integração com o **AmbientesHub** (`C:\AmbientesVirtuais`).
 
 ### 🐧 No Linux / WSL (Ubuntu):
 
@@ -306,6 +308,9 @@ docker compose up -d
 
 # Visualizar logs em tempo real do Streamlit
 docker compose logs -f web
+
+# Visualizar logs em tempo real da API REST
+docker compose logs -f api
 
 # Recarregar apenas a aplicação após alterações
 docker compose restart web

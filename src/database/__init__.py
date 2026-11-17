@@ -38,7 +38,12 @@ from .map_db import (
 from .donations_db import (
     setup_donations_table,
     sync_donations_from_excel,
-    get_donations_data
+    get_donations_data,
+    setup_entregas_dmp_table,
+    save_entregas_dmp,
+    get_entregas_dmp_data,
+    delete_entrega_dmp,
+    update_entrega_dmp
 )
 
 from .settings_db import (
@@ -212,6 +217,11 @@ __all__ = [
     "setup_donations_table",
     "sync_donations_from_excel",
     "get_donations_data",
+    "setup_entregas_dmp_table",
+    "save_entregas_dmp",
+    "get_entregas_dmp_data",
+    "delete_entrega_dmp",
+    "update_entrega_dmp",
     "setup_plantoes_tables",
     "save_plantoes_matutino",
     "save_plantoes_semanal",
