@@ -327,6 +327,13 @@ def get_ml_n_jobs() -> int:
 
 ML_N_JOBS = get_ml_n_jobs()
 
+# API REST de Integração (Bancada STI <-> AmbientesHub / RedHat)
+BANCADA_API_PORT = int(_cfg("BANCADA_API_PORT", "8510") or "8510")
+BANCADA_API_BIND = _cfg("BANCADA_API_BIND", "127.0.0.1")
+BANCADA_API_RATE_LIMIT = int(_cfg("BANCADA_API_RATE_LIMIT", "180") or "180")
+BANCADA_API_DOCS_ENABLED = _cfg("BANCADA_API_DOCS_ENABLED", "true").lower() in ("1", "true", "yes", "sim")
+BANCADA_API_CORS_ORIGINS = [o.strip() for o in _cfg("BANCADA_API_CORS_ORIGINS", "").split(",") if o.strip()]
+
 # Sync Master
 DEBUG_DIR_SYNC = BASE_DIR / "debug_logs" / "sync"
 DEBUG_DIR_SYNC.mkdir(parents=True, exist_ok=True)

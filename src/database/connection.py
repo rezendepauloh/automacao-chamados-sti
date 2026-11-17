@@ -155,6 +155,8 @@ def get_pg_pool():
                 dbname=pg_db,
                 user=pg_user,
                 password=pg_pass,
+                connect_timeout=5,
+                options="-c statement_timeout=15000 -c lock_timeout=5000",
                 cursor_factory=PostgreSQLCompatibleCursor
             )
             logger.info("🔌 Pool de conexões PostgreSQL inicializado com sucesso (1-20 conexões).")
@@ -282,6 +284,8 @@ def get_connection():
             dbname=pg_db,
             user=pg_user,
             password=pg_pass,
+            connect_timeout=5,
+            options="-c statement_timeout=15000 -c lock_timeout=5000",
             cursor_factory=PostgreSQLCompatibleCursor
         )
     else:

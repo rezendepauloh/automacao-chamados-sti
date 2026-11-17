@@ -22,6 +22,7 @@ from src.database import (
     log_cron_execution_start,
     log_cron_execution_end
 )
+from src.database.cron_db import clear_cron_run_requested
 
 logger = setup_logging(DEBUG_DIR_SYNC / "cron_scheduler.log", "cron_scheduler")
 
@@ -414,15 +415,19 @@ class BancadaCronDaemon:
                         else:
                             task_dict = dict(row)
                         task_id = str(task_dict.get("task_id", ""))
-                        if self._should_run(task_dict, now):
+                        manual_req = int(task_dict.get("run_requested") or 0) == 1
+                        if manual_req:
+                            clear_cron_run_requested(task_id)
+                        if (manual_req or self._should_run(task_dict, now)) and task_id not in self._executing_tasks:
                             self._executing_tasks.add(task_id)
-                            logger.info(f"⏰ Disparando tarefa agendada: {task_id} ({task_dict.get('nome')})")
+                            origem = "disparo externo (AmbientesHub)" if manual_req else "agendador"
+                            logger.info(f"⏰ Disparando tarefa via {origem}: {task_id} ({task_dict.get('nome')})")
                             threading.Thread(target=self._run_single_task, args=(task_id,), daemon=True).start()
             except Exception as e:
                 logger.error(f"Exceção no loop do Cron Daemon: {e}")
 
-            # Dorme 30 segundos verificando flag de parada
-            for _ in range(30):
+            # Checa a cada 3 segundos para resposta rápida a disparos remotos (AmbientesHub / RedHat)
+            for _ in range(3):
                 if not self._running:
                     break
                 time.sleep(1)

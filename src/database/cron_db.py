@@ -258,9 +258,14 @@ def setup_cron_tables(force: bool = False):
             proxima_execucao TIMESTAMP,
             ultimo_status VARCHAR(30) DEFAULT 'pendente',
             ultimo_log TEXT,
+            run_requested INTEGER DEFAULT 0,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        try:
+            cursor.execute("ALTER TABLE cron_schedules ADD COLUMN IF NOT EXISTS run_requested INTEGER DEFAULT 0;")
+        except Exception:
+            pass
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS cron_logs (
             id SERIAL PRIMARY KEY,
@@ -290,9 +295,14 @@ def setup_cron_tables(force: bool = False):
             proxima_execucao DATETIME,
             ultimo_status TEXT DEFAULT 'pendente',
             ultimo_log TEXT,
+            run_requested INTEGER DEFAULT 0,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        try:
+            cursor.execute("ALTER TABLE cron_schedules ADD COLUMN run_requested INTEGER DEFAULT 0;")
+        except Exception:
+            pass
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS cron_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -312,6 +322,19 @@ def setup_cron_tables(force: bool = False):
 
     seed_cron_tasks_if_empty()
     _cron_tables_initialized = True
+
+def clear_cron_run_requested(task_id: str):
+    """Limpa a flag de execução manual solicitada externamente (ex: AmbientesHub)."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        sql = "UPDATE cron_schedules SET run_requested = 0 WHERE task_id = %s" if DB_TYPE in ["postgres", "postgresql"] else "UPDATE cron_schedules SET run_requested = 0 WHERE task_id = ?"
+        cursor.execute(sql, (task_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Aviso ao limpar run_requested de {task_id}: {e}")
 
 def cleanup_interrupted_cron_tasks():
     """

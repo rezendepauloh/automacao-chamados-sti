@@ -40,9 +40,19 @@ class TestIntegration(unittest.TestCase):
         env_example = ROOT_DIR / ".env.example"
         if env_example.exists():
             content = env_example.read_text(encoding="utf-8")
-            required_keys = ["STREAMLIT_PORT", "EVOLUTION_API_URL", "AD_DOMAIN", "SCCM_SERVER"]
+            required_keys = ["STREAMLIT_PORT", "BANCADA_API_PORT", "BANCADA_API_KEY", "EVOLUTION_API_URL", "AD_DOMAIN", "SCCM_SERVER"]
             for k in required_keys:
                 self.assertIn(k, content, f"Chave crítica '{k}' ausente no .env.example")
+
+    def test_docker_compose_api_service_and_db_hardening(self):
+        """Valida que o serviço api isolado e os timeouts do PostgreSQL estão configurados no docker-compose.yml."""
+        compose_file = ROOT_DIR / "docker-compose.yml"
+        if compose_file.exists():
+            content = compose_file.read_text(encoding="utf-8")
+            self.assertIn("bancada_api_server", content)
+            self.assertIn("BANCADA_API_BIND:-127.0.0.1", content)
+            self.assertIn("statement_timeout=15000", content)
+            self.assertIn("idle_in_transaction_session_timeout=30000", content)
 
 if __name__ == "__main__":
     unittest.main()

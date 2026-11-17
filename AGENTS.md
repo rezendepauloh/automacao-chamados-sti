@@ -107,6 +107,13 @@ automacao-chamados-sti/
 │   ├── services/
 │   │   └── cron_scheduler.py   # Daemon de agendamento em segundo plano (tarefas periódicas)
 │   │
+│   ├── api/                    # API REST ASGI (Starlette + Uvicorn + Pydantic) em container isolado
+│   │   ├── app.py              # Rotas /health, /openapi.json, /docs e /api/v1/*
+│   │   ├── security.py         # Autenticação Fail-Closed (X-API-Key/Bearer) e Rate Limiter
+│   │   ├── schemas.py          # Validação Pydantic v2 para leitura e edição
+│   │   ├── service.py          # Consultas e mutações parametrizadas (PostgreSQL/SQLite)
+│   │   └── openapi.py          # Especificação OpenAPI 3.0.3 e Swagger UI
+│   │
 │   ├── tabs/                   # Abas modulares da interface Streamlit
 │   │   ├── chamados.py         # Visualização, filtros e triagem de chamados
 │   │   ├── configuracoes.py    # Configurações do sistema, credenciais, cron e métricas da IA
@@ -136,7 +143,7 @@ automacao-chamados-sti/
 ## ⚙️ 4. Diretrizes Técnicas e Padrões de Código
 
 ### 🐳 Execução em Contêiner Docker
-- **Isolamento de Ambiente:** O ambiente de produção e desenvolvimento roda 100% em containers Docker (`bancada_streamlit_app` e `bancada_postgres_db`).
+- **Isolamento de Ambiente:** O ambiente de produção e desenvolvimento roda 100% em containers Docker separados (`bancada_streamlit_app`, `bancada_api_server`, `bancada_postgres_db` e `bancada_evolution_api`), garantindo que falhas ou picos de carga no Streamlit não derrubem a API REST e vice-versa.
 - Toda execução de comandos de teste, scripts ou migrações deve ser executada prioritariamente via:
   ```bash
   docker exec bancada_streamlit_app python <caminho_do_script>
@@ -165,7 +172,8 @@ automacao-chamados-sti/
 - **Nenhum Segredo Rastreável:** Nenhum token, senha ou chave privada deve ser commitado no repositório. O `.gitignore` bloqueia `.env`, `.secret.key`, `*.key`, `*.pem`, `cred_admin*.xml` e `sccm_inventory.json`.
 - **Proibição Absoluta de Fallbacks com Dados Sensíveis:** NUNCA colocar dados reais, nomes de membros/servidores, contas de usuário (ex: `usuario_admin`, `usuario`), domínios internos ou credenciais como valores de fallback padrão em chamadas `os.getenv("VAR", "valor_secreto")` ou `_cfg(...)`. O valor do fallback padrão DEVE ser estritamente vazio (`""`), `None`, ou genérico/mock quando em ambiente de testes. Fornecer o valor sensível como fallback anula todo o isolamento de segurança.
 - **Arquitetura Fail-Closed:** Serviços externos, conexões de banco e APIs (Evolution API, SCCM, PostgreSQL) NUNCA devem iniciar com senhas fracas padrão ou chaves vazias. Na ausência de variáveis obrigatórias, o sistema deve abortar ou recusar a operação imediatamente.
-- **Isolamento de Portas:** Portas internas e de banco no `docker-compose.yml` (PostgreSQL 5432, Evolution API 8080) devem ser mantidas restritas a `127.0.0.1`.
+- **Isolamento de Portas:** Portas internas, da API e de banco no `docker-compose.yml` (PostgreSQL 5432, Evolution API 8080, API REST 8510) devem ser mantidas restritas a `127.0.0.1` por padrão (acessíveis no WSL localmente e no RedHat via túnel SSH ou reverse proxy TLS).
+- **API REST Fail-Closed (`src/api/`):** Todos os endpoints `/api/v1/*` exigem `X-API-Key` ou `Authorization: Bearer` comparados via `hmac.compare_digest` contra `BANCADA_API_KEY` (>= 16 chars; retorna 503 se ausente), com Rate Limiting por IP e validação Pydantic v2. O PostgreSQL opera com `statement_timeout=15000`, `lock_timeout=5000` e `idle_in_transaction_session_timeout=30000`.
 - **Sanitização de Inputs & Whitelist Regex:** Hostnames, IPs e parâmetros passados a scripts remotos devem ser validados via regex (`^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,252}$`). Credenciais nunca são passadas na linha de comando, e sim via `env`. Filtros LDAP devem utilizar `escape_filter_chars` e caminhos de arquivos devem barrar Path Traversal (`..`).
 - **Rate Limiting & Anti-Brute-Force:** O módulo de autenticação implementa bloqueio temporário (lockout) automático após 5 tentativas consecutivas incorretas (5 minutos de espera).
 - **Permissões 0600:** Arquivos sensíveis (`.env`, `.secret.key`, XMLs de credenciais) recebem permissão restrita `0600` (`-rw-------`).
@@ -193,5 +201,7 @@ automacao-chamados-sti/
 | **Recalibrar IA (GridSearchCV Completo)** | `docker exec bancada_streamlit_app python src/tag_classifier.py --tune` |
 | **Migrar SQLite para PostgreSQL** | `docker exec -e POSTGRES_HOST=db bancada_streamlit_app python util/migracoes/migrar_sqlite_para_postgres.py` |
 | **Verificar Status dos Contêineres** | `docker compose ps` |
-| **Visualizar Logs do Streamlit** | `docker compose logs -f app` |
+| **Rodar Testes da API REST** | `docker exec bancada_streamlit_app python -m unittest tests/unit/test_api.py` |
+| **Visualizar Logs do Streamlit** | `docker compose logs -f web` |
+| **Visualizar Logs da API REST** | `docker compose logs -f api` |
 
