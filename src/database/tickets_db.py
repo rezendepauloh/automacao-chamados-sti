@@ -113,6 +113,7 @@ def save_tickets_to_db(df: pd.DataFrame):
 
     from .sccm_db import get_device_by_user
 
+    new_tickets_count = 0
     for _, row in df.iterrows():
         cid = str(row.get('Chamado#', '')).strip()
         if cid.endswith('.0'):
@@ -216,6 +217,7 @@ def save_tickets_to_db(df: pd.DataFrame):
                 tag_val, ip_val, now, base_val, link_val,
                 hostname_val
             ))
+            new_tickets_count += 1
             
         comments_val = row.get('Comentários', '[]')
         if pd.notna(comments_val) and str(comments_val).strip() and str(comments_val).strip() != '[]':
@@ -233,6 +235,7 @@ def save_tickets_to_db(df: pd.DataFrame):
             
     conn.commit()
     conn.close()
+    return new_tickets_count
 
 def close_missing_tickets(active_ids: list):
     """

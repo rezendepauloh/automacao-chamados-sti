@@ -196,17 +196,27 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                 if not cid:
                     continue
 
-                # Filtro de Grupo Atual
+                # Filtro estrito de Grupo Atual (Fail-Closed: exige confirmação de Manutenção)
                 grupo_atual = str(
-                    ticket.get("grupo_atual") or 
-                    ticket.get("current_group") or 
-                    ticket.get("ticket_group") or 
-                    ticket.get("nome_grupo") or 
-                    ticket.get("group_name") or 
-                    ticket.get("sigla_grupo") or ""
+                    ticket.get("grupo_atual")
+                    or ticket.get("current_group")
+                    or ticket.get("ticket_group")
+                    or ticket.get("nome_grupo")
+                    or ticket.get("group_name")
+                    or ticket.get("sigla_grupo")
+                    or ticket.get("grupo")
+                    or ticket.get("group")
+                    or ticket.get("equipe")
+                    or ticket.get("fila")
+                    or ticket.get("responsavel_grupo")
+                    or ""
                 ).strip()
-                if grupo_atual and "[n1] manutenção" not in grupo_atual.lower() and "manutenção" not in grupo_atual.lower():
-                    logger.info(f"⏭️ [IGNORADO GRUPO] Chamado {cid} pertence a outro grupo: '{grupo_atual}'")
+                import unicodedata as _ud
+                grupo_norm = "".join(
+                    c for c in _ud.normalize("NFKD", grupo_atual.lower()) if not _ud.combining(c)
+                )
+                if not grupo_norm or "manutencao" not in grupo_norm:
+                    logger.info(f"⏭️ [IGNORADO GRUPO] Chamado {cid} fora do grupo Manutenção: '{grupo_atual or 'VAZIO'}'")
                     continue
 
                 solicitante_nome = ticket.get("ticket_requester", "") or ticket.get("solicitante", "")

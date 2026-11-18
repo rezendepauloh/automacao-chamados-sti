@@ -312,6 +312,28 @@ def render_chamados_page():
                     else:
                         st.warning("O robô já está em execução neste momento.")
 
+    if "was_orquestrador_running" not in st.session_state:
+        st.session_state["was_orquestrador_running"] = False
+
+    if st.session_state["was_orquestrador_running"] and not robo_ativo:
+        st.session_state["was_orquestrador_running"] = False
+        try:
+            import json as _json
+            from src.config import DEBUG_DIR_SYNC
+            summary_file = DEBUG_DIR_SYNC / "last_run_summary.json"
+            new_cnt = 0
+            if summary_file.exists():
+                new_cnt = int(_json.loads(summary_file.read_text(encoding="utf-8")).get("new_tickets", 0))
+            if new_cnt > 0:
+                st.toast(f"🆕 {new_cnt} chamado(s) novo(s)!", icon="🎫")
+            else:
+                st.toast("✅ Sincronização concluída: nenhum chamado novo.", icon="ℹ️")
+        except Exception:
+            st.toast("✅ Sincronização de chamados concluída!", icon="🤖")
+
+    if robo_ativo:
+        st.session_state["was_orquestrador_running"] = True
+
     render_log_expander(
         "🤖 Robô Rodando em Segundo Plano – Acompanhar Progresso",
         robo_ativo,

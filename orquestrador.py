@@ -172,11 +172,23 @@ def main():
             logger.info(f"{rep['passo']:<30} | {rep['status']:<8} | {rep['duracao']:<8} | {rep['retorno']:<7}")
         
         logger.info("-" * 61)
+        new_tickets_msg = "Não apurado"
+        try:
+            import json as _json
+            from src.config import DEBUG_DIR_SYNC
+            summary_file = DEBUG_DIR_SYNC / "last_run_summary.json"
+            if summary_file.exists():
+                summary_data = _json.loads(summary_file.read_text(encoding="utf-8"))
+                cnt = int(summary_data.get("new_tickets", 0))
+                new_tickets_msg = f"{cnt} chamado(s) novo(s)" if cnt > 0 else "Nenhum chamado novo"
+        except Exception:
+            pass
+
         status_final = "CONCLUÍDO COM SUCESSO!" if all_ok else "CONCLUÍDO COM ERROS!"
         if all_ok:
-            logger.info(f"🏁 Tempo Total: {total_duration:<18} | Status: {status_final}")
+            logger.info(f"🏁 Tempo Total: {total_duration:<18} | Chamados: {new_tickets_msg} | Status: {status_final}")
         else:
-            logger.error(f"🏁 Tempo Total: {total_duration:<18} | Status: {status_final}")
+            logger.error(f"🏁 Tempo Total: {total_duration:<18} | Chamados: {new_tickets_msg} | Status: {status_final}")
 
         if not all_ok:
             sys.exit(1)

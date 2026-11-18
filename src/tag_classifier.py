@@ -618,8 +618,38 @@ def main(force_tune: bool = False):
 
     try:
         from database import save_tickets_to_db, close_missing_tickets_by_base, sync_closed_tickets_to_train_dataset
+        from src.database.notifications_db import add_notification
+        from src.config import DEBUG_DIR_SYNC
+        import json as _json
+
         logger.info("💾 Salvando dados no banco de dados...")
-        save_tickets_to_db(df_tagged)
+        new_tickets_count = save_tickets_to_db(df_tagged) or 0
+
+        if new_tickets_count > 0:
+            logger.info(f"🆕 {new_tickets_count} chamado(s) novo(s) inserido(s) no banco nesta execução!")
+            add_notification(
+                tipo="chamados_novos",
+                titulo=f"{new_tickets_count} chamado(s) novo(s) coletado(s)",
+                mensagem=f"O orquestrador identificou e classificou {new_tickets_count} novo(s) chamado(s) na última execução.",
+                data_evento=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                link_pagina="chamados",
+            )
+        else:
+            logger.info("ℹ️ Nenhum chamado novo encontrado nesta execução.")
+
+        try:
+            DEBUG_DIR_SYNC.mkdir(parents=True, exist_ok=True)
+            (DEBUG_DIR_SYNC / "last_run_summary.json").write_text(
+                _json.dumps(
+                    {
+                        "new_tickets": int(new_tickets_count),
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
         
         active_ids_otrs = df_tagged[df_tagged['Base'] == 'OTRS']['Chamado#'].dropna().astype(str).tolist()
         active_ids_citsmart = df_tagged[df_tagged['Base'] == 'CitSmart']['Chamado#'].dropna().astype(str).tolist()
