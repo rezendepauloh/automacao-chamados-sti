@@ -71,3 +71,21 @@ Abra o navegador em:
 - **Painel Principal:** [http://localhost:8501](http://localhost:8501)
 - **Acesso na Rede Local:** `http://<IP-DO-SEU-COMPUTADOR>:8501`
 
+---
+
+## 🚀 5. Migração Inicial e Deploy Contínuo (WSL → WSL Produção)
+
+Para ambientes onde o desenvolvimento ocorre em uma máquina WSL e a produção temporária em outra máquina WSL dedicada:
+
+1. Configure no `.env` de desenvolvimento as variáveis `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT` (ex.: `2222`), `DEPLOY_DEST_DIR` e `DEPLOY_SSH_KEY`.
+2. **Migração inicial completa** (código, `.env`, `.secret.key`, `python_keyring`, `data/`, `models/`, `uploads/` e volumes `postgres_data`, `evolution_instances`, `evolution_store`):
+   ```bash
+   ./util/deploy/migrar_para_producao.sh
+   ```
+3. **Deploy contínuo de atualizações de código** (preserva `.env`, `.secret.key`, banco e dados de produção):
+   ```bash
+   ./00-iniciar.sh --deploy
+   # ou
+   ./00-iniciar.sh -dp
+   ```
+

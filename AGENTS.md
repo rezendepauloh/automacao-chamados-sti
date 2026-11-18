@@ -204,4 +204,6 @@ automacao-chamados-sti/
 | **Rodar Testes da API REST** | `docker exec bancada_streamlit_app python -m unittest tests/unit/test_api.py` |
 | **Visualizar Logs do Streamlit** | `docker compose logs -f web` |
 | **Visualizar Logs da API REST** | `docker compose logs -f api` |
+| **Deploy Contínuo (WSL Dev → WSL Prod)** | `./00-iniciar.sh --deploy` (ou `-dp`) |
+| **Migração Inicial Completa (WSL → WSL)** | `./util/deploy/migrar_para_producao.sh` |
 

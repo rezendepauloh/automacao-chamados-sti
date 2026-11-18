@@ -278,6 +278,114 @@ stop_system() {
     echo -e "${C_GREEN}Containers encerrados com sucesso!${C_RESET}"
 }
 
+_get_env_setting() {
+    local key="$1"
+    local default_val="${2:-}"
+    local val="${!key:-}"
+    if [ -z "$val" ] && [ -f .env ]; then
+        val=$(grep -E "^[[:space:]]*${key}[[:space:]]*=" .env | tail -n 1 | cut -d '=' -f 2- | tr -d ' "\r\n' | tr -d "'")
+    fi
+    echo "${val:-$default_val}"
+}
+
+deploy_producao() {
+    clear
+    echo -e "${C_CYAN}${C_BOLD}==============================================================${C_RESET}"
+    echo -e "${C_CYAN}${C_BOLD}   🚀 DEPLOY CONTÍNUO EM PRODUÇÃO (WSL -> MPE-64790)          ${C_RESET}"
+    echo -e "${C_CYAN}${C_BOLD}==============================================================${C_RESET}"
+    echo ""
+
+    load_env_file
+
+    local HOST
+    local USER
+    local PORT_SSH
+    local DEST_DIR
+    local SSH_KEY
+    HOST=$(_get_env_setting "DEPLOY_HOST")
+    USER=$(_get_env_setting "DEPLOY_USER")
+    PORT_SSH=$(_get_env_setting "DEPLOY_PORT" "2222")
+    DEST_DIR=$(_get_env_setting "DEPLOY_DEST_DIR" "~/PythonProjects/automated-OTRS-and-CitSmart")
+    SSH_KEY=$(_get_env_setting "DEPLOY_SSH_KEY" "~/.ssh/id_ed25519")
+    SSH_KEY="${SSH_KEY/#\~/$HOME}"
+
+    if [ -z "$HOST" ] || [ -z "$USER" ]; then
+        echo -e "${C_RED}[ERRO] Defina DEPLOY_HOST e DEPLOY_USER no arquivo .env antes de executar o deploy.${C_RESET}"
+        read -p "Pressione ENTER para voltar ao menu..." dummy
+        return 1
+    fi
+
+    local SSH_OPTS="-p ${PORT_SSH} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8"
+    if [ -f "$SSH_KEY" ]; then
+        SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
+    fi
+
+    # 1. Testar conectividade SSH
+    echo -e "${C_YELLOW}[1/4] Verificando conectividade SSH com ${USER}@${HOST}:${PORT_SSH}...${C_RESET}"
+    if ! ssh $SSH_OPTS "${USER}@${HOST}" "echo ok" >/dev/null 2>&1; then
+        echo -e "${C_RED}❌ Não foi possível conectar via SSH em ${USER}@${HOST}:${PORT_SSH}.${C_RESET}"
+        read -p "Pressione ENTER para voltar ao menu..." dummy
+        return 1
+    fi
+    echo -e "${C_GREEN}✅ Conexão SSH estabelecida com sucesso!${C_RESET}"
+    echo ""
+
+    # 2. Garantir diretórios no destino sem alterar dados/segredos existentes
+    echo -e "${C_YELLOW}[2/4] Garantindo estrutura de diretórios no destino (${DEST_DIR})...${C_RESET}"
+    if ! ssh $SSH_OPTS "${USER}@${HOST}" "mkdir -p ${DEST_DIR}/data ${DEST_DIR}/models ${DEST_DIR}/debug_logs ${DEST_DIR}/uploads ${DEST_DIR}/src/js"; then
+        echo -e "${C_RED}❌ Falha ao preparar diretórios remotos.${C_RESET}"
+        read -p "Pressione ENTER para voltar ao menu..." dummy
+        return 1
+    fi
+    echo -e "${C_GREEN}✅ Estrutura preparada!${C_RESET}"
+    echo ""
+
+    # 3. Sincronizar apenas código-fonte e assets via rsync (preservando .env, .secret.key e dados de produção)
+    echo -e "${C_YELLOW}[3/4] Enviando atualizações de código via rsync...${C_RESET}"
+    rsync -avz \
+        -e "ssh $SSH_OPTS" \
+        --exclude '.git' \
+        --exclude '.venv' \
+        --exclude '__pycache__' \
+        --exclude '.pytest_cache' \
+        --exclude '*.pyc' \
+        --exclude '.env' \
+        --exclude '.secret.key' \
+        --exclude 'cred_admin*.xml' \
+        --exclude 'data' \
+        --exclude 'models' \
+        --exclude 'uploads' \
+        --exclude 'debug_logs' \
+        --exclude 'temp' \
+        --exclude 'src/js/server-info.js' \
+        --exclude '*.log' \
+        --exclude '*.db' \
+        --exclude '*.sqlite' \
+        ./ "${USER}@${HOST}:${DEST_DIR}/"
+
+    if [ $? -ne 0 ]; then
+        echo -e "${C_RED}❌ Erro durante a transferência rsync.${C_RESET}"
+        read -p "Pressione ENTER para voltar ao menu..." dummy
+        return 1
+    fi
+    echo -e "${C_GREEN}✅ Código sincronizado (dados e segredos de produção preservados)!${C_RESET}"
+    echo ""
+
+    # 4. Reconstruir e reiniciar serviços web e api no destino
+    echo -e "${C_YELLOW}[4/4] Atualizando containers web e api na produção...${C_RESET}"
+    ssh -t $SSH_OPTS "${USER}@${HOST}" "cd ${DEST_DIR} && (docker compose up -d --build web api || sudo docker compose up -d --build web api) && docker compose ps"
+
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo -e "${C_GREEN}${C_BOLD}🎉 DEPLOY CONCLUÍDO COM SUCESSO EM ${HOST}!${C_RESET}"
+        echo -e "Dashboard Streamlit: ${C_CYAN}http://${HOST}:${PORT}${C_RESET}"
+    else
+        echo -e "${C_RED}❌ Ocorreu um erro ao atualizar a stack no servidor remoto.${C_RESET}"
+    fi
+    echo ""
+    read -p "Pressione [Enter] para voltar ao menu..." dummy
+}
+
 show_menu() {
     clear
     echo -e "${C_CYAN}${C_BOLD}╔══════════════════════════════════════════════════════════════╗${C_RESET}"
@@ -290,10 +398,11 @@ show_menu() {
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_GREEN}4${C_RESET} - Reconstruir Docker Compose (--no-cache)                 ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_GREEN}5${C_RESET} - Parar sistema (docker compose down)                     ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_YELLOW}6${C_RESET} - Executar Testes Automatizados (run_all.py)              ${C_CYAN}${C_BOLD}║${C_RESET}"
+    echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_MAGENTA}7${C_RESET} - 🚀 Deploy Contínuo em Produção (MPE-64790)                ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_RED}0${C_RESET} - Sair                                                    ${C_CYAN}${C_BOLD}║${C_RESET}"
     echo -e "${C_CYAN}${C_BOLD}╚══════════════════════════════════════════════════════════════╝${C_RESET}"
     echo ""
-    read -p "Opção [0-6]: " opcao
+    read -p "Opção [0-7]: " opcao
     case "$opcao" in
         1) start_system false ;;
         2) config_senhas; show_menu ;;
@@ -301,6 +410,7 @@ show_menu() {
         4) rebuild_docker; show_menu ;;
         5) stop_system ;;
         6) run_tests; show_menu ;;
+        7) deploy_producao; show_menu ;;
         0) exit 0 ;;
         *) echo -e "${C_RED}Opção inválida.${C_RESET}"; sleep 1; show_menu ;;
     esac
@@ -328,6 +438,9 @@ case "$1" in
     --tests|--test|-t)
         run_tests
         ;;
+    --deploy|-dp)
+        deploy_producao
+        ;;
     --help|-h)
         echo "Uso: ./00-iniciar.sh [OPÇÃO]"
         echo ""
@@ -339,6 +452,7 @@ case "$1" in
         echo "  --rebuild, -r            Reconstrói a imagem Docker (--no-cache)"
         echo "  --down, -d               Para os containers do sistema"
         echo "  --tests, -t              Executa a suíte de testes automatizados"
+        echo "  --deploy, -dp            Executa deploy contínuo em produção (MPE-64790)"
         echo "  --help, -h               Exibe esta ajuda"
         echo "  (sem argumentos)         Abre o menu interativo"
         ;;

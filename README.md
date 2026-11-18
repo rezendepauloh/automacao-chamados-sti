@@ -291,6 +291,8 @@ O sistema foi desenhado para operação **100% conteinerizada**, com containers 
    - `./00-iniciar.sh -s` : Abre o configurador interativo de senhas no cofre.
    - `./00-iniciar.sh -t` : Executa a suíte completa de testes automatizados.
    - `./00-iniciar.sh -b` : Força a reconstrução limpa das imagens Docker.
+   - `./00-iniciar.sh --deploy` (ou `-dp`) : Sincroniza alterações de código via SSH/`rsync` para a máquina WSL de produção e atualiza os containers `web` e `api` sem sobrescrever `.env`, `.secret.key` ou dados.
+   - `./util/deploy/migrar_para_producao.sh` : Executa a migração inicial completa (código, segredos, dados e volumes Docker) para uma nova máquina WSL de produção.
 
 ---
 

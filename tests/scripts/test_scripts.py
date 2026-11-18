@@ -85,6 +85,26 @@ class TestScriptsAndIntegrity(unittest.TestCase):
             + "\n".join(f" - {p}" for p in missing_bom)
         )
 
+    def test_deploy_scripts_integrity_and_safety(self):
+        """Valida existência, sintaxe bash e exclusões de segurança nos scripts de deploy."""
+        import subprocess
+
+        iniciar_sh = ROOT_DIR / "00-iniciar.sh"
+        migrar_sh = ROOT_DIR / "util" / "deploy" / "migrar_para_producao.sh"
+
+        self.assertTrue(iniciar_sh.exists(), "00-iniciar.sh não encontrado")
+        self.assertTrue(migrar_sh.exists(), "util/deploy/migrar_para_producao.sh não encontrado")
+
+        for script in (iniciar_sh, migrar_sh):
+            res = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, f"Erro de sintaxe bash em {script}: {res.stderr}")
+
+        content = iniciar_sh.read_text(encoding="utf-8")
+        self.assertIn("--deploy|-dp)", content)
+        self.assertIn("--down|--stop|-d)", content)
+        for protected in (".env", ".secret.key", "data", "models", "uploads"):
+            self.assertIn(f"--exclude '{protected}'", content, f"Exclusão obrigatória ausente no deploy: {protected}")
+
 
 if __name__ == "__main__":
     unittest.main()
