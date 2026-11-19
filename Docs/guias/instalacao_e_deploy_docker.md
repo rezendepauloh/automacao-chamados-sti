@@ -89,3 +89,21 @@ Para ambientes onde o desenvolvimento ocorre em uma máquina WSL e a produção 
    ./00-iniciar.sh -dp
    ```
 
+---
+
+## 🛠️ 6. Troubleshooting (WSL2 → WSL2 & Rede)
+
+### 1. API REST (`8510`) retorna `Connection reset by peer` para clientes externos
+- **Causa:** Por padrão, `BANCADA_API_BIND` no `.env` é `127.0.0.1` (loopback). Quando o tráfego chega de outra máquina via `netsh interface portproxy` do Windows para o IP interno do WSL2, o `wslrelay` derruba o encaminhamento para `127.0.0.1`.
+- **Solução:**
+  1. No `.env` da máquina de produção, defina `BANCADA_API_BIND="0.0.0.0"` (mantendo `127.0.0.1` como padrão seguro no `docker-compose.yml`) e recrie o container: `docker compose up -d api`.
+  2. No PowerShell (Admin) do Windows de produção, adicione o `portproxy` e a regra de Firewall para a porta `8510` apontando para o IP interno atual do WSL2 (`hostname -I`).
+
+### 2. SSH (`2222`) ou portas `8501`/`8510` param de responder após reinício
+- **Causa:** O serviço `ssh` no WSL2 não inicia automaticamente após reboot ou o IP interno do WSL2 mudou.
+- **Solução:** No WSL2 de produção, rode `sudo service ssh start`, confira o IP com `hostname -I | awk '{print $1}'` e atualize o `portproxy` no PowerShell (Admin) para as portas `2222`, `8501` e `8510`.
+
+### 3. Erro `x509: certificate signed by unknown authority` no `docker compose`
+- **Causa:** O daemon Docker em um WSL2 recém-instalado ainda não confia no certificado raiz da inspeção SSL corporativa.
+- **Solução:** Copie o certificado `.crt` da CA para `/usr/local/share/ca-certificates/`, execute `sudo update-ca-certificates` e reinicie o serviço com `sudo service docker restart`.
+
