@@ -41,6 +41,7 @@ class TestTicketEnrichment(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "test_enrichment.db"
+        self.patcher_env = patch.dict(os.environ, {"DB_TYPE": "sqlite"})
         self.patcher_db = patch("src.database.connection.DB_PATH", self.db_path)
         self.patcher_db_type = patch("src.database.connection.DB_TYPE", "sqlite")
         self.patcher_ad_type = patch("src.database.ad_db.DB_TYPE", "sqlite")
@@ -48,6 +49,7 @@ class TestTicketEnrichment(unittest.TestCase):
         self.patcher_tkt_type = patch("src.database.tickets_db.DB_TYPE", "sqlite")
         self.patcher_tkt_path = patch("src.database.tickets_db.DB_PATH", self.db_path)
 
+        self.patcher_env.start()
         self.patcher_db.start()
         self.patcher_db_type.start()
         self.patcher_ad_type.start()
@@ -66,6 +68,7 @@ class TestTicketEnrichment(unittest.TestCase):
         self.patcher_ad_type.stop()
         self.patcher_db_type.stop()
         self.patcher_db.stop()
+        self.patcher_env.stop()
         self.temp_dir.cleanup()
 
     def test_format_br_datetime_variants(self):
