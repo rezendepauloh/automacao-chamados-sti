@@ -59,6 +59,53 @@ def salvar_screenshot(page, nome_etapa):
 def fetch_setor_temp(conn, query_val, is_username=False):
     return fetch_ad_department(conn, query_val, is_username=is_username)
 
+
+def _resolve_citsmart_user_and_device(
+    ad_conn,
+    cid: str,
+    solicitante_nome: str,
+    id_cliente: str,
+    descricao: str,
+    comments_list: list,
+    cached_ip: str = "",
+    cached_hostname: str = "",
+) -> tuple[str, str, str]:
+    """
+    Resolve sAMAccountName (ID do Cliente), IP_Origem e Hostname para chamados CitSmart
+    combinando e-mail/AD/SCCM/texto/histórico e sanitizando sentinelas inválidos.
+    """
+    from src.services.ticket_enrichment import (
+        resolve_ticket_device_and_user,
+        resolve_user_sam_account_name,
+        sanitize_network_value,
+    )
+
+    clean_id = sanitize_network_value(id_cliente)
+    if not clean_id and solicitante_nome:
+        user_info = resolve_user_sam_account_name(
+            usuario=solicitante_nome,
+            id_cliente="",
+            allow_ldap=bool(ad_conn),
+        )
+        clean_id = user_info.get("sam_account_name", "")
+
+    resolved = resolve_ticket_device_and_user(
+        {
+            "id": cid,
+            "usuario": solicitante_nome,
+            "id_cliente": clean_id,
+            "descricao": descricao,
+            "ip_origem": sanitize_network_value(cached_ip),
+            "hostname": sanitize_network_value(cached_hostname),
+        },
+        comments=comments_list,
+        allow_network_fallbacks=True,
+    )
+    final_id = resolved.get("sam_account_name") or clean_id
+    final_ip = resolved.get("ip_origem", "")
+    final_host = resolved.get("hostname", "")
+    return final_id, final_ip, final_host
+
 def navigate_to_caixa_entrada(page):
     logger.info("Acessando portal inicial CitSmart e autenticando via Microsoft Entra ID...")
     page.goto(CITSMART_URL, wait_until="domcontentloaded", timeout=60000)
@@ -283,8 +330,10 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                     cached_unidade = cache[cid].get('Unidade') or ""
                     cached_desc = cache[cid].get('Descrição') or ""
                     cached_hostname = cache[cid].get('Hostname') or ""
+                    cached_id_cliente = cache[cid].get('ID do Cliente') or ""
                     citsmart_base = (CITSMART_URL).rstrip('/')
-                    if cached_ip:
+                    id_cliente = id_cliente or cached_id_cliente
+                    if cached_ip and cached_hostname and id_cliente:
                         collected.append({
                             "Chamado#": cid,
                             "ID do Cliente": id_cliente,
@@ -300,26 +349,29 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                         logger.info(f"[{idx+1}/{len(candidates)}] ⚡ [CACHE MATCH] Chamado {cid} recuperado do cache!")
                         continue
                     else:
-                        sccm_ip = ""
-                        sccm_hostname = ""
-                        if id_cliente:
-                            from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
-                            sccm_ip = fetch_ip_from_sccm(id_cliente)
-                            sccm_hostname = fetch_hostname_from_sccm(id_cliente)
-                        citsmart_base = (CITSMART_URL).rstrip('/')
+                        resolved_id, resolved_ip, resolved_host = _resolve_citsmart_user_and_device(
+                            ad_conn, cid, solicitante_nome, id_cliente, cached_desc, comments_list,
+                            cached_ip=cached_ip, cached_hostname=cached_hostname
+                        )
                         collected.append({
                             "Chamado#": cid,
-                            "ID do Cliente": id_cliente,
+                            "ID do Cliente": resolved_id,
                             "Nome do Usuário": solicitante_nome,
                             "Unidade": cached_unidade or "Não encontrada no AD",
                             "Descrição": cached_desc,
                             "Data Criação": data_criacao,
-                            "IP_Origem": sccm_ip,
-                            "Hostname": sccm_hostname,
+                            "IP_Origem": resolved_ip,
+                            "Hostname": resolved_host,
                             "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                             "Comentários": comments_json
                         })
                         continue
+
+                desc_text = ticket.get("ticket_description_long", "") or ticket.get("ticket_description", "")
+                resolved_id, resolved_ip, resolved_host = _resolve_citsmart_user_and_device(
+                    ad_conn, cid, solicitante_nome, id_cliente, desc_text, comments_list
+                )
+                id_cliente = resolved_id or id_cliente
 
                 localidade = "Não encontrada no AD"
                 if ad_conn:
@@ -330,23 +382,16 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                 else:
                     localidade = ticket.get("ticket_unit", "") or ticket.get("nome_unidade", "Não encontrada")
 
-                sccm_ip = ""
-                sccm_hostname = ""
-                if id_cliente:
-                    from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
-                    sccm_ip = fetch_ip_from_sccm(id_cliente)
-                    sccm_hostname = fetch_hostname_from_sccm(id_cliente)
-
                 citsmart_base = (CITSMART_URL).rstrip('/')
                 collected.append({
                     "Chamado#": cid,
                     "ID do Cliente": id_cliente,
                     "Nome do Usuário": solicitante_nome,
                     "Unidade": localidade,
-                    "Descrição": ticket.get("ticket_description_long", "") or ticket.get("ticket_description", ""),
+                    "Descrição": desc_text,
                     "Data Criação": data_criacao,
-                    "IP_Origem": sccm_ip,
-                    "Hostname": sccm_hostname,
+                    "IP_Origem": resolved_ip,
+                    "Hostname": resolved_host,
                     "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                     "Comentários": comments_json
                 })
@@ -417,8 +462,10 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                 cached_unidade = cache[cid].get('Unidade') or ""
                 cached_desc = cache[cid].get('Descrição') or ""
                 cached_hostname = cache[cid].get('Hostname') or ""
+                cached_id_cliente = cache[cid].get('ID do Cliente') or ""
+                id_cliente = id_cliente or cached_id_cliente
                 citsmart_base = (CITSMART_URL).rstrip('/')
-                if cached_ip:
+                if cached_ip and cached_hostname and id_cliente:
                     collected.append({
                         "Chamado#": cid,
                         "ID do Cliente": id_cliente,
@@ -434,6 +481,17 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                     continue
 
             descricao = get_val("10", is_description=True)
+            resolved_id, resolved_ip, resolved_host = _resolve_citsmart_user_and_device(
+                ad_conn,
+                cid,
+                solicitante_nome,
+                id_cliente,
+                descricao,
+                [],
+                cached_ip=cache[cid].get('IP_Origem', '') if (cache and cid in cache) else "",
+                cached_hostname=cache[cid].get('Hostname', '') if (cache and cid in cache) else "",
+            )
+            id_cliente = resolved_id or id_cliente
 
             localidade = "Não encontrada no AD"
             if ad_conn:
@@ -441,13 +499,6 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                     localidade = fetch_setor_temp(ad_conn, id_cliente, is_username=True)
                 else:
                     localidade = fetch_setor_temp(ad_conn, solicitante_nome, is_username=False)
-
-            sccm_ip = ""
-            sccm_hostname = ""
-            if id_cliente:
-                from config import fetch_ip_from_sccm, fetch_hostname_from_sccm
-                sccm_ip = fetch_ip_from_sccm(id_cliente)
-                sccm_hostname = fetch_hostname_from_sccm(id_cliente)
 
             citsmart_base = (CITSMART_URL).rstrip('/')
             collected.append({
@@ -457,8 +508,8 @@ def process_page(frame, captured_tickets, ad_conn=None, cache=None):
                 "Unidade": localidade,
                 "Descrição": descricao,
                 "Data Criação": data_criacao,
-                "IP_Origem": sccm_ip,
-                "Hostname": sccm_hostname,
+                "IP_Origem": resolved_ip,
+                "Hostname": resolved_host,
                 "Link": f"{citsmart_base}/citsmart/pages/serviceRequestIncident/serviceRequestIncident.load?iframe=true&language=pt-BR#/request?idRequest={cid}",
                 "Comentários": comments_json
             })
@@ -509,15 +560,18 @@ def scrape_citsmart():
                 link = row_old.get('Link', '')
                 comments = row_old.get('Comentários', '[]')
                 hostname = row_old.get('Hostname', '')
+                id_cli = row_old.get('ID do Cliente', '')
                 if cid:
                     clean_ip = str(ip).strip() if pd.notna(ip) and str(ip).strip().lower() not in ["nan", "none", "null"] else ''
                     clean_host = str(hostname).strip() if pd.notna(hostname) and str(hostname).strip().lower() not in ["nan", "none", "null"] else ''
+                    clean_id_cli = str(id_cli).strip() if pd.notna(id_cli) and str(id_cli).strip().lower() not in ["nan", "none", "null"] else ''
                     clean_desc = str(desc).strip() if pd.notna(desc) and str(desc).strip().lower() not in ["nan", "none", "null"] else ''
                     clean_unid = str(row_old.get('Unidade', '')).strip() if pd.notna(row_old.get('Unidade')) and str(row_old.get('Unidade')).strip().lower() not in ["nan", "none", "null"] else ''
                     clean_link = str(link).strip() if pd.notna(link) and str(link).strip().lower() not in ["nan", "none", "null"] else ''
                     clean_comm = str(comments).strip() if pd.notna(comments) and str(comments).strip().lower() not in ["nan", "none", "null"] else '[]'
                     
                     cache[cid] = {
+                        'ID do Cliente': clean_id_cli,
                         'Descrição': clean_desc,
                         'Unidade': clean_unid,
                         'IP_Origem': clean_ip,

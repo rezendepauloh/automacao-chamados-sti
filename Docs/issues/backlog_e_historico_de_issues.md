@@ -29,6 +29,10 @@
 - [x] **Padronização para Agentes Autônomos (`AGENTS.md`):**
   - Definição do Ciclo de Engenharia Obrigatório de 4 etapas: Avaliar -> Planejar -> Testar -> Documentar.
   - Estruturação completa da documentação no padrão unificado `Docs/`.
+- [x] **Upgrade do Modal de Chamados & Enriquecimento em Cascata (`src/tabs/chamados.py`, `src/services/ticket_enrichment.py`):**
+  - Exibição automática do `sAMAccountName` entre parênteses após o nome do usuário (via `id_cliente`, `ad_cache_users`, `sccm_cache_users` e fallback LDAP).
+  - Descoberta em cascata de IP de Origem e Hostname (texto/comentários, patrimônio, `sccm_cache_devices`, `ad_cache_computers`, histórico de chamados, DNS/rDNS e SCCM ao vivo) com fallback final garantido para `N/A`.
+  - Exibição das datas de criação e atualização no padrão brasileiro `dd/mm/aaaa hh:mm:ss` e reposicionamento equilibrado dos accordions no modal.
 
 ---
 

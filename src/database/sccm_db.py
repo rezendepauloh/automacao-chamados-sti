@@ -718,28 +718,236 @@ def get_device_by_user(username: str) -> Optional[Dict[str, str]]:
             
         if row:
             name, ip_addresses = row[0], row[1]
-            chosen_ip = ""
-            if ip_addresses:
-                # O campo pode conter IPs separados por vírgula ou JSON
-                raw_ips = [ip.strip() for ip in str(ip_addresses).replace("[", "").replace("]", "").replace('"', '').replace("'", "").split(",") if ip.strip()]
-                # Prioriza IP da rede interna (10.x)
-                ip_10 = next((ip for ip in raw_ips if ip.startswith("10.")), None)
-                if ip_10:
-                    chosen_ip = ip_10
-                elif raw_ips:
-                    chosen_ip = raw_ips[0]
-                    
+            chosen_ip = _pick_preferred_ip(ip_addresses)
             device_info = {
                 "ip": chosen_ip or "",
                 "hostname": str(name).strip() if name else ""
             }
     except Exception as e:
-        logger = logging.getLogger(__name__) if "logging" in globals() else None
-        if logger:
-            logger.warning(f"Erro ao buscar dispositivo por usuário '{username}' no cache SCCM: {e}")
+        logger.warning(f"Erro ao buscar dispositivo por usuário '{username}' no cache SCCM: {e}")
     finally:
         cursor.close()
         conn.close()
         
     return device_info
+
+
+def _pick_preferred_ip(ip_addresses: Any) -> str:
+    """Seleciona o melhor IPv4 corporativo de uma string/lista de IPs do SCCM."""
+    if not ip_addresses:
+        return ""
+    raw_ips = [
+        ip.strip()
+        for ip in str(ip_addresses).replace("[", "").replace("]", "").replace('"', "").replace("'", "").split(",")
+        if ip.strip() and not ip.strip().lower().startswith("fe80:")
+    ]
+    if not raw_ips:
+        return ""
+    ip_10 = next((ip for ip in raw_ips if ip.startswith("10.")), None)
+    if ip_10:
+        return ip_10
+    ipv4_regex = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+    any_ipv4 = next((ip for ip in raw_ips if ipv4_regex.match(ip)), None)
+    return any_ipv4 or raw_ips[0]
+
+
+def find_sccm_device_by_hostname(hostname: str) -> Optional[Dict[str, str]]:
+    """Busca dispositivo no cache do SCCM pelo hostname (com ou sem sufixo de domínio)."""
+    if not hostname:
+        return None
+    clean_host = str(hostname).strip().split(".")[0].strip()
+    if not clean_host:
+        return None
+
+    setup_sccm_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if DB_TYPE in ["postgres", "postgresql"] else "?"
+    try:
+        cursor.execute(
+            f"""
+            SELECT name, ip_addresses, last_logon_user
+            FROM sccm_cache_devices
+            WHERE LOWER(TRIM(name)) = LOWER(TRIM({ph}))
+            ORDER BY client_active DESC, updated_at DESC
+            LIMIT 1
+            """,
+            (clean_host,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "hostname": str(row[0] or "").strip(),
+                "ip": _pick_preferred_ip(row[1]),
+                "last_logon_user": str(row[2] or "").strip(),
+            }
+        return None
+    except Exception as e:
+        logger.warning(f"Erro ao buscar dispositivo por hostname '{hostname}' no cache SCCM: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def find_sccm_device_by_ip(ip_addr: str) -> Optional[Dict[str, str]]:
+    """Busca dispositivo no cache do SCCM que possua o IP informado."""
+    if not ip_addr:
+        return None
+    clean_ip = str(ip_addr).strip()
+    if not re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", clean_ip):
+        return None
+
+    setup_sccm_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if DB_TYPE in ["postgres", "postgresql"] else "?"
+    try:
+        cursor.execute(
+            f"""
+            SELECT name, ip_addresses, last_logon_user
+            FROM sccm_cache_devices
+            WHERE ip_addresses LIKE {ph}
+            ORDER BY client_active DESC, updated_at DESC
+            """,
+            (f"%{clean_ip}%",),
+        )
+        for row in cursor.fetchall():
+            ips_str = str(row[1] or "")
+            # Garante correspondência exata do token IP (evita '10.1.1.1' casar com '10.1.1.10')
+            if re.search(rf"(?<!\d){re.escape(clean_ip)}(?!\d)", ips_str):
+                return {
+                    "hostname": str(row[0] or "").strip(),
+                    "ip": clean_ip,
+                    "last_logon_user": str(row[2] or "").strip(),
+                }
+        return None
+    except Exception as e:
+        logger.warning(f"Erro ao buscar dispositivo por IP '{ip_addr}' no cache SCCM: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def find_sccm_device_by_patrimonio(patrimonio: str) -> Optional[Dict[str, str]]:
+    """Busca dispositivo no cache do SCCM cujo nome termine com o patrimônio (ex: MPE-58063)."""
+    if not patrimonio:
+        return None
+    pat_clean = re.sub(r"\D", "", str(patrimonio))
+    if len(pat_clean) < 4:
+        return None
+
+    setup_sccm_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if DB_TYPE in ["postgres", "postgresql"] else "?"
+    try:
+        cursor.execute(
+            f"""
+            SELECT name, ip_addresses, last_logon_user
+            FROM sccm_cache_devices
+            WHERE LOWER(name) LIKE {ph} OR LOWER(name) = {ph}
+            ORDER BY client_active DESC, updated_at DESC
+            LIMIT 1
+            """,
+            (f"%-{pat_clean}", pat_clean.lower()),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "hostname": str(row[0] or "").strip(),
+                "ip": _pick_preferred_ip(row[1]),
+                "last_logon_user": str(row[2] or "").strip(),
+            }
+        return None
+    except Exception as e:
+        logger.warning(f"Erro ao buscar dispositivo por patrimônio '{patrimonio}' no cache SCCM: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def find_sccm_username_by_fullname(full_name: str) -> str:
+    """Busca o login (user_name / sAMAccountName) no cache sccm_cache_users pelo nome completo."""
+    if not full_name:
+        return ""
+    raw_name = str(full_name).strip()
+    if not raw_name or raw_name.lower() in ("n/a", "none", "nan", "null", "não informado"):
+        return ""
+
+    import unicodedata
+    def _norm(txt: str) -> str:
+        s = unicodedata.normalize("NFKD", str(txt or "").strip())
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", s.lower())).strip()
+
+    setup_sccm_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if DB_TYPE in ["postgres", "postgresql"] else "?"
+    try:
+        cursor.execute(
+            f"""
+            SELECT user_name, full_user_name
+            FROM sccm_cache_users
+            WHERE LOWER(TRIM(full_user_name)) = LOWER(TRIM({ph}))
+            LIMIT 1
+            """,
+            (raw_name,),
+        )
+        row = cursor.fetchone()
+        if row and row[0]:
+            u = str(row[0]).strip()
+            return u.split("\\")[-1].strip() if "\\" in u else u
+
+        norm_target = _norm(raw_name)
+        tokens = [t for t in norm_target.split(" ") if t]
+        if not tokens:
+            return ""
+
+        if len(tokens) >= 2:
+            cursor.execute(
+                f"""
+                SELECT user_name, full_user_name
+                FROM sccm_cache_users
+                WHERE LOWER(full_user_name) LIKE {ph} AND LOWER(full_user_name) LIKE {ph}
+                """,
+                (f"%{tokens[0]}%", f"%{tokens[-1]}%"),
+            )
+        else:
+            cursor.execute(
+                f"""
+                SELECT user_name, full_user_name
+                FROM sccm_cache_users
+                WHERE LOWER(full_user_name) LIKE {ph}
+                """,
+                (f"%{tokens[0]}%",),
+            )
+
+        matches = []
+        sig_tokens = [t for t in tokens if len(t) > 2] or tokens
+        for u_raw, full_raw in cursor.fetchall():
+            if not u_raw:
+                continue
+            u_clean = str(u_raw).strip()
+            if "\\" in u_clean:
+                u_clean = u_clean.split("\\")[-1].strip()
+            cand_norm = _norm(full_raw or "")
+            if cand_norm == norm_target:
+                return u_clean
+            cand_tokens = cand_norm.split(" ")
+            if all(t in cand_tokens for t in sig_tokens):
+                matches.append(u_clean)
+
+        if len(set(matches)) == 1:
+            return matches[0]
+        return ""
+    except Exception:
+        return ""
+    finally:
+        cursor.close()
+        conn.close()
+
 

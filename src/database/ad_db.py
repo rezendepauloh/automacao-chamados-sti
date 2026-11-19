@@ -941,4 +941,253 @@ def get_ad_orgchart_data() -> List[Dict[str, Any]]:
         conn.close()
 
 
+def _normalize_person_name(text: str) -> str:
+    """Normaliza nome próprio removendo acentos, pontuações extras e espaços duplicados."""
+    import unicodedata
+    if not text:
+        return ""
+    s = unicodedata.normalize("NFKD", str(text).strip())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^\w\s]", " ", s.lower())
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def find_ad_user_by_sam(sam_account_name: str) -> Optional[Dict[str, str]]:
+    """Busca usuário no cache do Active Directory pelo sAMAccountName."""
+    if not sam_account_name:
+        return None
+    clean_sam = str(sam_account_name).strip()
+    if "\\" in clean_sam:
+        clean_sam = clean_sam.split("\\")[-1].strip()
+    if "@" in clean_sam:
+        clean_sam = clean_sam.split("@")[0].strip()
+    if not clean_sam:
+        return None
+
+    setup_ad_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if DB_TYPE in ["postgres", "postgresql"] else "?"
+    try:
+        cursor.execute(
+            f"""
+            SELECT sam_account_name, display_name, mail, dn
+            FROM ad_cache_users
+            WHERE LOWER(TRIM(sam_account_name)) = LOWER(TRIM({ph}))
+            ORDER BY is_active DESC
+            LIMIT 1
+            """,
+            (clean_sam,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "sam_account_name": str(row[0] or "").strip(),
+                "display_name": str(row[1] or "").strip(),
+                "mail": str(row[2] or "").strip(),
+                "dn": str(row[3] or "").strip(),
+            }
+        return None
+    except Exception:
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def find_ad_user_by_name(full_name: str) -> Optional[Dict[str, str]]:
+    """
+    Busca usuário no cache do Active Directory (ad_cache_users) pelo nome completo,
+    suportando diferenças de capitalização, acentuação e partículas (de/da/dos).
+    """
+    if not full_name:
+        return None
+    raw_name = str(full_name).strip()
+    if not raw_name or raw_name.lower() in ("n/a", "none", "nan", "null", "não informado"):
+        return None
+
+    setup_ad_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if DB_TYPE in ["postgres", "postgresql"] else "?"
+    try:
+        # 1. Correspondência exata case-insensitive em display_name ou e-mail
+        cursor.execute(
+            f"""
+            SELECT sam_account_name, display_name, mail, dn, is_active
+            FROM ad_cache_users
+            WHERE LOWER(TRIM(display_name)) = LOWER(TRIM({ph}))
+               OR LOWER(TRIM(mail)) = LOWER(TRIM({ph}))
+               OR LOWER(TRIM(sam_account_name)) = LOWER(TRIM({ph}))
+            ORDER BY is_active DESC, sam_account_name ASC
+            LIMIT 1
+            """,
+            (raw_name, raw_name, raw_name),
+        )
+        row = cursor.fetchone()
+        if row and row[0]:
+            return {
+                "sam_account_name": str(row[0]).strip(),
+                "display_name": str(row[1] or "").strip(),
+                "mail": str(row[2] or "").strip(),
+                "dn": str(row[3] or "").strip(),
+            }
+
+        # 2. Busca tolerante a acentos / partículas usando primeiro e último token
+        norm_target = _normalize_person_name(raw_name)
+        tokens = [t for t in norm_target.split(" ") if t]
+        if not tokens:
+            return None
+
+        first_tok = tokens[0]
+        last_tok = tokens[-1]
+        if len(tokens) >= 2:
+            cursor.execute(
+                f"""
+                SELECT sam_account_name, display_name, mail, dn, is_active
+                FROM ad_cache_users
+                WHERE LOWER(display_name) LIKE {ph} AND LOWER(display_name) LIKE {ph}
+                ORDER BY is_active DESC, sam_account_name ASC
+                """,
+                (f"%{first_tok}%", f"%{last_tok}%"),
+            )
+        else:
+            cursor.execute(
+                f"""
+                SELECT sam_account_name, display_name, mail, dn, is_active
+                FROM ad_cache_users
+                WHERE LOWER(display_name) LIKE {ph}
+                ORDER BY is_active DESC, sam_account_name ASC
+                """,
+                (f"%{first_tok}%",),
+            )
+
+        candidates = cursor.fetchall()
+        if not candidates:
+            return None
+
+        exact_norm = []
+        subset_norm = []
+        significant_tokens = [t for t in tokens if len(t) > 2] or tokens
+
+        for r in candidates:
+            sam, disp, mail, dn, active = r[0], r[1], r[2], r[3], r[4]
+            if not sam:
+                continue
+            cand_norm = _normalize_person_name(disp or "")
+            if cand_norm == norm_target:
+                exact_norm.append((active or 0, str(sam).strip(), str(disp or "").strip(), str(mail or "").strip(), str(dn or "").strip()))
+            else:
+                cand_tokens = cand_norm.split(" ")
+                if all(t in cand_tokens for t in significant_tokens):
+                    subset_norm.append((active or 0, str(sam).strip(), str(disp or "").strip(), str(mail or "").strip(), str(dn or "").strip()))
+
+        if exact_norm:
+            exact_norm.sort(key=lambda x: x[0], reverse=True)
+            _, sam, disp, mail, dn = exact_norm[0]
+            return {"sam_account_name": sam, "display_name": disp, "mail": mail, "dn": dn}
+
+        # Só aceita correspondência parcial se apontar univocamente para uma única conta (ou única ativa)
+        active_subsets = [c for c in subset_norm if c[0] == 1]
+        chosen_pool = active_subsets if len(active_subsets) == 1 else (subset_norm if len(subset_norm) == 1 else [])
+        if chosen_pool:
+            _, sam, disp, mail, dn = chosen_pool[0]
+            return {"sam_account_name": sam, "display_name": disp, "mail": mail, "dn": dn}
+
+        return None
+    except Exception:
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def find_ad_computer_for_user(
+    sam_account_name: str = "",
+    display_name: str = "",
+    user_dn: str = "",
+    patrimonio: str = "",
+) -> Optional[Dict[str, str]]:
+    """
+    Busca hostname provável no cache de computadores do AD (ad_cache_computers)
+    via patrimônio, atributo managed_by ou descrição inequívoca.
+    """
+    setup_ad_tables()
+    conn = get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if DB_TYPE in ["postgres", "postgresql"] else "?"
+    try:
+        if patrimonio:
+            pat_clean = re.sub(r"\D", "", str(patrimonio))
+            if len(pat_clean) >= 4:
+                cursor.execute(
+                    f"""
+                    SELECT name, dns_hostname
+                    FROM ad_cache_computers
+                    WHERE is_active = 1 AND (LOWER(name) LIKE {ph} OR LOWER(name) = {ph})
+                    ORDER BY last_logon DESC
+                    LIMIT 1
+                    """,
+                    (f"%-{pat_clean}", pat_clean.lower()),
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    return {"hostname": str(row[0]).strip(), "dns_hostname": str(row[1] or "").strip()}
+
+        if user_dn:
+            cursor.execute(
+                f"""
+                SELECT name, dns_hostname
+                FROM ad_cache_computers
+                WHERE is_active = 1 AND LOWER(TRIM(managed_by)) = LOWER(TRIM({ph}))
+                ORDER BY last_logon DESC
+                LIMIT 1
+                """,
+                (user_dn.strip(),),
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                return {"hostname": str(row[0]).strip(), "dns_hostname": str(row[1] or "").strip()}
+
+        if sam_account_name:
+            clean_sam = str(sam_account_name).strip().lower()
+            if len(clean_sam) >= 3:
+                cursor.execute(
+                    f"""
+                    SELECT name, dns_hostname
+                    FROM ad_cache_computers
+                    WHERE is_active = 1 AND LOWER(description) LIKE {ph}
+                    ORDER BY last_logon DESC
+                    """,
+                    (f"%{clean_sam}%",),
+                )
+                rows = cursor.fetchall()
+                if len(rows) == 1 and rows[0][0]:
+                    return {"hostname": str(rows[0][0]).strip(), "dns_hostname": str(rows[0][1] or "").strip()}
+
+        if display_name:
+            clean_disp = str(display_name).strip().lower()
+            if len(clean_disp) >= 6:
+                cursor.execute(
+                    f"""
+                    SELECT name, dns_hostname
+                    FROM ad_cache_computers
+                    WHERE is_active = 1 AND LOWER(description) LIKE {ph}
+                    ORDER BY last_logon DESC
+                    """,
+                    (f"%{clean_disp}%",),
+                )
+                rows = cursor.fetchall()
+                if len(rows) == 1 and rows[0][0]:
+                    return {"hostname": str(rows[0][0]).strip(), "dns_hostname": str(rows[0][1] or "").strip()}
+
+        return None
+    except Exception:
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
 

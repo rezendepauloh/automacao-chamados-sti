@@ -105,7 +105,8 @@ automacao-chamados-sti/
 │   │   └── ...                 # Scrapers de plantões, ramais, unidades, OXE, PaperCut e FAQs
 │   │
 │   ├── services/
-│   │   └── cron_scheduler.py   # Daemon de agendamento em segundo plano (tarefas periódicas)
+│   │   ├── cron_scheduler.py   # Daemon de agendamento em segundo plano (tarefas periódicas)
+│   │   └── ticket_enrichment.py# Enriquecimento em cascata (sAMAccountName, IP, Hostname, datas BR)
 │   │
 │   ├── api/                    # API REST ASGI (Starlette + Uvicorn + Pydantic) em container isolado
 │   │   ├── app.py              # Rotas /health, /openapi.json, /docs e /api/v1/*

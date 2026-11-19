@@ -112,6 +112,8 @@ def save_tickets_to_db(df: pd.DataFrame):
         return s
 
     from .sccm_db import get_device_by_user
+    from src.config import clean_otrs_comments
+    from src.services.ticket_enrichment import resolve_ticket_device_and_user, sanitize_network_value
 
     new_tickets_count = 0
     for _, row in df.iterrows():
@@ -129,8 +131,8 @@ def save_tickets_to_db(df: pd.DataFrame):
             continue
         id_cliente_val = _clean_str(row.get('ID do Cliente', ''))
         desc_val = _clean_str(row.get('Descrição', ''))
-        ip_val = _clean_str(row.get('IP_Origem', ''))
-        hostname_val = _clean_str(row.get('Hostname', ''))
+        ip_val = sanitize_network_value(row.get('IP_Origem', ''))
+        hostname_val = sanitize_network_value(row.get('Hostname', ''))
         base_val = _clean_str(row.get('Base', ''))
         link_val = _clean_str(row.get('Link', ''))
         if link_val and not link_val.startswith("http://") and not link_val.startswith("https://"):
@@ -149,7 +151,40 @@ def save_tickets_to_db(df: pd.DataFrame):
         elif "nan -" in localidade_val.lower() or "- nan" in localidade_val.lower():
             localidade_val = "Não identificada"
 
-        # Enriquecimento com cache do SCCM caso IP ou Hostname estejam vazios
+        comments_list = []
+        comments_val = row.get('Comentários', '[]')
+        if pd.notna(comments_val) and str(comments_val).strip() and str(comments_val).strip() != '[]':
+            try:
+                comments_list = clean_otrs_comments(comments_val)
+            except Exception:
+                comments_list = []
+
+        # Enriquecimento unificado (sAMAccountName + texto/comentários + caches AD/SCCM + histórico)
+        if not id_cliente_val or not ip_val or not hostname_val:
+            try:
+                enriched = resolve_ticket_device_and_user(
+                    {
+                        "id": cid,
+                        "titulo": titulo_val,
+                        "usuario": usuario_val,
+                        "id_cliente": id_cliente_val,
+                        "descricao": desc_val,
+                        "ip_origem": ip_val,
+                        "hostname": hostname_val,
+                    },
+                    comments=comments_list,
+                    allow_network_fallbacks=False,
+                )
+                if not id_cliente_val and enriched.get("sam_account_name"):
+                    id_cliente_val = enriched["sam_account_name"]
+                if not ip_val and enriched.get("ip_origem"):
+                    ip_val = enriched["ip_origem"]
+                if not hostname_val and enriched.get("hostname"):
+                    hostname_val = enriched["hostname"]
+            except Exception as enrich_err:
+                logger.debug(f"Enriquecimento local ignorado para chamado {cid}: {enrich_err}")
+
+        # Garantia direta com cache do SCCM caso ainda falte IP ou Hostname
         if (not ip_val or not hostname_val) and id_cliente_val:
             dev = get_device_by_user(id_cliente_val)
             if dev:
@@ -158,24 +193,27 @@ def save_tickets_to_db(df: pd.DataFrame):
                 if not hostname_val and dev.get("hostname"):
                     hostname_val = dev["hostname"]
 
-        cursor.execute("SELECT status, tag_manual, dados_manuais, ip_origem, hostname, titulo FROM chamados WHERE id = ?", (cid,))
+        cursor.execute("SELECT status, tag_manual, dados_manuais, ip_origem, hostname, titulo, id_cliente FROM chamados WHERE id = ?", (cid,))
         result = cursor.fetchone()
         
         if result:
             current_status = result[0]
             tag_manual = result[1] if len(result) > 1 and result[1] is not None else 0
             dados_manuais = result[2] if len(result) > 2 and result[2] is not None else 0
-            curr_ip = _clean_str(result[3]) if len(result) > 3 else ""
-            curr_host = _clean_str(result[4]) if len(result) > 4 else ""
+            curr_ip = sanitize_network_value(result[3]) if len(result) > 3 else ""
+            curr_host = sanitize_network_value(result[4]) if len(result) > 4 else ""
             curr_title = _clean_str(result[5]) if len(result) > 5 else ""
+            curr_id_cli = _clean_str(result[6]) if len(result) > 6 else ""
             
-            # Preserva IP, Hostname e Título existentes no banco se o novo for vazio
+            # Preserva IP, Hostname, Título e ID do Cliente existentes no banco se o novo for vazio
             if not ip_val and curr_ip:
                 ip_val = curr_ip
             if not hostname_val and curr_host:
                 hostname_val = curr_host
             if not titulo_val and curr_title:
                 titulo_val = curr_title
+            if not id_cliente_val and curr_id_cli:
+                id_cliente_val = curr_id_cli
 
             if current_status == 'Fechado':
                 cursor.execute("UPDATE chamados SET status = 'Aberto' WHERE id = ?", (cid,))
@@ -219,11 +257,8 @@ def save_tickets_to_db(df: pd.DataFrame):
             ))
             new_tickets_count += 1
             
-        comments_val = row.get('Comentários', '[]')
-        if pd.notna(comments_val) and str(comments_val).strip() and str(comments_val).strip() != '[]':
-            from src.config import clean_otrs_comments
+        if comments_list:
             try:
-                comments_list = clean_otrs_comments(comments_val)
                 cursor.execute("DELETE FROM comentarios WHERE chamado_id = ?", (cid,))
                 for comment in comments_list:
                     cursor.execute("""
@@ -383,25 +418,124 @@ def update_ticket_title(cid: str, new_title: str):
     conn.commit()
     conn.close()
 
-def update_ticket_device_info(cid: str, ip_origem: str, hostname: str):
+def update_ticket_device_info(cid: str, ip_origem: str, hostname: str, touch_updated_at: bool = True):
     """Atualiza o IP de origem e Hostname de um chamado específico."""
+    from src.services.ticket_enrichment import sanitize_network_value
+
     conn = get_connection()
     cursor = conn.cursor()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
     cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
-    
-    clean_ip = str(ip_origem).strip() if ip_origem and str(ip_origem).lower() not in ["none", "nan", "null"] else ""
-    clean_host = str(hostname).strip() if hostname and str(hostname).lower() not in ["none", "nan", "null"] else ""
-    
-    cursor.execute("""
-    UPDATE chamados 
-    SET ip_origem = ?, hostname = ?, data_atualizacao = ?
-    WHERE id = ?
-    """, (clean_ip, clean_host, now, cid_clean))
+
+    clean_ip = sanitize_network_value(ip_origem)
+    clean_host = sanitize_network_value(hostname)
+
+    if touch_updated_at:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("""
+        UPDATE chamados 
+        SET ip_origem = ?, hostname = ?, data_atualizacao = ?
+        WHERE id = ?
+        """, (clean_ip, clean_host, now, cid_clean))
+    else:
+        cursor.execute("""
+        UPDATE chamados 
+        SET ip_origem = ?, hostname = ?
+        WHERE id = ?
+        """, (clean_ip, clean_host, cid_clean))
     
     conn.commit()
     conn.close()
+
+
+def update_ticket_client_id(cid: str, id_cliente: str, touch_updated_at: bool = False):
+    """Atualiza o sAMAccountName (id_cliente) de um chamado específico."""
+    from src.services.ticket_enrichment import sanitize_network_value
+
+    clean_id = sanitize_network_value(id_cliente)
+    if not clean_id:
+        return
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cid_clean = str(cid)[:-2] if str(cid).endswith('.0') else str(cid)
+
+    if touch_updated_at:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute(
+            "UPDATE chamados SET id_cliente = ?, data_atualizacao = ? WHERE id = ?",
+            (clean_id, now, cid_clean),
+        )
+    else:
+        cursor.execute(
+            "UPDATE chamados SET id_cliente = ? WHERE id = ?",
+            (clean_id, cid_clean),
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def get_latest_device_info_by_user(
+    usuario: str = "",
+    id_cliente: str = "",
+    exclude_ticket_id: str = "",
+) -> dict:
+    """
+    Busca IP e Hostname mais recentes já registrados em outros chamados do mesmo usuário
+    na tabela 'chamados' (fallback histórico local).
+    """
+    from src.services.ticket_enrichment import is_valid_hostname, is_valid_ipv4, sanitize_network_value
+
+    clean_id = sanitize_network_value(id_cliente)
+    clean_user = sanitize_network_value(usuario)
+    if not clean_id and not clean_user:
+        return {}
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        clauses = []
+        params = []
+        if clean_id:
+            clauses.append("LOWER(TRIM(id_cliente)) = LOWER(TRIM(?))")
+            params.append(clean_id)
+        if clean_user:
+            clauses.append("LOWER(TRIM(usuario)) = LOWER(TRIM(?))")
+            params.append(clean_user)
+
+        where_user = f"({' OR '.join(clauses)})"
+        query = f"""
+        SELECT ip_origem, hostname
+        FROM chamados
+        WHERE {where_user}
+          AND ((ip_origem IS NOT NULL AND TRIM(ip_origem) != '')
+            OR (hostname IS NOT NULL AND TRIM(hostname) != ''))
+        """
+        if exclude_ticket_id:
+            query += " AND id != ?"
+            params.append(str(exclude_ticket_id).strip())
+        query += " ORDER BY data_atualizacao DESC, data_criacao DESC LIMIT 10"
+
+        cursor.execute(query, tuple(params))
+        best_ip = ""
+        best_host = ""
+        for r_ip, r_host in cursor.fetchall():
+            cand_ip = sanitize_network_value(r_ip)
+            cand_host = sanitize_network_value(r_host)
+            if not best_ip and is_valid_ipv4(cand_ip):
+                best_ip = cand_ip
+            if not best_host and is_valid_hostname(cand_host):
+                best_host = cand_host
+            if best_ip and best_host:
+                break
+
+        if best_ip or best_host:
+            return {"ip_origem": best_ip, "hostname": best_host}
+        return {}
+    except Exception:
+        return {}
+    finally:
+        conn.close()
 
 def save_comments_to_db(chamado_id: str, comments: list):
     """

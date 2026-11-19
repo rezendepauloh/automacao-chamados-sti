@@ -264,21 +264,35 @@ class OTRSClient:
                             it['Descrição'] = desc
                             it['Comentários'] = json.dumps(comments, ensure_ascii=False)
                             
-                            # Extração de IP da descrição
-                            ip_encontrado = ""
-                            if desc:
-                                ip_match = re.search(r'IP:\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', desc)
-                                if ip_match:
-                                    ip_encontrado = ip_match.group(1)
-                                    it['IP_Origem'] = ip_encontrado
+                            # Extração unificada (texto, comentários, caches AD/SCCM, histórico e rede)
+                            from src.services.ticket_enrichment import resolve_ticket_device_and_user, sanitize_network_value
+                            resolved = resolve_ticket_device_and_user(
+                                {
+                                    "id": it.get("Chamado#"),
+                                    "titulo": it.get("Título"),
+                                    "usuario": it.get("Nome do Usuário"),
+                                    "id_cliente": it.get("ID do Cliente"),
+                                    "descricao": desc,
+                                    "ip_origem": sanitize_network_value(it.get("IP_Origem")),
+                                    "hostname": sanitize_network_value(it.get("Hostname")),
+                                },
+                                comments=comments,
+                                allow_network_fallbacks=True,
+                            )
+                            if resolved.get("sam_account_name") and not it.get("ID do Cliente"):
+                                it["ID do Cliente"] = resolved["sam_account_name"]
+                            if resolved.get("ip_origem"):
+                                it["IP_Origem"] = resolved["ip_origem"]
+                            if resolved.get("hostname"):
+                                it["Hostname"] = resolved["hostname"]
 
-                            # SCCM Lookup se necessário
+                            # Fallback direto via fetch_ip_from_sccm / fetch_hostname_from_sccm se ainda vazio
                             client_id = it.get('ID do Cliente')
                             if client_id:
                                 if not it.get('IP_Origem'):
-                                    it['IP_Origem'] = fetch_ip_from_sccm(client_id) or ""
+                                    it['IP_Origem'] = sanitize_network_value(fetch_ip_from_sccm(client_id))
                                 if not it.get('Hostname'):
-                                    it['Hostname'] = fetch_hostname_from_sccm(client_id) or ""
+                                    it['Hostname'] = sanitize_network_value(fetch_hostname_from_sccm(client_id))
                         except Exception as e:
                             logger.error(f"Erro ao processar detalhes do chamado {it.get('Chamado#')}: {e}")
 

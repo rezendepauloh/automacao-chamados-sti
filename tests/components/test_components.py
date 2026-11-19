@@ -351,5 +351,74 @@ class TestComponentsAndTabs(unittest.TestCase):
         _on_entrega_dmp_barcode_scanned()
         self.assertEqual(st.session_state["entrega_dmp_patrimonios_text"], "43188\n55477")
 
+    def test_show_ticket_details_modal_renders_sam_dates_and_na_fallback(self):
+        """Valida renderização do modal de chamados com sAMAccountName, datas BR, fallback N/A e accordions reposicionados."""
+        from contextlib import nullcontext
+        import streamlit as st
+        from src.tabs.chamados import show_ticket_details
+
+        markdown_calls = []
+        expander_calls = []
+
+        def _fake_columns(n):
+            return [nullcontext() for _ in range(n if isinstance(n, int) else len(n))]
+
+        def _fake_expander(label, *args, **kwargs):
+            expander_calls.append(label)
+            return nullcontext()
+
+        sample_row = {
+            "id": "125729",
+            "titulo": "Meu computador está reiniciando sozinho do nada",
+            "usuario": "Bruna Luciano De Freitas Santos",
+            "id_cliente": "",
+            "localidade_fisica": "Campo Grande - PGJ",
+            "base": "CitSmart",
+            "status": "Aberto",
+            "tag": "MONITOR",
+            "ip_origem": "",
+            "hostname": "",
+            "data_criacao": "2026-11-19 09:30:00",
+            "data_atualizacao": "2026-11-19 12:15:42",
+            "descricao": "Reiniciando durante o uso.",
+            "andamento": "Ver o computador da Bruna.",
+            "link": "https://citsmart.mpms.mp.br/request?idRequest=125729",
+        }
+
+        target_fn = getattr(show_ticket_details, "__wrapped__", show_ticket_details)
+
+        with patch("src.tabs.chamados.get_ticket_by_id", return_value=sample_row), \
+             patch("src.tabs.chamados.get_comments_by_ticket", return_value=[]), \
+             patch("src.tabs.chamados.resolve_ticket_device_and_user", return_value={
+                 "sam_account_name": "bruna.santos",
+                 "display_name": "Bruna Luciano de Freitas Santos",
+                 "ip_origem": "",
+                 "hostname": "",
+             }), \
+             patch("src.tabs.chamados.update_ticket_client_id"), \
+             patch("src.tabs.chamados.update_ticket_device_info"), \
+             patch("src.auth.is_admin", return_value=True), \
+             patch.object(st, "columns", side_effect=_fake_columns), \
+             patch.object(st, "expander", side_effect=_fake_expander), \
+             patch.object(st, "markdown", side_effect=lambda txt, **kw: markdown_calls.append(str(txt))), \
+             patch.object(st, "selectbox", return_value="MONITOR"), \
+             patch.object(st, "text_input", return_value=""), \
+             patch.object(st, "text_area", return_value=""), \
+             patch.object(st, "button", return_value=False), \
+             patch.object(st, "link_button"), \
+             patch.object(st, "text"):
+            target_fn("125729")
+
+        joined_md = "\n".join(markdown_calls)
+        self.assertIn("Bruna Luciano De Freitas Santos (`bruna.santos`)", joined_md)
+        self.assertIn("**IP de Origem:** `N/A`", joined_md)
+        self.assertIn("**Hostname:** `N/A`", joined_md)
+        self.assertIn("**Criado em:** `19/11/2026 09:30:00`", joined_md)
+        self.assertIn("**Atualizado em:** `19/11/2026 12:15:42`", joined_md)
+
+        self.assertTrue(any("✏️ Editar Título do Chamado" in lbl for lbl in expander_calls))
+        self.assertTrue(any("📍 Editar Localização Manual" in lbl for lbl in expander_calls))
+        self.assertTrue(any("#1 – 19/11/2026 09:30:00 (Descrição)" in lbl for lbl in expander_calls))
+
 if __name__ == "__main__":
     unittest.main()
