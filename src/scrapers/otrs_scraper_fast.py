@@ -58,6 +58,22 @@ class OTRSClient:
         self.password = password or PASSWORD
         self.session = requests.Session()
         self.session.verify = False
+        try:
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            retry_cfg = Retry(
+                total=3,
+                connect=3,
+                read=3,
+                backoff_factor=1.0,
+                status_forcelist=[502, 503, 504],
+                allowed_methods=["GET", "POST"],
+            )
+            adapter = HTTPAdapter(max_retries=retry_cfg)
+            self.session.mount("https://", adapter)
+            self.session.mount("http://", adapter)
+        except Exception:
+            pass
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
@@ -76,7 +92,18 @@ class OTRSClient:
         }
         
         logger.info(f"🔑 Realizando autenticação HTTP para {self.username}...")
-        resp = self.session.post(login_url, data=payload, allow_redirects=True, timeout=15)
+        resp = None
+        last_exc = None
+        for attempt in range(1, 4):
+            try:
+                resp = self.session.post(login_url, data=payload, allow_redirects=True, timeout=15)
+                break
+            except requests.exceptions.RequestException as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Tentativa {attempt}/3 de login HTTP no OTRS falhou ({exc}). Tentando novamente...")
+                time.sleep(2 * attempt)
+        if resp is None:
+            raise RuntimeError(f"Falha de conexão ao autenticar no OTRS após 3 tentativas: {last_exc}")
         
         if resp.status_code == 200 and "Action=Login" not in resp.url and "LoginButton" not in resp.text:
             self.authenticated = True

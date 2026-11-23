@@ -762,10 +762,7 @@ def render_configuracoes_page():
                             st.toast(f"Agendamento de {nome} atualizado!", icon="💾")
                             st.rerun()
 
-                    if ult_log and not is_task_executing and str(ult_log).lower() not in ["none", "nan", ""]:
-                        st.caption(f"📝 **Último Registro:** `{ult_log[:200]}`")
-
-                    # Accordion em tempo real quando o status estiver como EXECUTANDO
+                    # Accordion de execução / último resultado (permanece disponível após finalizar)
                     if is_task_executing:
                         with st.expander(f"⏳ Processando {nome} em segundo plano...", expanded=True):
                             st.info("A tarefa está sendo executada pelo motor agendador. Acompanhe os logs abaixo:")
@@ -782,7 +779,7 @@ def render_configuracoes_page():
                                     orq_done = not check_orquestrador_running()
 
                                 if sched_done and daemon_done and orq_done:
-                                    # Concluiu! Dá um rerun completo na página para fechar o accordion e reativar o botão
+                                    # Concluiu! Dá um rerun completo na página para atualizar o status e exibir o log final
                                     st.rerun()
                                     return
 
@@ -793,6 +790,28 @@ def render_configuracoes_page():
                                     st.rerun()
                                     
                             show_task_live_logs()
+                    else:
+                        ult_status_lower = str(ult_status or "").lower()
+                        has_error = any(k in ult_status_lower for k in ("erro", "falha", "error", "fail"))
+                        ult_log_clean = str(ult_log).strip() if ult_log and str(ult_log).lower() not in ["none", "nan", ""] else ""
+                        log_p = TASK_LOG_PATH_MAP.get(task_id, Path("debug_logs") / "sync" / "cron_scheduler.log")
+                        log_txt = read_log_lines(log_p, n=40) if log_p.exists() else ""
+
+                        if has_error or ult_log_clean or log_txt:
+                            exp_title = (
+                                f"❌ Último Erro / Logs — {nome}"
+                                if has_error
+                                else f"📋 Última Execução / Logs — {nome}"
+                            )
+                            with st.expander(exp_title, expanded=has_error):
+                                if ult_log_clean:
+                                    if has_error:
+                                        st.error(f"**Resumo do último erro:**\n\n{ult_log_clean}")
+                                    else:
+                                        st.info(f"**Último registro:** {ult_log_clean}")
+                                if log_txt:
+                                    st.caption(f"Arquivo de log: `{log_p}` (últimas 40 linhas)")
+                                    st.code(log_txt, language="text")
 
         # Histórico de Execuções
         st.markdown("---")
