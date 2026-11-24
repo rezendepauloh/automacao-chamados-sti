@@ -306,6 +306,12 @@ class TestComponentsAndTabs(unittest.TestCase):
         self.assertIn("Elétrica e lógica ok", html_out)
         self.assertIn("17/11/2026 09:00:00", html_out)
         self.assertIn("17/11/2026 10:00:00", html_out)
+        self.assertIn("id=\"filterLoc\"", html_out)
+        self.assertIn("id=\"filterUser\"", html_out)
+        self.assertIn("id=\"filterBase\"", html_out)
+        self.assertIn("id=\"filterTag\"", html_out)
+        self.assertIn("data-base='OTRS'", html_out)
+        self.assertIn("data-tag='MUDANÇA'", html_out)
 
     def test_build_entrega_dmp_report_html_and_barcode_callback(self):
         """Valida o relatório HTML de recebimento do DMP e o callback de bipagem por código de barras."""

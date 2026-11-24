@@ -113,10 +113,19 @@ def sync_donations_from_excel(file_path_or_buffer):
     
     conn = get_connection()
     cursor = conn.cursor()
-    
-    cursor.execute("DELETE FROM equipamentos_doados")
-    
+
+    # Sincronização incremental (UPSERT por patrimônio + data + tipo) preservando registros existentes
+    cursor.execute("""
+        SELECT patrimonio, data_movimentacao, tipo_movimentacao
+        FROM equipamentos_doados
+    """)
+    existing_keys = {
+        (str(pat or "").strip(), str(dt_m or "").strip(), str(tipo_m or "").strip())
+        for pat, dt_m, tipo_m in cursor.fetchall()
+    }
+
     added_count = 0
+    updated_count = 0
     for _, row in df.iterrows():
         dt_val = row.get('Data da doação', '')
         if isinstance(dt_val, (datetime, pd.Timestamp)) and not pd.isna(dt_val):
@@ -151,28 +160,41 @@ def sync_donations_from_excel(file_path_or_buffer):
             ssd_val = ""
         ssd_val = ssd_val.replace(".0", "")
 
-        cursor.execute("""
-        INSERT INTO equipamentos_doados (
-            patrimonio, modelo, serial_number, equipamento, 
-            tipo_movimentacao, data_movimentacao, chamado, ssd, motivo_baixa, memoria_ram
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            patrimonio,
-            str(row.get('Modelo', '')).strip(),
-            str(row.get('Serial Number PC', '')).strip(),
-            str(row.get('Equipamento', '')).strip(),
-            str(row.get('Doação ou Baixa', '')).strip(),
-            dt_str,
-            chamado,
-            ssd_val,
-            str(row.get('Motivo baixa', '')).strip(),
-            mem_ram_val
-        ))
-        added_count += 1
+        tipo_mov = str(row.get('Doação ou Baixa', '')).strip()
+        modelo_val = str(row.get('Modelo', '')).strip()
+        serial_val = str(row.get('Serial Number PC', '')).strip()
+        equip_val = str(row.get('Equipamento', '')).strip()
+        motivo_val = str(row.get('Motivo baixa', '')).strip()
+
+        nat_key = (patrimonio, dt_str, tipo_mov)
+
+        if nat_key in existing_keys:
+            cursor.execute("""
+            UPDATE equipamentos_doados
+            SET modelo = ?, serial_number = ?, equipamento = ?,
+                chamado = ?, ssd = ?, motivo_baixa = ?, memoria_ram = ?
+            WHERE patrimonio = ? AND data_movimentacao = ? AND tipo_movimentacao = ?
+            """, (
+                modelo_val, serial_val, equip_val,
+                chamado, ssd_val, motivo_val, mem_ram_val,
+                patrimonio, dt_str, tipo_mov
+            ))
+            updated_count += 1
+        else:
+            cursor.execute("""
+            INSERT INTO equipamentos_doados (
+                patrimonio, modelo, serial_number, equipamento, 
+                tipo_movimentacao, data_movimentacao, chamado, ssd, motivo_baixa, memoria_ram
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                patrimonio, modelo_val, serial_val, equip_val,
+                tipo_mov, dt_str, chamado, ssd_val, motivo_val, mem_ram_val
+            ))
+            added_count += 1
         
     conn.commit()
     conn.close()
-    logger.info(f"Sincronização concluída. {added_count} registros importados para a tabela equipamentos_doados.")
+    logger.info(f"Sincronização concluída. {added_count} novos e {updated_count} atualizados na tabela equipamentos_doados.")
 
 def get_donations_data() -> pd.DataFrame:
     """Retorna todos os equipamentos doados/movimentados da tabela relacional."""

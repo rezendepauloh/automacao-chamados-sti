@@ -1,9 +1,11 @@
 import os
 import sys
+import tempfile
 import unittest
 import pandas as pd
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -18,7 +20,21 @@ from src.database.donations_db import (
 
 class TestDonationsRAM(unittest.TestCase):
     def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "test_donations.db"
+        self.patcher_env = patch.dict(os.environ, {"DB_TYPE": "sqlite"})
+        self.patcher_db = patch("src.database.connection.DB_PATH", self.db_path)
+        self.patcher_db_type = patch("src.database.connection.DB_TYPE", "sqlite")
+        self.patcher_env.start()
+        self.patcher_db.start()
+        self.patcher_db_type.start()
         setup_donations_table()
+
+    def tearDown(self):
+        self.patcher_db_type.stop()
+        self.patcher_db.stop()
+        self.patcher_env.stop()
+        self.temp_dir.cleanup()
 
     def test_sync_donations_with_ram_column(self):
         """Valida que a coluna 'Memória RAM' é lida do Excel e persistida corretamente."""

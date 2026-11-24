@@ -827,13 +827,17 @@ def render_chamados_page():
             st.write("Dica: Clique no **checkbox (caixinha de seleção)** no início de qualquer linha para abrir os Detalhes no Modal.")
         with col_tbl_html:
             st.write("")
+            import hashlib
+            _export_sig = hashlib.md5(
+                "|".join(filtered_df["id"].astype(str).tolist()).encode("utf-8")
+            ).hexdigest()[:10]
             html_report = build_chamados_html_report(filtered_df, _load_comments_batch_for_export(filtered_df))
             st.download_button(
                 label="📄 Exportar Filtrados (HTML)",
                 data=html_report.encode("utf-8"),
                 file_name=f"chamados_relatorio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
                 mime="text/html",
-                key="btn_export_chamados_html",
+                key=f"btn_export_chamados_html_{len(filtered_df)}_{_export_sig}",
                 width="stretch",
             )
         with col_tbl_cap:
@@ -1098,6 +1102,11 @@ def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None
         return format_br_datetime(val, fallback="-")
 
     cards_html: list[str] = []
+    loc_options: set[str] = set()
+    user_options: set[str] = set()
+    base_options: set[str] = set()
+    tag_options: set[str] = set()
+
     if df is not None and not df.empty:
         for _, row in df.iterrows():
             cid = _safe(row.get("id", ""))
@@ -1114,6 +1123,10 @@ def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None
             loc_display = " • ".join(loc_parts) if loc_parts else "Localidade não informada"
 
             usuario = _safe(row.get("usuario", "")) or _safe(row.get("id_cliente", "")) or "Não informado"
+            loc_options.add(loc_display)
+            user_options.add(usuario)
+            base_options.add(base.upper())
+            tag_options.add(tag.upper())
             criado = _fmt_br_dt(row.get("data_criacao", ""))
             atualizado = _fmt_br_dt(row.get("data_atualizacao", ""))
             hostname = _safe(row.get("hostname", "")) or "-"
@@ -1151,7 +1164,7 @@ def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None
                 comments_html = f"<div class='sec'><div class='sec-title'>Comentários ({len(ticket_comments)})</div>{''.join(c_blocks)}</div>"
 
             cards_html.append(
-                f"""<details class='card' open data-id='{html_lib.escape(cid, quote=True)}' data-search='{search_blob}'>
+                f"""<details class='card' open data-id='{html_lib.escape(cid, quote=True)}' data-search='{search_blob}' data-loc='{html_lib.escape(loc_display, quote=True)}' data-user='{html_lib.escape(usuario, quote=True)}' data-base='{html_lib.escape(base.upper(), quote=True)}' data-tag='{html_lib.escape(tag.upper(), quote=True)}'>
 <summary class='card-head'>
 <div class='head-top'>
 <div class='badges'><span class='badge {base_cls}'>{html_lib.escape(base.upper())}</span><span class='badge {status_cls}'>{html_lib.escape(status)}</span><span class='badge'>{html_lib.escape(tag.upper())}</span><span class='id-tag'>#{html_lib.escape(cid)}</span></div>
@@ -1175,6 +1188,17 @@ def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None
 </div></details>"""
             )
 
+    def _build_select_options(values: set[str]) -> str:
+        return "".join(
+            f"<option value='{html_lib.escape(v, quote=True)}'>{html_lib.escape(v)}</option>"
+            for v in sorted(values, key=lambda x: x.lower())
+        )
+
+    loc_opts_html = _build_select_options(loc_options)
+    user_opts_html = _build_select_options(user_options)
+    base_opts_html = _build_select_options(base_options)
+    tag_opts_html = _build_select_options(tag_options)
+
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1191,6 +1215,8 @@ def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None
   .meta {{ color: var(--muted); font-size: 0.85rem; }}
   .toolbar {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }}
   .toolbar input {{ flex: 1 1 220px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; }}
+  .filters-row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 10px; }}
+  .filters-row select {{ width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; background: #fff; color: var(--text); }}
   .btn {{ border: 1px solid var(--border); background: #fff; color: var(--text); padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }}
   .btn-primary {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
   details.card {{ background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: opacity 0.2s ease; }}
@@ -1231,9 +1257,28 @@ def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None
 <div class='meta'>Gerado em {now_br} • Toque em qualquer chamado para expandir/recolher</div>
   <div class="toolbar no-print">
     <input id="quickSearch" type="search" placeholder="Filtrar rápido por localidade, nome, ID ou título..." oninput="filterCards()" />
+    <button class="btn" onclick="clearFilters()">Limpar Filtros</button>
     <button class="btn" onclick="toggleAll(true)">Expandir Todos</button>
     <button class="btn" onclick="toggleAll(false)">Recolher Todos</button>
     <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir / PDF</button>
+  </div>
+  <div class="filters-row no-print">
+    <select id="filterLoc" onchange="filterCards()">
+      <option value="">📍 Todas as Localidades</option>
+      {loc_opts_html}
+    </select>
+    <select id="filterUser" onchange="filterCards()">
+      <option value="">👤 Todos os Usuários</option>
+      {user_opts_html}
+    </select>
+    <select id="filterBase" onchange="filterCards()">
+      <option value="">🖥️ Todos os Sistemas</option>
+      {base_opts_html}
+    </select>
+    <select id="filterTag" onchange="filterCards()">
+      <option value="">🏷️ Todas as Tags</option>
+      {tag_opts_html}
+    </select>
   </div>
 </div>
 {''.join(cards_html)}
@@ -1241,15 +1286,32 @@ def build_chamados_html_report(df: pd.DataFrame, comments_by_ticket: dict | None
 <script>
 function filterCards() {{
   const q = (document.getElementById('quickSearch').value || '').toLowerCase().trim();
+  const loc = document.getElementById('filterLoc').value || '';
+  const user = document.getElementById('filterUser').value || '';
+  const base = document.getElementById('filterBase').value || '';
+  const tag = document.getElementById('filterTag').value || '';
   const cards = document.querySelectorAll('details.card');
   let vis = 0;
   cards.forEach(c => {{
     const hay = c.getAttribute('data-search') || '';
-    const show = !q || hay.includes(q);
+    const matchQ = !q || hay.includes(q);
+    const matchLoc = !loc || (c.getAttribute('data-loc') || '') === loc;
+    const matchUser = !user || (c.getAttribute('data-user') || '') === user;
+    const matchBase = !base || (c.getAttribute('data-base') || '') === base;
+    const matchTag = !tag || (c.getAttribute('data-tag') || '') === tag;
+    const show = matchQ && matchLoc && matchUser && matchBase && matchTag;
     c.style.display = show ? '' : 'none';
     if (show) vis++;
   }});
   document.getElementById('visibleCount').innerText = vis;
+}}
+function clearFilters() {{
+  document.getElementById('quickSearch').value = '';
+  document.getElementById('filterLoc').value = '';
+  document.getElementById('filterUser').value = '';
+  document.getElementById('filterBase').value = '';
+  document.getElementById('filterTag').value = '';
+  filterCards();
 }}
 function toggleAll(open) {{
   document.querySelectorAll('details.card').forEach(c => c.open = open);
