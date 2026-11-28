@@ -121,6 +121,7 @@ graph TD
 ### 3.3 Central Telefônica Alcatel-Lucent OXE
 - **Extração Acelerada via API REST (`oxe_scraper.py`):** Execução via Playwright com chamadas assíncronas `page.evaluate()` diretamente na API interna da central OXE, baixando 1.800+ ramais em menos de 10 segundos.
 - **Normalização e Ficha Técnica:** Classificação em tempo real de dispositivos (*Telefone IP Físico*, *Softphone*, *Analógico*, *Virtual*), extração de MAC Addresses, IPs e centro de custos com modal interativo.
+- **Detecção de Números Disponíveis & Ranges Oficiais por Unidade:** Identificação automática de ramais não cadastrados dentro das faixas de centena ativas (ex.: `2000–2099`), filtros rápidos na barra lateral, consulta de intervalos personalizados e subaba **Ranges Oficiais por Unidade** cruzada em tempo real com a OXE (ocupação, cadastrados, primeiro número livre e exportação em Excel).
 
 ### 3.4 Gestão de Bancada, Doações & Redistribuição
 - **Inventário de Movimentações:** Controle de ativos de hardware destinados a baixa, descarte sustentável, doação a entidades parceiras ou redistribuição entre promotorias.
