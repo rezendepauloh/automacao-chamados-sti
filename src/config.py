@@ -223,6 +223,7 @@ SHAREPOINT_MATUTINO_URL = get_spreadsheet_setting("SHAREPOINT_MATUTINO_URL", "")
 
 VIDEO_FAQ_ENV = get_spreadsheet_setting("VIDEO_FAQ_PATH", "")
 IMAGE_FAQ_ENV = get_spreadsheet_setting("IMAGE_FAQ_PATH", "")
+MARKDOWN_FAQ_ENV = get_spreadsheet_setting("MARKDOWN_FAQ_PATH", "")
 
 if is_sharepoint_url(VIDEO_FAQ_ENV):
     VIDEO_FAQ_URL = VIDEO_FAQ_ENV
@@ -234,31 +235,20 @@ if is_sharepoint_url(IMAGE_FAQ_ENV):
 else:
     IMAGE_FAQ_URL = ""
 
-# Configuração de Vídeos e Imagens FAQ
+if is_sharepoint_url(MARKDOWN_FAQ_ENV):
+    MARKDOWN_FAQ_URL = MARKDOWN_FAQ_ENV
+else:
+    MARKDOWN_FAQ_URL = ""
+
+# Configuração de Vídeos, Imagens e Manuais Markdown FAQ
 # Padrão Cloud-First (Linux/RedHat/Docker): BASE_DIR / "uploads" / "faq"
 VIDEO_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "videos"
 IMAGE_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "imagens"
-
-# Fallback opcional: só pesquisa pasta sincronizada do OneDrive se a variável de ambiente USE_ONEDRIVE_FALLBACK for ativada
-if os.getenv("USE_ONEDRIVE_FALLBACK", "false").lower() == "true":
-    _onedrive_base_candidates = [
-        Path("/mnt/c/Users/{USERNAME}/OneDrive - Ministerio Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs"),
-        Path("/mnt/c/Users/{USERNAME}/OneDrive - Ministério Público do Estado de Mato Grosso do Sul/Documentos SharePoint DIT-Manutenção/Tutoriais-FAQs")
-    ]
-    for _cand in _onedrive_base_candidates:
-        if _cand.exists():
-            for _v_name in ["Vídeos FAQ", "Videos FAQ"]:
-                if (_cand / _v_name).exists():
-                    VIDEO_FAQ_DIR = _cand / _v_name
-                    break
-            for _i_name in ["Imagens FAQ", "imagens"]:
-                if (_cand / _i_name).exists():
-                    IMAGE_FAQ_DIR = _cand / _i_name
-                    break
-            break
+MARKDOWN_FAQ_DIR = BASE_DIR / "uploads" / "faq" / "manuais_markdown"
 
 VIDEO_FAQ_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_FAQ_DIR.mkdir(parents=True, exist_ok=True)
+MARKDOWN_FAQ_DIR.mkdir(parents=True, exist_ok=True)
 
 # Garantia Logs
 DEBUG_DIR_GARANTIA = BASE_DIR / "debug_logs" / "garantia"
@@ -791,8 +781,6 @@ def _detect_powershell_executable() -> tuple:
         ps7_wsl_candidates = [
             "/mnt/c/Program Files/PowerShell/7/pwsh.exe",
             "/mnt/c/Program Files (x86)/PowerShell/7/pwsh.exe",
-            f"/mnt/c/Users/{USERNAME}/AppData/Local/Microsoft/WindowsApps/pwsh.exe" if 'USERNAME' in globals() and USERNAME else None,
-            "/mnt/c/Users/{USERNAME}/AppData/Local/Microsoft/WindowsApps/pwsh.exe",
         ]
         for candidate in ps7_wsl_candidates:
             if candidate and shutil.which(candidate):

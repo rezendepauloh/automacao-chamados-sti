@@ -9,6 +9,7 @@ import time
 import requests
 import base64
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import pandas as pd
 import streamlit as st
@@ -18,9 +19,24 @@ except ImportError:
     BeautifulSoup = None
 
 from src.config import (
-    setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR, IMAGE_FAQ_DIR,
-    VIDEO_FAQ_URL, IMAGE_FAQ_URL, CITSMART_EMAIL, PASSWORD,
-    HEADLESS, EXPLICIT_WAIT, get_chrome_driver
+    setup_logging, DEBUG_DIR_FAQ, VIDEO_FAQ_DIR, IMAGE_FAQ_DIR, MARKDOWN_FAQ_DIR,
+    VIDEO_FAQ_URL, IMAGE_FAQ_URL, MARKDOWN_FAQ_URL, CITSMART_EMAIL, PASSWORD,
+    HEADLESS, EXPLICIT_WAIT, get_chrome_driver, get_spreadsheet_setting
+)
+from src.services.faq_markdown import (
+    DEFAULT_SP_HOST,
+    deduplicate_markdown_faqs,
+    encode_sharepoint_url_path,
+    extract_markdown_media_references,
+    extract_markdown_title,
+    extract_sharepoint_folder_rel_path,
+    extract_sharepoint_site_url,
+    format_category_name,
+    is_html_faq_content,
+    mirror_markdown_faqs_to_disk,
+    persist_markdown_faqs_to_db,
+    render_markdown_for_streamlit,
+    scan_local_markdown_faqs,
 )
 from src.terminal import log, CYAN, GREEN, YELLOW, RED, WHITE
 from src.components.subtabs import render_subtabs
@@ -67,20 +83,40 @@ def normalize_sharepoint_url(url: str) -> str:
 
 def get_sharepoint_cookies() -> dict:
     """
-    Obtém cookies autenticados do SharePoint.
-    Tenta ler do cache em uploads/faq/sharepoint_cookies.json ou extrair do Firefox no host WSL.
+    Obtém cookies autenticados do SharePoint em ordem de prioridade:
+    1. Cofre cifrado no banco de dados (SHAREPOINT_SESSION_COOKIES via sharepoint_downloader).
+    2. Cache JSON legado em uploads/faq/sharepoint_cookies.json.
+    3. Extração legada do perfil Firefox local (quando disponível no host Windows).
     """
     cookies = {}
+
+    # 1. Cookies persistidos no banco de dados (gerenciados por sharepoint_downloader)
+    try:
+        from src.scrapers.sharepoint_downloader import get_cached_cookies
+        db_cookies = get_cached_cookies()
+        if db_cookies:
+            for c in db_cookies:
+                name = c.get("name")
+                val = c.get("value")
+                domain = (c.get("domain") or "").lower()
+                if name and val and (not domain or "sharepoint.com" in domain):
+                    cookies[name] = val
+            if cookies:
+                return cookies
+    except Exception as e:
+        logger.debug(f"Falha ao ler cookies do banco via sharepoint_downloader: {e}")
+
+    # 2. Fallback: arquivo JSON local legado
     if SHAREPOINT_COOKIES_FILE.exists():
         try:
             with open(SHAREPOINT_COOKIES_FILE, "r", encoding="utf-8") as f:
-                cookies = json.load(f)
-                if cookies and isinstance(cookies, dict):
-                    return cookies
+                loaded = json.load(f)
+                if loaded and isinstance(loaded, dict):
+                    return loaded
         except Exception as e:
             logger.warning(f"Erro ao ler cache de cookies: {e}")
 
-    # Tenta extrair diretamente do perfil do Firefox do usuário se existir no host
+    # 3. Fallback legado: perfil do Firefox do usuário se existir no host
     appdata_dir = os.getenv("APPDATA")
     ff_profiles_dir = Path(appdata_dir) / "Mozilla/Firefox/Profiles" if appdata_dir else None
     if ff_profiles_dir and ff_profiles_dir.exists():
@@ -110,24 +146,52 @@ def get_sharepoint_cookies() -> dict:
     return cookies
 
 
+def _renew_sharepoint_cookies_dict(target_url: str) -> dict:
+    """Renova os cookies do SharePoint via Playwright (sharepoint_downloader) e devolve como dict."""
+    try:
+        from src.scrapers.sharepoint_downloader import renew_cookies_with_playwright
+        new_list = renew_cookies_with_playwright(target_url)
+        if not new_list:
+            return {}
+        cookies = {}
+        for c in new_list:
+            name = c.get("name")
+            val = c.get("value")
+            domain = (c.get("domain") or "").lower()
+            if name and val and (not domain or "sharepoint.com" in domain):
+                cookies[name] = val
+        return cookies
+    except Exception as e:
+        logger.warning(f"Falha ao renovar cookies SharePoint via Playwright: {e}")
+        return {}
+
+
+@st.cache_data(ttl=600, max_entries=500, show_spinner=False)
+def _read_image_b64_cached(file_path_str: str, mtime_ns: int) -> str:
+    """Lê e codifica uma imagem em base64 com cache em memória invalidado pelo mtime do arquivo."""
+    fp = Path(file_path_str)
+    with open(fp, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    ext = fp.suffix.lower()
+    mime = "image/png"
+    if ext in [".jpg", ".jpeg"]:
+        mime = "image/jpeg"
+    elif ext == ".gif":
+        mime = "image/gif"
+    elif ext == ".webp":
+        mime = "image/webp"
+    elif ext == ".svg":
+        mime = "image/svg+xml"
+    return f"data:{mime};base64,{encoded}"
+
+
 def get_image_as_base64(file_path: Path) -> str:
-    """Codifica a imagem local para formato Data URI base64 seguro."""
+    """Codifica a imagem local para formato Data URI base64 seguro (com cache em memória)."""
     try:
         if not file_path.exists():
             return ""
-        with open(file_path, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode("utf-8")
-        ext = file_path.suffix.lower()
-        mime = "image/png"
-        if ext in [".jpg", ".jpeg"]:
-            mime = "image/jpeg"
-        elif ext == ".gif":
-            mime = "image/gif"
-        elif ext == ".webp":
-            mime = "image/webp"
-        elif ext == ".svg":
-            mime = "image/svg+xml"
-        return f"data:{mime};base64,{encoded}"
+        stat = file_path.stat()
+        return _read_image_b64_cached(str(file_path.resolve()), stat.st_mtime_ns)
     except Exception as e:
         logger.error(f"Erro ao converter imagem em base64: {e}")
         return ""
@@ -143,17 +207,148 @@ def slugify_faq_title(title: str) -> str:
     slug = re.sub(r'[-\s]+', '_', text)
     return slug if slug else "Geral"
 
+def _persist_markdown_faqs_to_db(cursor, conn, md_items: list) -> int:
+    """Alias retrocompatível para `persist_markdown_faqs_to_db`."""
+    return persist_markdown_faqs_to_db(cursor, conn, md_items)
+
+
+def _fetch_markdown_faqs_from_sharepoint(
+    site_url: str,
+    md_base_rel_path: str,
+    cookies: dict,
+    headers: dict,
+    max_workers: int = 8,
+) -> tuple:
+    """
+    Varre recursivamente a pasta `Manuais Markdown` no SharePoint via API REST com `requests.Session`
+    e baixa o conteúdo dos arquivos `.md` em paralelo (ignorando README.md).
+    Retorna `(items, auth_failed)`.
+    """
+    discovered = []
+    auth_failed = False
+    sp_host = "/".join(site_url.split("/")[:3]) if "://" in site_url else DEFAULT_SP_HOST
+    base_norm = md_base_rel_path.rstrip("/")
+
+    session = requests.Session()
+    session.cookies.update(cookies)
+
+    def _quote_odata_path(path_str: str) -> str:
+        return path_str.replace("'", "''")
+
+    # 1. Descobre todos os arquivos .md nas subpastas
+    def _discover_md_folder(folder_rel_url: str, top_folder: str = ""):
+        nonlocal auth_failed
+        if auth_failed:
+            return
+
+        escaped_folder = _quote_odata_path(folder_rel_url)
+        r_files = session.get(
+            f"{site_url}/_api/web/GetFolderByServerRelativeUrl('{escaped_folder}')/Files",
+            headers=headers,
+            timeout=20,
+        )
+        if r_files.status_code in (401, 403):
+            auth_failed = True
+            return
+
+        if r_files.status_code == 200:
+            for f_obj in r_files.json().get("d", {}).get("results", []):
+                fn = f_obj.get("Name", "")
+                if not fn.lower().endswith(".md") or fn.lower() == "readme.md":
+                    continue
+                f_rel = f_obj.get("ServerRelativeUrl", "")
+                if f_rel:
+                    discovered.append((fn, f_rel, top_folder or "geral"))
+
+        r_fold = session.get(
+            f"{site_url}/_api/web/GetFolderByServerRelativeUrl('{escaped_folder}')/Folders",
+            headers=headers,
+            timeout=20,
+        )
+        if r_fold.status_code in (401, 403):
+            auth_failed = True
+            return
+
+        if r_fold.status_code == 200:
+            for subf in r_fold.json().get("d", {}).get("results", []):
+                s_name = subf.get("Name")
+                if not s_name or s_name in ("Forms",):
+                    continue
+                sub_rel = subf.get("ServerRelativeUrl")
+                if not sub_rel:
+                    continue
+                _discover_md_folder(sub_rel, top_folder or s_name)
+
+    _discover_md_folder(base_norm, "")
+    if auth_failed or not discovered:
+        return [], auth_failed
+
+    # 2. Baixa os arquivos .md em paralelo reutilizando a sessão HTTP (keep-alive)
+    dl_headers = {"User-Agent": headers.get("User-Agent", "Mozilla/5.0")}
+
+    def _download_single_md(entry: tuple) -> dict:
+        fn, f_rel, folder_key = entry
+        escaped_file = _quote_odata_path(f_rel)
+        raw_content = ""
+        try:
+            r_val = session.get(
+                f"{site_url}/_api/web/GetFileByServerRelativeUrl('{escaped_file}')/$value",
+                headers=dl_headers,
+                timeout=20,
+            )
+            if r_val.status_code == 200:
+                r_val.encoding = "utf-8"
+                raw_content = r_val.text.lstrip("\ufeff")
+            else:
+                full_dl = encode_sharepoint_url_path(f_rel, sp_host=sp_host)
+                r_fb = session.get(full_dl, headers=dl_headers, timeout=20)
+                if r_fb.status_code == 200 and "text/html" not in (r_fb.headers.get("content-type") or "").lower():
+                    r_fb.encoding = "utf-8"
+                    raw_content = r_fb.text.lstrip("\ufeff")
+        except Exception as exc:
+            logger.warning(f"Falha ao baixar manual '{fn}': {exc}")
+
+        full_url = encode_sharepoint_url_path(f_rel, sp_host=sp_host)
+        return {
+            "filename": fn,
+            "folder": folder_key,
+            "titulo": extract_markdown_title(raw_content, fn),
+            "tipo_faq": format_category_name(folder_key),
+            "url": full_url,
+            "server_rel_url": f_rel,
+            "conteudo": raw_content,
+        }
+
+    collected = []
+    workers = max(1, min(max_workers, len(discovered)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_download_single_md, entry) for entry in discovered]
+        for fut in as_completed(futures):
+            try:
+                collected.append(fut.result())
+            except Exception as exc:
+                logger.warning(f"Erro em worker de download Markdown: {exc}")
+
+    return collected, auth_failed
+
+
 def sync_sharepoint_catalog_via_api() -> dict:
     """
     Sincroniza o catálogo completo diretamente da API REST do SharePoint Online:
-    1. 'Site Pages' (artigos e tutoriais HTML) -> tabela faqs
+    1. 'Manuais Markdown' (arquivos .md deduplicados por categoria) -> tabela faqs (substitui Site Pages)
     2. 'Vídeos FAQ' (vídeos mp4/mov por pasta) -> tabela faq_videos
     3. 'Imagens FAQ' (imagens jpg/png recursivas) -> tabela faq_imagens
-    Preserva o SQLite local atualizado sem depender de arquivos JSON estáticos.
+    Renova cookies automaticamente via Playwright se expirados e suporta fallback local.
     """
+    md_setting = get_spreadsheet_setting("MARKDOWN_FAQ_PATH", "") or MARKDOWN_FAQ_URL
+    site_url = extract_sharepoint_site_url(md_setting)
+    md_base_rel = extract_sharepoint_folder_rel_path(md_setting)
+    sp_host = "/".join(site_url.split("/")[:3]) if "://" in site_url else DEFAULT_SP_HOST
+
     cookies = get_sharepoint_cookies()
     if not cookies:
-        return {"success": False, "error": "Cookies de autenticação do SharePoint não encontrados."}
+        logger.info("🔄 Cookies SharePoint ausentes. Tentando autenticação automática via Playwright...")
+        cookies = _renew_sharepoint_cookies_dict(md_setting or site_url)
 
     headers = {
         "Accept": "application/json;odata=verbose",
@@ -168,39 +363,59 @@ def sync_sharepoint_catalog_via_api() -> dict:
 
     try:
         # -------------------------------------------------------------
-        # 1. Sincroniza ARTIGOS (Site Pages)
+        # 1. Sincroniza MANUAIS MARKDOWN (.md) — substitui Site Pages
         # -------------------------------------------------------------
-        p_url = "https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/lists/getbytitle('Site Pages')/items?$select=Id,Title,FileRef,CanvasContent1,BannerImageUrl,Modified&$top=200"
-        resp_p = requests.get(p_url, cookies=cookies, headers=headers, timeout=20)
-        if resp_p.status_code == 200:
-            p_items = resp_p.json().get('d', {}).get('results', [])
-            for item in p_items:
-                ref = item.get('FileRef', '')
-                title = item.get('Title') or Path(ref).stem
-                # Ignora homepages padrão de sites de equipe
-                if not ref.endswith('.aspx') or ref.endswith('CollabHome.aspx') or ref.endswith('Home.aspx'):
-                    continue
+        md_raw_items = []
+        if cookies:
+            md_raw_items, auth_failed = _fetch_markdown_faqs_from_sharepoint(
+                site_url=site_url,
+                md_base_rel_path=md_base_rel,
+                cookies=cookies,
+                headers=headers,
+            )
+            if auth_failed:
+                logger.info("🔄 Sessão SharePoint expirada (401/403). Renovando cookies via Playwright...")
+                renewed = _renew_sharepoint_cookies_dict(md_setting or site_url)
+                if renewed:
+                    cookies = renewed
+                    md_raw_items, _ = _fetch_markdown_faqs_from_sharepoint(
+                        site_url=site_url,
+                        md_base_rel_path=md_base_rel,
+                        cookies=cookies,
+                        headers=headers,
+                    )
 
-                full_url = f"https://ministeriopublicoms.sharepoint.com{ref}"
-                canvas = item.get('CanvasContent1') or ""
-                tipo_faq = "Tutoriais SharePoint"
+        if md_raw_items:
+            deduped_md = deduplicate_markdown_faqs(md_raw_items)
+            mirrored = mirror_markdown_faqs_to_disk(MARKDOWN_FAQ_DIR, deduped_md)
+            stats["faqs"] = _persist_markdown_faqs_to_db(cursor, conn, deduped_md)
+            logger.info(
+                f"📘 Manuais Markdown sincronizados do SharePoint: {stats['faqs']} únicos "
+                f"(de {len(md_raw_items)} arquivos encontrados; {mirrored} espelhados em '{MARKDOWN_FAQ_DIR}')."
+            )
+        else:
+            # Fallback local (pasta cache uploads/faq/manuais_markdown ou OneDrive local)
+            local_md_items = scan_local_markdown_faqs(
+                MARKDOWN_FAQ_DIR, sp_base_rel_path=md_base_rel, sp_host=sp_host
+            )
+            if local_md_items:
+                stats["faqs"] = _persist_markdown_faqs_to_db(cursor, conn, local_md_items)
+                logger.info(
+                    f"📂 Manuais Markdown carregados da pasta local '{MARKDOWN_FAQ_DIR}': {stats['faqs']} únicos."
+                )
+            elif not cookies:
+                return {
+                    "success": False,
+                    "error": "Cookies de autenticação do SharePoint não encontrados e nenhum manual Markdown local disponível.",
+                }
 
-                cursor.execute("""
-                    INSERT INTO faqs (titulo, tipo_faq, url, conteudo, data_atualizacao)
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(url) DO UPDATE SET
-                        titulo = excluded.titulo,
-                        tipo_faq = excluded.tipo_faq,
-                        conteudo = CASE WHEN excluded.conteudo != '' THEN excluded.conteudo ELSE faqs.conteudo END,
-                        data_atualizacao = CURRENT_TIMESTAMP
-                """, (title, tipo_faq, full_url, canvas))
-                stats["faqs"] += 1
-            conn.commit()
+        if not cookies:
+            return {"success": True, "stats": stats}
 
         # -------------------------------------------------------------
         # 2. Sincroniza VÍDEOS FAQ (Pastas e Arquivos)
         # -------------------------------------------------------------
-        v_base = "https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('/sites/dit-manutencao/Shared Documents/Tutoriais-FAQs/Vídeos FAQ')"
+        v_base = f"{site_url}/_api/web/GetFolderByServerRelativeUrl('/sites/dit-manutencao/Shared Documents/Tutoriais-FAQs/Vídeos FAQ')"
         resp_vf = requests.get(f"{v_base}/Folders", cookies=cookies, headers=headers, timeout=15)
         if resp_vf.status_code == 200:
             v_folders = resp_vf.json().get('d', {}).get('results', [])
@@ -210,7 +425,7 @@ def sync_sharepoint_catalog_via_api() -> dict:
                     continue
                 vf_rel = vf.get('ServerRelativeUrl')
                 resp_vfiles = requests.get(
-                    f"https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('{vf_rel}')/Files",
+                    f"{site_url}/_api/web/GetFolderByServerRelativeUrl('{vf_rel}')/Files",
                     cookies=cookies, headers=headers, timeout=15
                 )
                 if resp_vfiles.status_code == 200:
@@ -220,7 +435,7 @@ def sync_sharepoint_catalog_via_api() -> dict:
                         if not any(fn.lower().endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.avi']):
                             continue
                         f_rel = file_obj.get('ServerRelativeUrl', '')
-                        full_v_url = f"https://ministeriopublicoms.sharepoint.com{f_rel}"
+                        full_v_url = f"{sp_host}{f_rel}"
                         f_len = int(file_obj.get('Length', 0) or 0)
                         f_title = Path(fn).stem
 
@@ -240,11 +455,9 @@ def sync_sharepoint_catalog_via_api() -> dict:
         # -------------------------------------------------------------
         # 3. Sincroniza IMAGENS FAQ (Pastas e Subpastas Recursivas)
         # -------------------------------------------------------------
-        img_base = "https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('/sites/dit-manutencao/Shared Documents/Tutoriais-FAQs/Imagens FAQ')"
-
         def harvest_images_folder(folder_rel_url: str, current_category: str = ""):
             r_sub = requests.get(
-                f"https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('{folder_rel_url}')/Files",
+                f"{site_url}/_api/web/GetFolderByServerRelativeUrl('{folder_rel_url}')/Files",
                 cookies=cookies, headers=headers, timeout=15
             )
             if r_sub.status_code == 200:
@@ -253,7 +466,7 @@ def sync_sharepoint_catalog_via_api() -> dict:
                     if not any(ifn.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']):
                         continue
                     i_rel = ifile.get('ServerRelativeUrl', '')
-                    full_i_url = f"https://ministeriopublicoms.sharepoint.com{i_rel}"
+                    full_i_url = f"{sp_host}{i_rel}"
                     i_len = int(ifile.get('Length', 0) or 0)
                     i_title = Path(ifn).stem
 
@@ -271,7 +484,7 @@ def sync_sharepoint_catalog_via_api() -> dict:
 
             # Subpastas
             r_fold = requests.get(
-                f"https://ministeriopublicoms.sharepoint.com/sites/dit-manutencao/_api/web/GetFolderByServerRelativeUrl('{folder_rel_url}')/Folders",
+                f"{site_url}/_api/web/GetFolderByServerRelativeUrl('{folder_rel_url}')/Folders",
                 cookies=cookies, headers=headers, timeout=15
             )
             if r_fold.status_code == 200:
@@ -318,9 +531,18 @@ def ensure_sharepoint_image_cached(img_url: str, faq_slug: str = "Geral") -> str
     dest_file = folder_dir / clean_filename
     root_legacy_file = IMAGE_FAQ_DIR / clean_filename
 
-    # Se já existir na pasta organizada
+    # Se já existir na pasta organizada por slug
     if dest_file.exists() and dest_file.stat().st_size > 0:
         return get_image_as_base64(dest_file)
+
+    # Verifica caminho relativo espelhado dentro de IMAGE_FAQ_DIR (ex.: Imagens FAQ/Formatação/SCCM 01.png)
+    decoded_url = unquote(img_url.split("?")[0])
+    if "Imagens FAQ/" in decoded_url:
+        rel_after_imgs = decoded_url.split("Imagens FAQ/", 1)[1].lstrip("/")
+        if rel_after_imgs and ".." not in Path(rel_after_imgs).parts:
+            mirrored_file = IMAGE_FAQ_DIR / rel_after_imgs
+            if mirrored_file.exists() and mirrored_file.is_file() and mirrored_file.stat().st_size > 0:
+                return get_image_as_base64(mirrored_file)
 
     # Se existir na raiz (legado), migra para a pasta do tutorial
     if root_legacy_file.exists() and root_legacy_file.is_file() and root_legacy_file.stat().st_size > 0:
@@ -354,6 +576,97 @@ def ensure_sharepoint_image_cached(img_url: str, faq_slug: str = "Geral") -> str
             logger.error(f"Erro ao baixar imagem {img_url}: {e}")
 
     return ""
+
+
+def prefetch_markdown_images_parallel(
+    md_text: str,
+    faq_slug: str = "Geral",
+    md_server_rel_url: str = "",
+    max_workers: int = 6,
+) -> int:
+    """
+    Pré-baixa em paralelo (com `requests.Session` compartilhada) apenas as imagens
+    referenciadas no Markdown que ainda não existem no cache local em `uploads/faq/imagens/`.
+    Reduz drasticamente o tempo de abertura de tutoriais com muitas capturas de tela.
+    """
+    img_urls, _ = extract_markdown_media_references(md_text, md_server_rel_url=md_server_rel_url)
+    if not img_urls:
+        return 0
+
+    slug = slugify_faq_title(faq_slug)
+    folder_dir = IMAGE_FAQ_DIR / slug
+    missing = []
+
+    for raw_u in img_urls:
+        u = normalize_sharepoint_url(raw_u)
+        if not u:
+            continue
+        clean_fn = unquote(u.split("/")[-1].split("?")[0])
+        clean_fn = re.sub(r'[\\/*?:"<>|]', '_', clean_fn)
+        if not clean_fn:
+            clean_fn = f"img_{hashlib.md5(u.encode('utf-8')).hexdigest()[:12]}.jpg"
+
+        dest = folder_dir / clean_fn
+        if dest.exists() and dest.stat().st_size > 0:
+            continue
+
+        # Verifica caminho espelhado em IMAGE_FAQ_DIR
+        decoded_url = unquote(u.split("?")[0])
+        if "Imagens FAQ/" in decoded_url:
+            rel_after = decoded_url.split("Imagens FAQ/", 1)[1].lstrip("/")
+            if rel_after and ".." not in Path(rel_after).parts:
+                mirrored = IMAGE_FAQ_DIR / rel_after
+                if mirrored.exists() and mirrored.is_file() and mirrored.stat().st_size > 0:
+                    continue
+
+        missing.append((u, dest))
+
+    if not missing:
+        return 0
+
+    cookies = get_sharepoint_cookies()
+    if not cookies:
+        return 0
+
+    folder_dir.mkdir(parents=True, exist_ok=True)
+    session = requests.Session()
+    session.cookies.update(cookies)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+        "Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
+    }
+
+    def _dl_one(pair: tuple) -> bool:
+        u, dest_file = pair
+        try:
+            resp = session.get(u, headers=headers, timeout=12)
+            c_type = (resp.headers.get("content-type") or "").lower()
+            is_real = (
+                "image" in c_type
+                or resp.content.startswith(b"\xff\xd8")
+                or resp.content.startswith(b"\x89PNG")
+                or resp.content.startswith(b"GIF")
+                or resp.content.startswith(b"RIFF")
+            )
+            if resp.status_code == 200 and len(resp.content) > 100 and is_real:
+                with open(dest_file, "wb") as f_out:
+                    f_out.write(resp.content)
+                return True
+        except Exception:
+            pass
+        return False
+
+    downloaded = 0
+    workers = max(1, min(max_workers, len(missing)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_dl_one, item) for item in missing]
+        for fut in as_completed(futures):
+            try:
+                if fut.result():
+                    downloaded += 1
+            except Exception:
+                pass
+    return downloaded
 
 
 def ensure_sharepoint_video_cached(video_url: str, faq_slug: str = "Geral") -> str:
@@ -827,137 +1140,152 @@ def scan_image_faqs(dir_path: Path):
     return sorted(imagens, key=lambda x: (x["categoria"], x["titulo"]))
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _load_faqs_cached() -> pd.DataFrame:
+    """
+    Carrega o catálogo de FAQs priorizando os arquivos `.md` espelhados em disco
+    (`uploads/faq/manuais_markdown/<subpasta>/<arquivo>.md`) para abertura instantânea,
+    com fallback automático para a tabela `faqs` no banco de dados.
+    """
+    # 1. Caminho ultrarrápido: leitura direta dos .md cacheados em uploads/faq/manuais_markdown/
+    local_md = scan_local_markdown_faqs(MARKDOWN_FAQ_DIR)
+    if local_md:
+        rows = [
+            {
+                "id": idx + 1,
+                "titulo": item["titulo"],
+                "tipo_faq": item["tipo_faq"],
+                "url": item["url"],
+                "conteudo": item["conteudo"],
+            }
+            for idx, item in enumerate(local_md)
+        ]
+        return pd.DataFrame(rows)
+
+    # 2. Fallback: consulta tabela `faqs` no banco de dados
+    try:
+        from src.database.bootstrap import setup_faq_tables
+        setup_faq_tables()
+    except Exception:
+        pass
+
+    root_dir = Path(__file__).parent.parent.parent
+    json_faq_path = root_dir / "temp" / "faqs_template.json"
+    try:
+        from src.database.connection import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM faqs")
+        if cursor.fetchone()[0] == 0 and json_faq_path.exists():
+            with open(json_faq_path, "r", encoding="utf-8") as f:
+                faqs_json = json.load(f)
+            for item in faqs_json:
+                cursor.execute(
+                    """
+                    INSERT INTO faqs (titulo, tipo_faq, url, conteudo)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (url) DO NOTHING
+                    """,
+                    (item.get("titulo"), item.get("tipo_faq", "Geral"), item.get("url"), item.get("conteudo")),
+                )
+            conn.commit()
+        df = pd.read_sql_query("SELECT id, titulo, tipo_faq, url, conteudo FROM faqs ORDER BY tipo_faq, titulo", conn)
+        conn.close()
+        return df
+    except Exception as e:
+        logger.error(f"Erro ao carregar FAQs do banco de dados: {e}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _load_videos_catalog_cached() -> list:
+    """Carrega o catálogo de vídeos do banco (cacheado por 120s)."""
+    root_dir = Path(__file__).parent.parent.parent
+    json_videos_path = root_dir / "temp" / "videos_faq_template.json"
+    try:
+        from src.database.connection import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM faq_videos")
+        if cursor.fetchone()[0] == 0 and json_videos_path.exists():
+            with open(json_videos_path, "r", encoding="utf-8") as f:
+                vids_json = json.load(f)
+            for item in vids_json:
+                cursor.execute(
+                    """
+                    INSERT INTO faq_videos (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (url) DO NOTHING
+                    """,
+                    (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)),
+                )
+            conn.commit()
+        df_vids = pd.read_sql_query("SELECT id, titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes FROM faq_videos", conn)
+        conn.close()
+        return df_vids.to_dict("records") if not df_vids.empty else []
+    except Exception as e:
+        logger.error(f"Erro ao carregar vídeos FAQ: {e}")
+        return []
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _load_imagens_catalog_cached() -> list:
+    """Carrega o catálogo de imagens do banco (cacheado por 120s)."""
+    root_dir = Path(__file__).parent.parent.parent
+    json_imagens_path = root_dir / "temp" / "imagens_faq_template.json"
+    try:
+        from src.database.connection import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM faq_imagens")
+        if cursor.fetchone()[0] == 0 and json_imagens_path.exists():
+            with open(json_imagens_path, "r", encoding="utf-8") as f:
+                imgs_json = json.load(f)
+            for item in imgs_json:
+                cursor.execute(
+                    """
+                    INSERT INTO faq_imagens (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (url) DO NOTHING
+                    """,
+                    (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)),
+                )
+            conn.commit()
+        df_imgs = pd.read_sql_query("SELECT id, titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes FROM faq_imagens", conn)
+        conn.close()
+        return df_imgs.to_dict("records") if not df_imgs.empty else []
+    except Exception as e:
+        logger.error(f"Erro ao carregar imagens FAQ: {e}")
+        return []
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _scan_video_faqs_cached() -> list:
+    return scan_video_faqs(VIDEO_FAQ_DIR)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _scan_image_faqs_cached() -> list:
+    return scan_image_faqs(IMAGE_FAQ_DIR)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_links_uteis_cached() -> list:
+    json_links_path = Path(__file__).parent.parent.parent / "temp" / "links_uteis_template.json"
+    if json_links_path.exists():
+        try:
+            with open(json_links_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Erro ao ler links_uteis_template.json: {e}")
+    return []
+
+
 def render_faq_page():
     """Renderiza a página de FAQs, Tutoriais do SharePoint, Vídeos FAQ e Links Úteis da Bancada."""
     st.title("📚 FAQ, Tutoriais & Links Úteis da Bancada")
     st.write("Base de conhecimento centralizada com tutoriais da equipe e atalhos rápidos para sistemas externos.")
     st.markdown("---")
-
-    root_dir = Path(__file__).parent.parent.parent
-    db_path = root_dir / "data" / "chamados.db"
-    json_faq_path = root_dir / "temp" / "faqs_template.json"
-    json_links_path = root_dir / "temp" / "links_uteis_template.json"
-    json_videos_path = root_dir / "temp" / "videos_faq_template.json"
-    json_imagens_path = root_dir / "temp" / "imagens_faq_template.json"
-    
-    # Carrega dados do banco de dados (FAQs, Vídeos FAQ e Imagens FAQ)
-    try:
-        from src.database.connection import get_connection
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # 1. Tabela de FAQs / Artigos
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS faqs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT NOT NULL,
-                tipo_faq TEXT NOT NULL,
-                url TEXT NOT NULL UNIQUE,
-                conteudo TEXT,
-                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        cursor.execute("PRAGMA table_info(faqs)")
-        cols_db = [col[1] for col in cursor.fetchall()]
-        if "conteudo" not in cols_db:
-            cursor.execute("ALTER TABLE faqs ADD COLUMN conteudo TEXT")
-            conn.commit()
-
-        cursor.execute("SELECT COUNT(*) FROM faqs")
-        count_faqs = cursor.fetchone()[0]
-        if count_faqs == 0 and json_faq_path.exists():
-            with open(json_faq_path, "r", encoding="utf-8") as f:
-                faqs_json = json.load(f)
-            for item in faqs_json:
-                cursor.execute("""
-                    INSERT INTO faqs (titulo, tipo_faq, url, conteudo)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT (url) DO NOTHING
-                """, (item.get("titulo"), item.get("tipo_faq", "Geral"), item.get("url"), item.get("conteudo")))
-            conn.commit()
-
-        # 2. Tabela de Vídeos FAQ (SharePoint Online como Fonte Primária)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS faq_videos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT NOT NULL,
-                categoria TEXT NOT NULL,
-                nome_arquivo TEXT NOT NULL,
-                url TEXT NOT NULL UNIQUE,
-                caminho_relativo TEXT,
-                tamanho_bytes INTEGER DEFAULT 0,
-                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        cursor.execute("SELECT COUNT(*) FROM faq_videos")
-        count_vids = cursor.fetchone()[0]
-        if count_vids == 0 and json_videos_path.exists():
-            with open(json_videos_path, "r", encoding="utf-8") as f:
-                vids_json = json.load(f)
-            for item in vids_json:
-                cursor.execute("""
-                    INSERT INTO faq_videos (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (url) DO NOTHING
-                """, (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)))
-            conn.commit()
-
-        # 3. Tabela de Imagens FAQ (SharePoint Online como Fonte Primária)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS faq_imagens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT NOT NULL,
-                categoria TEXT NOT NULL,
-                nome_arquivo TEXT NOT NULL,
-                url TEXT NOT NULL UNIQUE,
-                caminho_relativo TEXT,
-                tamanho_bytes INTEGER DEFAULT 0,
-                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        cursor.execute("SELECT COUNT(*) FROM faq_imagens")
-        count_imgs = cursor.fetchone()[0]
-        if count_imgs == 0 and json_imagens_path.exists():
-            with open(json_imagens_path, "r", encoding="utf-8") as f:
-                imgs_json = json.load(f)
-            for item in imgs_json:
-                cursor.execute("""
-                    INSERT INTO faq_imagens (titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (url) DO NOTHING
-                """, (item.get("titulo"), item.get("categoria", "Geral"), item.get("nome_arquivo"), item.get("url"), item.get("caminho_relativo"), item.get("tamanho_bytes", 0)))
-            conn.commit()
-
-        # Leitura dos dados a partir do SQLite
-        df_faqs = pd.read_sql_query("SELECT id, titulo, tipo_faq, url, conteudo FROM faqs", conn)
-        df_vids = pd.read_sql_query("SELECT id, titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes FROM faq_videos", conn)
-        df_imgs = pd.read_sql_query("SELECT id, titulo, categoria, nome_arquivo, url, caminho_relativo, tamanho_bytes FROM faq_imagens", conn)
-        conn.close()
-    except Exception as e:
-        logger.error(f"Erro ao carregar banco de dados de FAQs/Vídeos/Imagens: {e}")
-        df_faqs = pd.DataFrame()
-        df_vids = pd.DataFrame()
-        df_imgs = pd.DataFrame()
-
-    # Carrega links úteis
-    links_uteis = []
-    if json_links_path.exists():
-        try:
-            with open(json_links_path, "r", encoding="utf-8") as f:
-                links_uteis = json.load(f)
-        except Exception as e:
-            logger.error(f"Erro ao ler links_uteis_template.json: {e}")
-
-    # Catálogos primários a partir do SQLite
-    catalog_videos = df_vids.to_dict('records') if not df_vids.empty else []
-    catalog_imagens = df_imgs.to_dict('records') if not df_imgs.empty else []
-
-    # Varre vídeos e imagens locais (se existirem na pasta de upload ou cache)
-    videos_list = scan_video_faqs(VIDEO_FAQ_DIR)
-    imagens_list = scan_image_faqs(IMAGE_FAQ_DIR)
 
     # Controle de processo em segundo plano (Sincronização SharePoint)
     sp_sync_ativo = check_sharepoint_catalog_sync_running()
@@ -994,8 +1322,9 @@ def render_faq_page():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Roteamento dinâmico das Abas com Filtros Específicos na Sidebar
+    # Roteamento dinâmico das Abas (lazy-loading: cada subaba carrega apenas seus próprios dados cacheados)
     if active_tab == "📚 FAQs & Tutoriais (SharePoint)":
+        df_faqs = _load_faqs_cached()
         st.sidebar.markdown("## 🔍 Filtros do FAQ")
         search_query = st.sidebar.text_input("Buscar por palavra-chave:", "", key="faq_search")
         
@@ -1041,21 +1370,45 @@ def render_faq_page():
                         target_img_folder.mkdir(parents=True, exist_ok=True)
                         target_vid_folder.mkdir(parents=True, exist_ok=True)
                         
-                        # 1. Sincronização de Imagens (via BeautifulSoup para cobrir tags nativas e plugins)
-                        soup_sync = BeautifulSoup(content, "html.parser") if BeautifulSoup else None
-                        
+                        # 1. Sincronização de Imagens e Vídeos (suporte nativo a Markdown .md + fallback HTML legado)
                         img_candidates = []
-                        if soup_sync:
-                            for div in soup_sync.find_all("div", class_="imagePlugin"):
-                                u = div.get("data-imageurl")
-                                if u:
-                                    img_candidates.append(u)
-                            for img in soup_sync.find_all("img"):
-                                src = img.get("src") or img.get("data-sp-originalimgsrc")
-                                if src and "userphoto.jpg" not in src and "fabric-cdn-prod" not in src and img.get("data-automation-id") != "lowQualityImagePlaceholder":
-                                    img_candidates.append(src)
+                        vid_candidates = []
+                        if not is_html_faq_content(content):
+                            md_imgs, md_vids = extract_markdown_media_references(
+                                content, md_server_rel_url=r.get("url") or ""
+                            )
+                            img_candidates.extend(md_imgs)
+                            vid_candidates.extend(md_vids)
                         else:
-                            img_candidates = re.findall(r'data-imageurl="([^"]+)"', content) + re.findall(r'src="([^"]+sharepoint\.com[^"]+)"', content)
+                            soup_sync = BeautifulSoup(content, "html.parser") if BeautifulSoup else None
+                            if soup_sync:
+                                for div in soup_sync.find_all("div", class_="imagePlugin"):
+                                    u = div.get("data-imageurl")
+                                    if u:
+                                        img_candidates.append(u)
+                                for img in soup_sync.find_all("img"):
+                                    src = img.get("src") or img.get("data-sp-originalimgsrc")
+                                    if src and "userphoto.jpg" not in src and "fabric-cdn-prod" not in src and img.get("data-automation-id") != "lowQualityImagePlaceholder":
+                                        img_candidates.append(src)
+                                for v_emb in soup_sync.find_all("div", class_="sp-video-embed"):
+                                    vu = v_emb.get("data-videourl")
+                                    if vu:
+                                        vid_candidates.append(vu)
+                                for div in soup_sync.find_all(lambda t: t.name == "div" and any(k.endswith("controldata") for k in t.attrs)):
+                                    for k, val in div.attrs.items():
+                                        if k.endswith("controldata"):
+                                            try:
+                                                c_obj = json.loads(val)
+                                                props = c_obj.get("properties", {})
+                                                if isinstance(props, dict):
+                                                    furl = props.get("file") or props.get("serverRelativeUrl") or props.get("url")
+                                                    if furl and any(str(furl).lower().endswith(ext) for ext in [".mp4", ".mov", ".webm", ".avi"]):
+                                                        vid_candidates.append(furl)
+                                            except Exception:
+                                                pass
+                            else:
+                                img_candidates = re.findall(r'data-imageurl="([^"]+)"', content) + re.findall(r'src="([^"]+sharepoint\.com[^"]+)"', content)
+                                vid_candidates = re.findall(r'data-videourl="([^"]+)"', content)
 
                         for u in set(img_candidates):
                             u = normalize_sharepoint_url(u)
@@ -1066,8 +1419,7 @@ def render_faq_page():
                             if not clean_fn:
                                 clean_fn = f"img_{hashlib.md5(u.encode('utf-8')).hexdigest()[:12]}.jpg"
                             dest = target_img_folder / clean_fn
-                            
-                            # Se já existe na raiz legada, copia para a subpasta
+
                             root_legacy = IMAGE_FAQ_DIR / clean_fn
                             if not dest.exists() and root_legacy.exists() and root_legacy.is_file() and root_legacy.stat().st_size > 0:
                                 try:
@@ -1088,29 +1440,6 @@ def render_faq_page():
                                     pass
                             else:
                                 sucessos_img += 1
-
-                        # 2. Sincronização de Vídeos (sp-video-embed e controldata)
-                        vid_candidates = []
-                        if soup_sync:
-                            for v_emb in soup_sync.find_all("div", class_="sp-video-embed"):
-                                vu = v_emb.get("data-videourl")
-                                if vu:
-                                    vid_candidates.append(vu)
-                            # Extrai também de controldata cru se houver
-                            for div in soup_sync.find_all(lambda t: t.name == "div" and any(k.endswith("controldata") for k in t.attrs)):
-                                for k, val in div.attrs.items():
-                                    if k.endswith("controldata"):
-                                        try:
-                                            c_obj = json.loads(val)
-                                            props = c_obj.get("properties", {})
-                                            if isinstance(props, dict):
-                                                furl = props.get("file") or props.get("serverRelativeUrl") or props.get("url")
-                                                if furl and any(str(furl).lower().endswith(ext) for ext in [".mp4", ".mov", ".webm", ".avi"]):
-                                                    vid_candidates.append(furl)
-                                        except Exception:
-                                            pass
-                        else:
-                            vid_candidates = re.findall(r'data-videourl="([^"]+)"', content)
 
                         for vu in set(vid_candidates):
                             vu = normalize_sharepoint_url(vu)
@@ -1178,7 +1507,8 @@ def render_faq_page():
                     font-size: 1.05rem;
                     line-height: 1.8;
                 }
-                .faq-container img, .faq-container .sp-image {
+                .faq-container img, .faq-container .sp-image,
+                div[data-testid="stDialog"] .sp-image {
                     display: block;
                     margin: 16px auto;
                     max-width: 100%;
@@ -1187,18 +1517,21 @@ def render_faq_page():
                     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
                     border: 1px solid #343541;
                 }
-                .faq-container .sp-img-card {
+                .faq-container .sp-img-card,
+                div[data-testid="stDialog"] .sp-img-card {
                     margin: 20px auto;
                     max-width: 100%;
                     text-align: center;
                 }
-                .faq-container .sp-caption {
+                .faq-container .sp-caption,
+                div[data-testid="stDialog"] .sp-caption {
                     margin-top: 6px;
                     color: #94a3b8;
                     font-size: 0.88rem;
                     font-style: italic;
                 }
-                .faq-container .sp-fallback-msg {
+                .faq-container .sp-fallback-msg,
+                div[data-testid="stDialog"] .sp-fallback-msg {
                     border-radius: 8px;
                     background: rgba(255, 75, 75, 0.08);
                     border: 1px dashed rgba(255, 75, 75, 0.4);
@@ -1232,8 +1565,24 @@ def render_faq_page():
                 st.markdown("---")
                 
                 if faq_item['conteudo'] and str(faq_item['conteudo']).strip():
-                    parsed_html = parse_sharepoint_content(faq_item['conteudo'], faq_slug=faq_item.get('titulo', 'Geral'))
-                    st.markdown(f'<div class="faq-container">{parsed_html}</div>', unsafe_allow_html=True)
+                    raw_content = str(faq_item['conteudo'])
+                    if is_html_faq_content(raw_content):
+                        parsed_html = parse_sharepoint_content(raw_content, faq_slug=faq_item.get('titulo', 'Geral'))
+                        st.markdown(f'<div class="faq-container">{parsed_html}</div>', unsafe_allow_html=True)
+                    else:
+                        prefetch_markdown_images_parallel(
+                            raw_content,
+                            faq_slug=faq_item.get('titulo', 'Geral'),
+                            md_server_rel_url=faq_item.get('url', ''),
+                        )
+                        rendered_md = render_markdown_for_streamlit(
+                            raw_content,
+                            faq_title=faq_item.get('titulo', 'Geral'),
+                            md_server_rel_url=faq_item.get('url', ''),
+                            image_loader=ensure_sharepoint_image_cached,
+                            video_loader=ensure_sharepoint_video_cached,
+                        )
+                        st.markdown(rendered_md, unsafe_allow_html=True)
                 else:
                     st.info("O conteúdo detalhado deste FAQ ainda não foi sincronizado localmente.")
                     st.write("Você pode visualizar o tutorial completo diretamente no SharePoint pelo botão abaixo.")
@@ -1243,7 +1592,12 @@ def render_faq_page():
 
             filtered_df = df_faqs.copy()
             if search_query:
-                filtered_df = filtered_df[filtered_df['titulo'].str.contains(search_query, case=False, na=False)]
+                q_mask = (
+                    filtered_df['titulo'].str.contains(search_query, case=False, na=False)
+                    | filtered_df['tipo_faq'].str.contains(search_query, case=False, na=False)
+                    | filtered_df['conteudo'].str.contains(search_query, case=False, na=False)
+                )
+                filtered_df = filtered_df[q_mask]
             if selected_tipo != "Todos":
                 filtered_df = filtered_df[filtered_df['tipo_faq'] == selected_tipo]
 
@@ -1276,6 +1630,9 @@ def render_faq_page():
             render_pagination_controls("faq_sp", cur_p_faq, tot_p_faq, tot_i_faq, items_per_page_faq)
 
     elif active_tab == "🎥 Vídeos FAQ (Tutoriais)":
+        catalog_videos = _load_videos_catalog_cached()
+        videos_list = _scan_video_faqs_cached()
+        df_faqs = pd.DataFrame()
         st.sidebar.markdown("## 🔍 Filtros de Vídeos FAQ")
         search_vid = st.sidebar.text_input("Pesquisar vídeo por palavra-chave:", "", key="search_video_input")
         
@@ -1553,6 +1910,8 @@ def render_faq_page():
             render_pagination_controls("faq_vid", cur_p_vid, tot_p_vid, tot_i_vid, items_per_page_vid)
 
     elif active_tab == "🖼️ Imagens FAQ (Galeria)":
+        catalog_imagens = _load_imagens_catalog_cached()
+        imagens_list = _scan_image_faqs_cached()
         st.sidebar.markdown("## 🔍 Filtros de Imagens FAQ")
         search_img = st.sidebar.text_input("Pesquisar por palavra-chave:", "", key="search_img_input")
 
@@ -1841,6 +2200,7 @@ def render_faq_page():
             render_pagination_controls("faq_img", cur_p_img, tot_p_img, tot_i_img, items_per_page_img)
 
     elif active_tab == "🔗 Links Úteis da Bancada":
+        links_uteis = _load_links_uteis_cached()
         st.sidebar.markdown("## 🔍 Filtros de Links")
         search_link = st.sidebar.text_input("Pesquisar por nome ou URL:", "", key="search_link_input")
         items_per_page_link = render_items_per_page_selector("faq_links", options=[6, 12, 24, 48], default_index=1)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Worker assíncrono para sincronização do catálogo de FAQs, Vídeos e Imagens
-diretamente da API REST do SharePoint Online com persistência no SQLite.
+Worker assíncrono para sincronização do catálogo de Manuais Markdown (.md), Vídeos e Imagens
+diretamente da API REST do SharePoint Online com persistência no banco de dados.
 """
 import os
 import sys

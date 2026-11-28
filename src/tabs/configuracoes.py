@@ -255,7 +255,7 @@ def render_configuracoes_page():
         st.markdown("#### 📂 Sincronização SharePoint / OneDrive")
         st.info("Prioridade de resolução: **Configurações salvas nesta aba** têm prioridade máxima. Se o campo for deixado em branco, o sistema recorre ao **.env** como fallback.")
 
-        sp_chamados_val = settings.get("SHAREPOINT_RELATIVE_PATH", {}).get("value") or os.getenv("SHAREPOINT_RELATIVE_PATH", r"OneDrive - Ministerio Público do Estado de Mato Grosso do Sul\Documentos SharePoint DIT-Manutenção\Chamados\Chamados_Unificados_Final.xlsx")
+        sp_chamados_val = settings.get("SHAREPOINT_RELATIVE_PATH", {}).get("value") or os.getenv("SHAREPOINT_RELATIVE_PATH", "")
         form_values["SHAREPOINT_RELATIVE_PATH"] = (
             st.text_area("Caminho Relativo da Planilha de Chamados Unificados", value=sp_chamados_val, key="cfg_sp_chamados", height=70, help="Caminho relativo a partir da pasta de perfil ou URL do SharePoint."),
             False, "sharepoint", "Caminho relativo da Planilha de Chamados no OneDrive/SharePoint"
@@ -294,14 +294,20 @@ def render_configuracoes_page():
                 False, "sharepoint", "URL da Planilha de Escala Matutina"
             )
 
-        c3, c4 = st.columns(2)
+        c3, c4, c5 = st.columns(3)
         with c3:
+            val_markdown = settings.get("MARKDOWN_FAQ_PATH", {}).get("value") or os.getenv("MARKDOWN_FAQ_PATH", "")
+            form_values["MARKDOWN_FAQ_PATH"] = (
+                st.text_input("Pasta de Manuais Markdown (SharePoint)", value=val_markdown, key="cfg_sp_markdown", help="URL do SharePoint ou pasta local dos Manuais Markdown (.md)."),
+                False, "sharepoint", "URL da pasta de Manuais Markdown no SharePoint"
+            )
+        with c4:
             val_videos = settings.get("VIDEO_FAQ_PATH", {}).get("value") or os.getenv("VIDEO_FAQ_PATH", "")
             form_values["VIDEO_FAQ_PATH"] = (
                 st.text_input("Pasta de Vídeos FAQ (SharePoint)", value=val_videos, key="cfg_sp_videos", help="URL do SharePoint ou pasta local dos Vídeos FAQ."),
                 False, "sharepoint", "URL da pasta de Vídeos FAQ no SharePoint"
             )
-        with c4:
+        with c5:
             val_imagens = settings.get("IMAGE_FAQ_PATH", {}).get("value") or os.getenv("IMAGE_FAQ_PATH", "")
             form_values["IMAGE_FAQ_PATH"] = (
                 st.text_input("Pasta de Imagens FAQ (SharePoint)", value=val_imagens, key="cfg_sp_imagens", help="URL do SharePoint ou pasta local das Imagens FAQ."),

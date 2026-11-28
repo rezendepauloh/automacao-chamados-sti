@@ -233,6 +233,7 @@ def seed_settings_from_env_if_empty(force: bool = False):
         ("SHAREPOINT_MATUTINO_URL", os.getenv("SHAREPOINT_MATUTINO_URL", ""), False, "sharepoint", "URL da Planilha de Escala Matutina"),
         ("VIDEO_FAQ_PATH", os.getenv("VIDEO_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Vídeos FAQ no SharePoint"),
         ("IMAGE_FAQ_PATH", os.getenv("IMAGE_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Imagens FAQ no SharePoint"),
+        ("MARKDOWN_FAQ_PATH", os.getenv("MARKDOWN_FAQ_PATH", ""), False, "sharepoint", "URL da pasta de Manuais Markdown no SharePoint"),
     ]
 
     for key, val, is_sec, cat, desc in defaults:

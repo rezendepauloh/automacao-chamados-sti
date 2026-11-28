@@ -106,6 +106,7 @@ automacao-chamados-sti/
 │   │
 │   ├── services/
 │   │   ├── cron_scheduler.py   # Daemon de agendamento em segundo plano (tarefas periódicas)
+│   │   ├── faq_markdown.py     # Leitura, deduplicação, resolução de mídias e renderização de FAQs em Markdown (.md)
 │   │   └── ticket_enrichment.py# Enriquecimento em cascata (sAMAccountName, IP, Hostname, datas BR)
 │   │
 │   ├── api/                    # API REST ASGI (Starlette + Uvicorn + Pydantic) em container isolado
